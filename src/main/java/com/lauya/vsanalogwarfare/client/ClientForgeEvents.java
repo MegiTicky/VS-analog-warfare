@@ -206,10 +206,11 @@ public final class ClientForgeEvents {
 
     private static void drawScopeApertureMask(GuiGraphics graphics, int screenW, int screenH, int scopeX, int scopeY, int scopeW, int scopeH) {
         int black = 0xFF000000;
-        int left = Math.max(0, scopeX);
-        int top = Math.max(0, scopeY);
-        int right = Math.min(screenW, scopeX + scopeW);
-        int bottom = Math.min(screenH, scopeY + scopeH);
+        int padding = 1; // pixels to shrink from each side
+        int left = Math.max(0, scopeX + padding);
+        int top = Math.max(0, scopeY + padding);
+        int right = Math.min(screenW, scopeX + scopeW - padding);
+        int bottom = Math.min(screenH, scopeY + scopeH - padding);
 
         if (top > 0) {
             graphics.fill(0, 0, screenW, top, black);
@@ -267,10 +268,12 @@ public final class ClientForgeEvents {
 
     private static void fillBeyondScopeBase(GuiGraphics graphics, int screenW, int screenH, double x, double y, int w, int h) {
         int black = 0xFF000000;
-        int left = Math.max(0, (int) Math.floor(x));
-        int top = Math.max(0, (int) Math.floor(y));
-        int right = Math.min(screenW, (int) Math.ceil(x + w));
-        int bottom = Math.min(screenH, (int) Math.ceil(y + h));
+        int padding = 1; // inward amount in pixels
+
+        int left = Math.max(0, (int) Math.floor(x) + padding);
+        int top = Math.max(0, (int) Math.floor(y) + padding);
+        int right = Math.min(screenW, (int) Math.ceil(x + w) - padding);
+        int bottom = Math.min(screenH, (int) Math.ceil(y + h) - padding);
 
         if (top > 0) {
             graphics.fill(0, 0, screenW, top, black);
