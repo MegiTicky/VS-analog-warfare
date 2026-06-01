@@ -32,7 +32,7 @@ public final class ClientForgeEvents {
 
     // Temporary debug switch: disable VSAW-applied camera roll so we can see whether
     // VS/other mods are already rolling the view and/or whether our roll math is wrong.
-    private static final boolean DEBUG_DISABLE_VSAW_ROLL = true;
+    private static final boolean DEBUG_DISABLE_VSAW_ROLL = false;
 
     private ClientForgeEvents() {
     }
