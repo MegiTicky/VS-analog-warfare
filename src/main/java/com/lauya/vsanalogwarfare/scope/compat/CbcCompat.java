@@ -57,39 +57,39 @@ public final class CbcCompat {
         return false;
     }
 
-    public static Optional<Vec3> getAimDirection(Level level, BlockPos mountPos, Direction fallbackFacing) {
+    public static Optional<Vec3> getAimDirection(Level level, BlockPos mountPos, Direction fallbackFacing, float partialTicks) {
         BlockEntity be = level.getBlockEntity(mountPos);
         if (!isCannonMount(be)) {
             return Optional.of(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
         }
 
-        Vec3 byContraption = tryDirectionFromContraption(be).orElse(null);
+        Vec3 byContraption = tryDirectionFromContraption(be, partialTicks).orElse(null);
         if (byContraption != null) {
             return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, byContraption));
         }
 
-        Vec3 byMount = tryDirectionFromMountOffsets(be).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
+        Vec3 byMount = tryDirectionFromMountOffsets(be, partialTicks).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
         return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, byMount));
     }
 
-    public static Optional<Vec3> getAimUpDirection(Level level, BlockPos mountPos, Direction fallbackFacing, Direction scopeUp) {
+    public static Optional<Vec3> getAimUpDirection(Level level, BlockPos mountPos, Direction fallbackFacing, Direction scopeUp, float partialTicks) {
         BlockEntity be = level.getBlockEntity(mountPos);
         Vec3 fallbackUp = Vec3.atLowerCornerOf(scopeUp.getNormal()).normalize();
         if (!isCannonMount(be)) {
             return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, fallbackUp));
         }
 
-        Vec3 byContraption = tryUpFromContraption(be, fallbackUp).orElse(null);
+        Vec3 byContraption = tryUpFromContraption(be, fallbackUp, partialTicks).orElse(null);
         if (byContraption != null) {
             return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, byContraption));
         }
 
-        Vec3 forward = tryDirectionFromMountOffsets(be).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
+        Vec3 forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
         Vec3 projectedUp = projectUp(fallbackUp, forward);
         return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, projectedUp));
     }
 
-    private static Optional<Vec3> tryDirectionFromContraption(Object mount) {
+    private static Optional<Vec3> tryDirectionFromContraption(Object mount, float partialTicks) {
         try {
             Object poce = callNoArg(mount, "getContraption");
             if (poce == null) {
@@ -101,14 +101,14 @@ public final class CbcCompat {
             }
             Vec3 base = Vec3.atLowerCornerOf(direction.getNormal());
             Method applyRotation = poce.getClass().getMethod("applyRotation", Vec3.class, float.class);
-            Object rotated = applyRotation.invoke(poce, base, 1.0f);
+            Object rotated = applyRotation.invoke(poce, base, partialTicks);
             return rotated instanceof Vec3 vec ? Optional.of(vec.normalize()) : Optional.empty();
         } catch (ReflectiveOperationException | LinkageError ignored) {
             return Optional.empty();
         }
     }
 
-    private static Optional<Vec3> tryUpFromContraption(Object mount, Vec3 fallbackUp) {
+    private static Optional<Vec3> tryUpFromContraption(Object mount, Vec3 fallbackUp, float partialTicks) {
         try {
             Object poce = callNoArg(mount, "getContraption");
             if (poce == null) {
@@ -120,22 +120,22 @@ public final class CbcCompat {
                 localUp = new Vec3(0.0, 0.0, 1.0);
             }
             Method applyRotation = poce.getClass().getMethod("applyRotation", Vec3.class, float.class);
-            Object rotated = applyRotation.invoke(poce, localUp, 1.0f);
+            Object rotated = applyRotation.invoke(poce, localUp, partialTicks);
             return rotated instanceof Vec3 vec ? Optional.of(vec.normalize()) : Optional.empty();
         } catch (ReflectiveOperationException | LinkageError ignored) {
             return Optional.empty();
         }
     }
 
-    private static Optional<Vec3> tryDirectionFromMountOffsets(Object mount) {
+    private static Optional<Vec3> tryDirectionFromMountOffsets(Object mount, float partialTicks) {
         try {
             Direction baseDir = Direction.NORTH;
             Object direction = callNoArg(mount, "getContraptionDirection");
             if (direction instanceof Direction d) {
                 baseDir = d;
             }
-            float yaw = callFloat(mount, "getYawOffset", 1.0f);
-            float pitch = callFloat(mount, "getPitchOffset", 1.0f);
+            float yaw = callFloat(mount, "getYawOffset", partialTicks);
+            float pitch = callFloat(mount, "getPitchOffset", partialTicks);
             return Optional.of(directionFromYawPitch(baseDir.toYRot() + yaw, pitch));
         } catch (ReflectiveOperationException | LinkageError ignored) {
             return Optional.empty();

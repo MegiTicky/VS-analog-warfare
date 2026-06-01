@@ -31,9 +31,9 @@ public class FixedCoaxScopeRig implements CameraRig {
         Direction viewOffsetDirection = facing.getOpposite(); // Tallyho-style: walk away from the scope until air.
         Vec3 localCameraPos = findFirstAirViewPosition(viewOffsetDirection).add(scope.getCameraOffset());
         Vec3 position = VsCompat.shipToWorldPosition(level, scopePos, localCameraPos);
-        Vec3 direction = CbcCompat.getAimDirection(level, mountPos, viewOffsetDirection)
+        Vec3 direction = CbcCompat.getAimDirection(level, mountPos, viewOffsetDirection, partialTicks)
                 .orElse(Vec3.atLowerCornerOf(viewOffsetDirection.getNormal()).normalize());
-        Vec3 up = CbcCompat.getAimUpDirection(level, mountPos, viewOffsetDirection, Direction.UP)
+        Vec3 up = CbcCompat.getAimUpDirection(level, mountPos, viewOffsetDirection, Direction.UP, partialTicks)
                 .orElse(VsCompat.shipToWorldDirection(level, scopePos, new Vec3(0.0, 1.0, 0.0)));
         return CameraPose.looking(position, direction, up);
     }
