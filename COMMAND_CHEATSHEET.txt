@@ -1,0 +1,108 @@
+VS Analog Warfare - Command Cheat Sheet (PowerShell)
+
+Repo root (this folder):
+  Z:\VS analog warfare parent
+
+--------------------
+Build Jars
+--------------------
+Build the currently checked-out branch:
+  .\gradlew clean build
+
+Where the jars end up:
+  build\libs\
+    vs_analog_warfare-<version>.jar
+    vs_analog_warfare-<version>-reobf.jar   (usually the one you want to drop into mods/)
+
+Build main (VS2.4 stack):
+  git switch main
+  .\gradlew clean build
+
+Build vs2.3 (VS2.3 stack):
+  git switch vs2.3
+  .\gradlew clean build
+
+Build both back-to-back:
+  git switch main
+  .\gradlew clean build
+  git switch vs2.3
+  .\gradlew clean build
+
+Just reobfuscate (without a full clean build):
+  .\gradlew reobfJar
+
+Stop Gradle daemons:
+  .\gradlew --stop
+
+--------------------
+Dev Runs (runClient)
+--------------------
+Run the dev client (currently checked-out branch):
+  .\gradlew runClient
+
+VS2.3 branch: override the local reference-mods folder if needed:
+  .\gradlew runClient -Pvs23_reference_mods_dir="Z:\cbc_terminal_ballistics_parent\Reference mod VS2.3"
+
+--------------------
+Git: Day-to-Day
+--------------------
+See status:
+  git status -sb
+
+See branches and tracking:
+  git branch -vv
+
+Switch branches:
+  git switch main
+  git switch vs2.3
+
+Pull latest for the current branch:
+  git pull
+
+Update a specific branch from remote:
+  git fetch origin
+  git switch vs2.3
+  git pull --ff-only
+
+--------------------
+Git: Commit + Push (typical workflow)
+--------------------
+1) Check what changed:
+  git status -sb
+  git diff
+
+2) Stage changes:
+  git add -u
+  git add <new-file-1> <new-file-2>
+
+Note: This repo folder usually has lots of untracked local artifacts (zips, reference jars, logs).
+Avoid using "git add -A" unless you really mean it.
+
+3) Commit:
+  git commit -m "Your message here"
+
+4) Push the current branch:
+  git push
+
+Push an explicit branch:
+  git push origin vs2.3
+  git push origin main
+
+--------------------
+Git: Undo / Fixups (common)
+--------------------
+Unstage a file (keep local edits):
+  git restore --staged <path>
+
+Discard local changes to a file:
+  git restore <path>
+
+Amend last commit (after staging more changes):
+  git commit --amend
+
+--------------------
+Remote
+--------------------
+Show remotes:
+  git remote -v
+
