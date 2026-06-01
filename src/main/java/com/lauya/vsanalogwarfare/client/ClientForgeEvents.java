@@ -54,7 +54,7 @@ public final class ClientForgeEvents {
         event.setYaw(pose.yaw());
         event.setPitch(pose.pitch());
         if (DEBUG_DISABLE_VSAW_ROLL) {
-            event.setRoll(0.0f);
+            event.setRoll(30.0f);
         } else {
             event.setRoll(ClientScopeState.roll(pose));
         }
