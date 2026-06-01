@@ -141,21 +141,23 @@ public final class ClientForgeEvents {
         double sightScopeX = scopeX + sightOffset[0];
         double sightScopeY = scopeY + sightOffset[1];
 
-        drawScopeBlackBars(graphics, screenW, screenH, scopeX, scopeY, scopeW, scopeH);
+        // Disabled: redundant with drawScopeApertureMask() and costs extra GUI fill work every frame.
+        // drawScopeBlackBars(graphics, screenW, screenH, scopeX, scopeY, scopeW, scopeH);
         drawScopeApertureMask(graphics, screenW, screenH, scopeX, scopeY, scopeW, scopeH);
         blitZoomedScopeBase(graphics, screenW, screenH, sightScopeX, sightScopeY, scopeW, scopeH);
 
         drawBallisticMarks(graphics, mc, sightScopeX, sightScopeY, scopeW, scopeH);
         drawFreeLookTargetCircle(graphics, screenW, screenH);
 
-        String debug = ScopeDebug.overlayLine(mc.gameRenderer.getMainCamera());
-        BallisticProfile profile = ClientScopeState.ballisticProfile();
-        if (profile.valid()) {
-            debug += " | " + profile.cannonType() + " " + profile.projectileId() + " v=" + String.format(java.util.Locale.ROOT, "%.2f", profile.muzzleSpeed());
-        }
-        debug += " | " + ClientScopeState.zoomMagnification() + "x";
-        if (ClientScopeState.freeLookEnabled()) debug += " | freelook";
-        graphics.drawString(mc.font, debug, 8, 8, 0xFFE6E6, true);
+        // Disabled: per-frame debug overlay is expensive (Font rendering + formatting) and was a major hotspot in spark.
+        // String debug = ScopeDebug.overlayLine(mc.gameRenderer.getMainCamera());
+        // BallisticProfile profile = ClientScopeState.ballisticProfile();
+        // if (profile.valid()) {
+        //     debug += " | " + profile.cannonType() + " " + profile.projectileId() + " v=" + String.format(java.util.Locale.ROOT, "%.2f", profile.muzzleSpeed());
+        // }
+        // debug += " | " + ClientScopeState.zoomMagnification() + "x";
+        // if (ClientScopeState.freeLookEnabled()) debug += " | freelook";
+        // graphics.drawString(mc.font, debug, 8, 8, 0xFFE6E6, true);
     }
 
     private static void drawFreeLookTargetCircle(GuiGraphics graphics, int screenW, int screenH) {
