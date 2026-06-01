@@ -30,6 +30,10 @@ public final class ClientForgeEvents {
     private static boolean shiftWasDown;
     private static int mouseAimPacketCooldown;
 
+    // Temporary debug switch: disable VSAW-applied camera roll so we can see whether
+    // VS/other mods are already rolling the view and/or whether our roll math is wrong.
+    private static final boolean DEBUG_DISABLE_VSAW_ROLL = true;
+
     private ClientForgeEvents() {
     }
 
@@ -49,7 +53,11 @@ public final class ClientForgeEvents {
         CameraPose pose = ClientScopeState.cameraPose(partialTick);
         event.setYaw(pose.yaw());
         event.setPitch(pose.pitch());
-        event.setRoll(ClientScopeState.roll(pose));
+        if (DEBUG_DISABLE_VSAW_ROLL) {
+            event.setRoll(0.0f);
+        } else {
+            event.setRoll(ClientScopeState.roll(pose));
+        }
     }
 
     @SubscribeEvent

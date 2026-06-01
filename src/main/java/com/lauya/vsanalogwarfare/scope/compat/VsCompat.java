@@ -11,7 +11,7 @@ import java.util.Optional;
 public final class VsCompat {
     private static Class<?> vsGameUtilsClass;
     private static Method getShipManagingPos;
-    private static Method getRenderTransform;
+    private static Method getShipObjectManagingPosClient;
 
     private VsCompat() {
     }
@@ -69,6 +69,24 @@ public final class VsCompat {
             if (vsGameUtilsClass == null) {
                 vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
             }
+
+            // On the client, prefer the ClientShip return type. It exposes getRenderTransform(),
+            // which is what VS uses for camera/render interpolation (partial ticks).
+            try {
+                if (level instanceof net.minecraft.client.multiplayer.ClientLevel) {
+                    if (getShipObjectManagingPosClient == null) {
+                        getShipObjectManagingPosClient = vsGameUtilsClass.getMethod(
+                                "getShipObjectManagingPos",
+                                net.minecraft.client.multiplayer.ClientLevel.class,
+                                BlockPos.class
+                        );
+                    }
+                    return getShipObjectManagingPosClient.invoke(null, level, pos);
+                }
+            } catch (ReflectiveOperationException | LinkageError ignored) {
+                // Fall back to the generic ship lookup below.
+            }
+
             if (getShipManagingPos == null) {
                 getShipManagingPos = vsGameUtilsClass.getMethod("getShipManagingPos", Level.class, BlockPos.class);
             }
@@ -76,27 +94,6 @@ public final class VsCompat {
         } catch (ReflectiveOperationException | LinkageError ignored) {
             return null;
         }
-    }
-
-    private static Object getRenderTransformFromUtils(Object ship) throws ReflectiveOperationException {
-        // VS2.3 exposes render transform as a Kotlin extension function compiled onto VSGameUtilsKt,
-        // not necessarily as a member method on the ship object.
-        if (vsGameUtilsClass == null) {
-            vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-        }
-        if (getRenderTransform == null) {
-            // Don't bind to an exact ship interface class here; use a 1-arg overload by name.
-            for (Method m : vsGameUtilsClass.getMethods()) {
-                if (m.getName().equals("getRenderTransform") && m.getParameterCount() == 1) {
-                    getRenderTransform = m;
-                    break;
-                }
-            }
-        }
-        if (getRenderTransform == null) {
-            throw new NoSuchMethodException("VSGameUtilsKt.getRenderTransform(<ship>) not found");
-        }
-        return getRenderTransform.invoke(null, ship);
     }
 
     private static Vector3d invokeMatrixTransform(Object ship, Vec3 vector, boolean position) {
@@ -135,11 +132,6 @@ public final class VsCompat {
 
     private static Object getShipToWorldMatrix(Object ship) throws ReflectiveOperationException {
         try {
-            Object renderTransform = getRenderTransformFromUtils(ship);
-            return getShipToWorldMatrixFromTransform(renderTransform);
-        } catch (ReflectiveOperationException | LinkageError ignored) {
-        }
-        try {
             Object renderTransform = ship.getClass().getMethod("getRenderTransform").invoke(ship);
             return getShipToWorldMatrixFromTransform(renderTransform);
         } catch (NoSuchMethodException ignored) {
@@ -161,11 +153,6 @@ public final class VsCompat {
     }
 
     private static Object getWorldToShipMatrix(Object ship) throws ReflectiveOperationException {
-        try {
-            Object renderTransform = getRenderTransformFromUtils(ship);
-            return getWorldToShipMatrixFromTransform(renderTransform);
-        } catch (ReflectiveOperationException | LinkageError ignored) {
-        }
         try {
             Object renderTransform = ship.getClass().getMethod("getRenderTransform").invoke(ship);
             return getWorldToShipMatrixFromTransform(renderTransform);
