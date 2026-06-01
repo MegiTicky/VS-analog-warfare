@@ -13,6 +13,8 @@ public final class ScopeDebug {
     private static final Logger LOGGER = LogUtils.getLogger();
     public static final String BUILD_MARKER = "scope-client-frame-debug-2026-05-22-a";
 
+    private static final ThreadLocal<Boolean> IN_VS_MOUNTED_CAMERA_WRAPPER = ThreadLocal.withInitial(() -> Boolean.FALSE);
+
     private static String lastHook = "none";
     private static float lastShipYaw = Float.NaN;
     private static float lastCameraForwardYaw = Float.NaN;
@@ -63,25 +65,7 @@ public final class ScopeDebug {
         if (!ClientScopeState.active()) {
             return false;
         }
-
-        StackTraceElement[] stack = Thread.currentThread().getStackTrace();
-        for (StackTraceElement frame : stack) {
-            String className = frame.getClassName();
-            String methodName = frame.getMethodName();
-            if (methodName.contains("setupCameraWithMountedShip")) {
-                return true;
-            }
-            // MixinExtras may call the wrapped operation through a generated handler
-            // method on GameRenderer rather than preserving the private helper name.
-            if (className.equals("net.minecraft.client.renderer.GameRenderer")
-                    && methodName.contains("handler$")
-                    && stackContainsMountedShipHelper(stack)) {
-                return true;
-            }
-        }
-
-        maybeLogPoseStackProbe(stack);
-        return false;
+        return IN_VS_MOUNTED_CAMERA_WRAPPER.get();
     }
 
     public static void poseRotationSkipped(Quaternionf quaternion) {
@@ -91,6 +75,14 @@ public final class ScopeDebug {
             LOGGER.info("[VSAW_SCOPE] skipped VS mounted PoseStack rotation q=({}, {}, {}, {})",
                     fmt(quaternion.x), fmt(quaternion.y), fmt(quaternion.z), fmt(quaternion.w));
         }
+    }
+
+    public static void enterVsMountedCameraWrapper() {
+        IN_VS_MOUNTED_CAMERA_WRAPPER.set(Boolean.TRUE);
+    }
+
+    public static void exitVsMountedCameraWrapper() {
+        IN_VS_MOUNTED_CAMERA_WRAPPER.set(Boolean.FALSE);
     }
 
     private static float extractShipYaw(Object shipMountedTo) {
