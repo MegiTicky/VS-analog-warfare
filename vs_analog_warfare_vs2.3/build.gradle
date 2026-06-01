@@ -1,0 +1,158 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+version = mod_version
+group = mod_group_id
+
+base {
+    archivesName = mod_id
+}
+
+// VS2.3 legacy runtime stack. These local jars are used only for development
+// run configurations; they are not bundled into the VSAW jar.
+def vs23ReferenceModsDir = file(findProperty('vs23_reference_mods_dir') ?: '../../cbc_terminal_ballistics_parent/Reference mod VS2.3')
+def vs23ReferenceAliasDir = file('gradle/vs23-reference-aliases')
+def vs23OriginalValkyrienSkiesJar = new File(vs23ReferenceModsDir, 'valkyrienskies-120-2.3.0-beta.5tt16+f75b0eafe1 2.jar')
+def vs23AliasedValkyrienSkiesJar = new File(vs23ReferenceAliasDir, 'valkyrienskies-120-2.3.0-beta.5tt16+f75b0eafe1-2.jar')
+if (vs23OriginalValkyrienSkiesJar.exists() && !vs23AliasedValkyrienSkiesJar.exists()) {
+    vs23ReferenceAliasDir.mkdirs()
+    try {
+        java.nio.file.Files.createLink(vs23AliasedValkyrienSkiesJar.toPath(), vs23OriginalValkyrienSkiesJar.toPath())
+    } catch (Throwable ignored) {
+        java.nio.file.Files.copy(vs23OriginalValkyrienSkiesJar.toPath(), vs23AliasedValkyrienSkiesJar.toPath())
+    }
+}
+def vs23ReferenceMods = files({
+    vs23ReferenceModsDir.exists()
+            ? vs23ReferenceModsDir.listFiles({ File f -> f.name.endsWith('.jar') } as FileFilter)?.sort { it.name }
+            : []
+})
+def vs23RuntimeModCoordinates = [
+        'vs23.local:cbcmodernwarfare:0.0.6c+mc.1.20.1-forge',
+        'vs23.local:cbcmoreshells:0.2.2',
+        'vs23.local:copycats:2.2.2+mc.1.20.1-forge',
+        'vs23.local:create-1.20.1:0.5.1.j',
+        'vs23.local:createbigcannons:5.8.2tt3-dev+mc.1.20.1-forge',
+        'vs23.local:rha:1.1.4-1.20.1',
+        'vs23.local:s_a_b:1.4.3',
+        // The uploaded VS jar has a " 2" suffix in its file name. Split that
+        // suffix into the flatDir version so ForgeGradle can deobfuscate it.
+        'vs23.local:valkyrienskies-120-2.3.0-beta.5tt16+f75b0eafe1:2'
+]
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            args '--mixin.config', 'vs_analog_warfare.mixins.json'
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+        client {}
+        server { args '--nogui' }
+        data {
+            workingDirectory project.file('run-data')
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+sourceSets.main.java { srcDir 'src/stub/java' }
+
+repositories {
+    flatDir {
+        dirs vs23ReferenceModsDir, vs23ReferenceAliasDir
+    }
+    maven { url = "https://maven.tterrag.com/" }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    compileOnly fg.deobf('vs23.local:create-1.20.1:0.5.1.j')
+    compileOnly 'com.tterrag.registrate:Registrate:MC1.20-1.3.3'
+
+    vs23RuntimeModCoordinates.each { runtimeOnly fg.deobf(it) }
+    minecraftLibrary('org.jetbrains.kotlin:kotlin-stdlib:1.8.22') {
+        exclude group: 'org.jetbrains', module: 'annotations'
+    }
+    minecraftLibrary('org.jetbrains.kotlin:kotlin-reflect:1.8.22') {
+        exclude group: 'org.jetbrains', module: 'annotations'
+    }
+}
+
+tasks.register('printVs23ReferenceMods') {
+    group = 'help'
+    description = 'Prints the local VS2.3 reference jars used by runClient/runServer.'
+    doLast {
+        println "VS2.3 reference mod directory: ${vs23ReferenceModsDir}"
+        if (!vs23ReferenceModsDir.exists()) {
+            println '  (directory missing; set -Pvs23_reference_mods_dir=<path> to override)'
+            return
+        }
+        vs23ReferenceMods.files.each { println "  - ${it.name}" }
+    }
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
+            forge_version: forge_version, forge_version_range: forge_version_range,
+            loader_version_range: loader_version_range,
+            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
+            mod_authors: mod_authors, mod_description: mod_description,
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    exclude 'org/valkyrienskies/**'
+
+    manifest {
+        attributes([
+                'Specification-Title'     : mod_id,
+                'Specification-Vendor'    : mod_authors,
+                'Specification-Version'   : '1',
+                'Implementation-Title'    : project.name,
+                'Implementation-Version'  : project.jar.archiveVersion,
+                'Implementation-Vendor'   : mod_authors,
+                'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                'MixinConfigs'            : 'vs_analog_warfare.mixins.json'
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifact jar
+        }
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

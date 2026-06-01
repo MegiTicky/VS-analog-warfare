@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.lauya.vsanalogwarfare.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "client.CameraMixin",
+    "client.MouseHandlerMixin",
+    "client.PoseStackMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
