@@ -40,6 +40,12 @@ public final class ClientScopeState {
     private static float freeLookYaw;
     private static float freeLookPitch;
 
+    // Cache per-frame to avoid repeatedly scanning blocks / reflecting CBC on every getter call.
+    private static int cachedFrameId = Integer.MIN_VALUE;
+    private static float cachedPartialTick = Float.NaN;
+    private static CameraPose cachedSightPose = fallbackPose;
+    private static CameraPose cachedCameraPose = fallbackPose;
+
     private ClientScopeState() {
     }
 
@@ -88,38 +94,18 @@ public final class ClientScopeState {
     }
 
     public static CameraPose sightPose(float partialTick) {
-        return currentPose(partialTick);
+        ensureCached(partialTick);
+        return cachedSightPose;
     }
 
     public static CameraPose currentPose(float partialTick) {
-        if (!active) {
-            return fallbackPose;
-        }
-
-        Minecraft mc = Minecraft.getInstance();
-        Level level = mc.level;
-        if (level == null || scopePos == null || mountPos == null || !level.isLoaded(scopePos)) {
-            return fallbackPose;
-        }
-
-        BlockEntity blockEntity = level.getBlockEntity(scopePos);
-        if (!(blockEntity instanceof ScopeBlockEntity scope)) {
-            return fallbackPose;
-        }
-
-        try {
-            return new FixedCoaxScopeRig(scope, mountPos).getCameraPose(partialTick);
-        } catch (RuntimeException ignored) {
-            return fallbackPose;
-        }
+        ensureCached(partialTick);
+        return cachedSightPose;
     }
 
     public static CameraPose cameraPose(float partialTick) {
-        CameraPose sight = currentPose(partialTick);
-        if (!freeLookEnabled()) {
-            return sight;
-        }
-        return CameraPose.looking(sight.position(), directionFromYawPitch(freeLookYaw, freeLookPitch), new Vec3(0.0, 1.0, 0.0));
+        ensureCached(partialTick);
+        return cachedCameraPose;
     }
 
     public static Vec3 freeLookDirection() {
@@ -155,7 +141,7 @@ public final class ClientScopeState {
     }
 
     public static Vec3 cameraPosition() {
-        return currentPose(1.0f).position();
+        return cameraPosition(1.0f);
     }
 
     public static Vec3 cameraPosition(float partialTick) {
@@ -163,7 +149,7 @@ public final class ClientScopeState {
     }
 
     public static float yaw() {
-        return currentPose(1.0f).yaw();
+        return yaw(1.0f);
     }
 
     public static float yaw(float partialTick) {
@@ -171,7 +157,7 @@ public final class ClientScopeState {
     }
 
     public static float pitch() {
-        return currentPose(1.0f).pitch();
+        return pitch(1.0f);
     }
 
     public static float pitch(float partialTick) {
@@ -263,6 +249,9 @@ public final class ClientScopeState {
                     ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
                     : List.of();
         }
+
+        // Invalidate pose cache immediately (scope toggles, zoom changes, etc.).
+        cachedFrameId = Integer.MIN_VALUE;
     }
     private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
@@ -281,6 +270,57 @@ public final class ClientScopeState {
         float eased = t * t * (3.0f - 2.0f * t);
         visualFov = animationStartFov + (targetFov - animationStartFov) * eased;
         visualZoom = animationStartZoom + (targetZoom - animationStartZoom) * eased;
+    }
+
+    private static void ensureCached(float partialTick) {
+        if (!active) {
+            cachedSightPose = fallbackPose;
+            cachedCameraPose = fallbackPose;
+            cachedFrameId = Integer.MIN_VALUE;
+            cachedPartialTick = Float.NaN;
+            return;
+        }
+
+        // Cache keyed by a coarse time bucket. This keeps pose math to ~once per frame
+        // in practice without relying on version-specific Minecraft APIs.
+        Minecraft mc = Minecraft.getInstance();
+        int frameId = (int) (net.minecraft.Util.getMillis() / 8L);
+
+        if (frameId == cachedFrameId && Math.abs(partialTick - cachedPartialTick) < 1.0e-4f) {
+            return;
+        }
+        cachedFrameId = frameId;
+        cachedPartialTick = partialTick;
+
+        Level level = mc.level;
+        if (level == null || scopePos == null || mountPos == null || !level.isLoaded(scopePos)) {
+            cachedSightPose = fallbackPose;
+            cachedCameraPose = fallbackPose;
+            return;
+        }
+
+        BlockEntity blockEntity = level.getBlockEntity(scopePos);
+        if (!(blockEntity instanceof ScopeBlockEntity scope)) {
+            cachedSightPose = fallbackPose;
+            cachedCameraPose = fallbackPose;
+            return;
+        }
+
+        try {
+            cachedSightPose = new FixedCoaxScopeRig(scope, mountPos).getCameraPose(partialTick);
+        } catch (RuntimeException ignored) {
+            cachedSightPose = fallbackPose;
+        }
+
+        if (!freeLookEnabled()) {
+            cachedCameraPose = cachedSightPose;
+        } else {
+            cachedCameraPose = CameraPose.looking(
+                    cachedSightPose.position(),
+                    directionFromYawPitch(freeLookYaw, freeLookPitch),
+                    new Vec3(0.0, 1.0, 0.0)
+            );
+        }
     }
 
 }

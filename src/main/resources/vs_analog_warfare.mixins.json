@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_17",
   "client": [
     "client.CameraMixin",
+    "client.GameRendererMixin",
     "client.MouseHandlerMixin",
     "client.PoseStackMixin"
   ],
