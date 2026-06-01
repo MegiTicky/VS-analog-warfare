@@ -3,9 +3,16 @@
 build/
 run/
 out/
+run-data/
+
+# Generated helper jar created from the local VS2.3 reference mod folder.
+gradle/vs23-reference-aliases/
 
 *.class
 *.jar
 *.log
 
 Thumbs.db
+
+# Commit the Gradle wrapper jar (everything else *.jar stays ignored).
+!gradle/wrapper/gradle-wrapper.jar

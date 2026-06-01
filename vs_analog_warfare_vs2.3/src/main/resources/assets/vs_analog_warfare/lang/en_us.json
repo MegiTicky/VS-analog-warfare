@@ -1,8 +1,0 @@
-{
-    "block.vs_analog_warfare.scope_block": "Analog Cannon Scope",
-    "block.vs_analog_warfare.mouse_aim_block": "Mouse Aim Controller",
-    "entity.vs_analog_warfare.scope_camera": "Scope Camera",
-    "key.categories.vs_analog_warfare": "VS Analog Warfare",
-    "key.vs_analog_warfare.scope_zoom": "Toggle Scope Zoom",
-    "key.vs_analog_warfare.scope_freelook": "Toggle Scope Free Look"
-}

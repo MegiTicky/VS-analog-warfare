@@ -1,8 +1,0 @@
-{
-  "variants": {
-    "facing=north": { "model": "vs_analog_warfare:block/scope_block", "y": 180 },
-    "facing=south": { "model": "vs_analog_warfare:block/scope_block" },
-    "facing=west":  { "model": "vs_analog_warfare:block/scope_block", "y": 90 },
-    "facing=east":  { "model": "vs_analog_warfare:block/scope_block", "y": 270 }
-  }
-}
