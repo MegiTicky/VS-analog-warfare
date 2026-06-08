@@ -99,7 +99,7 @@ public final class ModNetwork {
                 ServerPlayer player = context.getSender();
                 if (player == null) return;
 
-                double closestDistance = 2000.0; // Max Range
+                double closestDistance = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance(); // Max Range
                 boolean hitShip = false;
 
                 // Safely iterate ships via reflection
@@ -181,6 +181,8 @@ public final class ModNetwork {
                         ClientScopeState.setRangefinderDistance(packet.shipDistance);
                     }
                 }
+
+                ClientScopeState.decrementRangefinderTasks();
             });
             context.setPacketHandled(true);
         }

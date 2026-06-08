@@ -385,14 +385,13 @@ public final class ClientScopeState {
         CameraPose pose = cameraPose(1.0f);
         Vec3 cameraPos = pose.position();
         Vec3 direction = pose.direction();
-        double maxRange = 2000.0;
+        double maxRange = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
 
-        // Offset raycast start to prevent hitting our own scope glass
         double offset = 1.5;
         Vec3 start = cameraPos.add(direction.scale(offset));
         Vec3 end = cameraPos.add(direction.scale(maxRange));
 
-        // --- 1. VANILLA TERRAIN RAYCAST (Instant/Sync) ---
+        // --- 1. VANILLA TERRAIN RAYCAST ---
         net.minecraft.world.level.ClipContext context = new net.minecraft.world.level.ClipContext(
                 start, end, net.minecraft.world.level.ClipContext.Block.COLLIDER,
                 net.minecraft.world.level.ClipContext.Fluid.NONE, mc.player);
@@ -402,35 +401,49 @@ public final class ClientScopeState {
                 ? cameraPos.distanceTo(hitResult.getLocation())
                 : -1.0;
 
-        // Immediately set distance (UI will see vanilla hit, or start waiting)
         rangefinderDistance = vanillaDistance;
         rangefinderTimestamp = net.minecraft.Util.getMillis();
+        rangefinderTasksPending = 2; // We are waiting on 2 tasks: DH and Server Ship
 
-        // --- 2. DISTANT HORIZONS RAYCAST (Async Background Thread) ---
+        // --- 2. DISTANT HORIZONS RAYCAST ---
         if (vanillaDistance < 0) {
-            // Push the heavy DH math to a background worker so the game never freezes
             java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                 return com.erika.vsanalogwarfare.scope.compat.DhCompat
                         .getDistantHorizonsRaycastDistance(start, direction, maxRange);
             }).thenAccept(dhDist -> {
-                if (dhDist > 0) {
-                    double finalDhDist = dhDist + offset;
-
-                    // Ignore DH ghost blocks that spawn right in your face
-                    if (finalDhDist >= 32.0) {
-                        // Safely push the result back to the main rendering thread
-                        mc.execute(() -> {
+                mc.execute(() -> {
+                    if (dhDist > 0) {
+                        double finalDhDist = dhDist + offset;
+                        if (finalDhDist >= 32.0) {
                             double current = rangefinderDistance;
                             if (current < 0 || finalDhDist < current) {
                                 rangefinderDistance = finalDhDist;
                             }
-                        });
+                        }
                     }
-                }
+                    decrementRangefinderTasks(); // Mark DH task as completed
+                });
             });
+        } else {
+            // Vanilla already hit, but we still need to mark the DH task as "done" since we skipped it
+            decrementRangefinderTasks();
         }
 
-        // --- 3. VS2 SERVER SHIP RAYCAST (Async via Network Packet) ---
+        // --- 3. VS2 SERVER SHIP RAYCAST ---
         ModNetwork.sendToServer(new ModNetwork.RangefinderRequestPacket(cameraPos, direction));
+    }
+
+    private static int rangefinderTasksPending = 0;
+
+    public static void decrementRangefinderTasks() {
+        if (rangefinderTasksPending > 0) {
+            rangefinderTasksPending--;
+
+            // If both background tasks finished and we STILL hit nothing, fast-forward the UI timer!
+            if (rangefinderTasksPending == 0 && rangefinderDistance < 0) {
+                // Safely force the timer exactly 3 seconds into the past to trigger the result phase instantly
+                rangefinderTimestamp = net.minecraft.Util.getMillis() - 3000L;
+            }
+        }
     }
 }

@@ -8,9 +8,11 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.IntValue MOUSE_AIM_PACKET_INTERVAL_TICKS;
     public static final ForgeConfigSpec.IntValue MOUSE_AIM_TARGET_TIMEOUT_TICKS;
     public static final ForgeConfigSpec.DoubleValue MOUSE_AIM_RATE_MULTIPLIER;
+    public static final ForgeConfigSpec.DoubleValue MAX_RANGEFINDER_DISTANCE;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+
         builder.push("mouseAim");
         MOUSE_AIM_MIN_SPEED = builder
                 .comment("Minimum absolute Create RPM required for a mouse aim block to control an adjacent cannon mount.")
@@ -25,25 +27,24 @@ public final class CommonConfig {
                 .comment("Multiplier applied to Create angular speed to get cannon chase rate in degrees per tick.")
                 .defineInRange("mouseAimRateMultiplier", 0.125D, 0.0D, 10.0D);
         builder.pop();
+
+        builder.push("scope");
+        MAX_RANGEFINDER_DISTANCE = builder
+                .comment("Maximum distance in blocks for the rangefinder to scan. Applies to terrain and ships.")
+                .defineInRange("maxRangefinderDistance", 2000.0D, 10.0D, 10000.0D);
+        builder.pop();
+
         SPEC = builder.build();
     }
 
     private CommonConfig() {
     }
 
-    public static double mouseAimMinSpeed() {
-        return MOUSE_AIM_MIN_SPEED.get();
-    }
+    public static double mouseAimMinSpeed() { return MOUSE_AIM_MIN_SPEED.get(); }
+    public static int mouseAimPacketIntervalTicks() { return MOUSE_AIM_PACKET_INTERVAL_TICKS.get(); }
+    public static int mouseAimTargetTimeoutTicks() { return MOUSE_AIM_TARGET_TIMEOUT_TICKS.get(); }
+    public static double mouseAimRateMultiplier() { return MOUSE_AIM_RATE_MULTIPLIER.get(); }
 
-    public static int mouseAimPacketIntervalTicks() {
-        return MOUSE_AIM_PACKET_INTERVAL_TICKS.get();
-    }
-
-    public static int mouseAimTargetTimeoutTicks() {
-        return MOUSE_AIM_TARGET_TIMEOUT_TICKS.get();
-    }
-
-    public static double mouseAimRateMultiplier() {
-        return MOUSE_AIM_RATE_MULTIPLIER.get();
-    }
+    // Add the new getter
+    public static double maxRangefinderDistance() { return MAX_RANGEFINDER_DISTANCE.get(); }
 }
