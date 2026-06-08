@@ -53,6 +53,12 @@ public final class ModNetwork {
                 .consumerMainThread(MouseAimTargetPacket::handle)
                 .add();
 
+        CHANNEL.messageBuilder(AdjustMountPitchPacket.class, id++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(AdjustMountPitchPacket::encode)
+                .decoder(AdjustMountPitchPacket::decode)
+                .consumerMainThread(AdjustMountPitchPacket::handle)
+                .add();
+
         // Register Rangefinder Request (Client -> Server)
         CHANNEL.messageBuilder(RangefinderRequestPacket.class, id++, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(RangefinderRequestPacket::encode)

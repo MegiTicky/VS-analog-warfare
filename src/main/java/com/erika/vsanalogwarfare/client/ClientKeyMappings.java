@@ -26,6 +26,13 @@ public final class ClientKeyMappings {
             "key.categories.vs_analog_warfare"
     );
 
+    public static final KeyMapping SCOPE_ZEROING = new KeyMapping(
+            "key.vs_analog_warfare.scope_zeroing",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_CAPS_LOCK, // Defaults to Caps Lock
+            "key.categories.vs_analog_warfare"
+    );
+
     private ClientKeyMappings() {
     }
 }
