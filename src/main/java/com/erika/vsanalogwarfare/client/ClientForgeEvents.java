@@ -30,10 +30,6 @@ public final class ClientForgeEvents {
     private static boolean shiftWasDown;
     private static int mouseAimPacketCooldown;
 
-    // Temporary debug switch: disable VSAW-applied camera roll so we can see whether
-    // VS/other mods are already rolling the view and/or whether our roll math is wrong.
-    private static final boolean DEBUG_DISABLE_VSAW_ROLL = false;
-
     private ClientForgeEvents() {
     }
 
@@ -53,11 +49,7 @@ public final class ClientForgeEvents {
         CameraPose pose = ClientScopeState.cameraPose(partialTick);
         event.setYaw(pose.yaw());
         event.setPitch(pose.pitch());
-        if (DEBUG_DISABLE_VSAW_ROLL) {
-            event.setRoll(30.0f);
-        } else {
-            event.setRoll(ClientScopeState.roll(pose));
-        }
+        event.setRoll(ClientScopeState.roll(pose));
     }
 
     @SubscribeEvent
@@ -75,6 +67,9 @@ public final class ClientForgeEvents {
             while (ClientKeyMappings.SCOPE_FREE_LOOK.consumeClick()) {
                 // Drop queued key presses from outside scope.
             }
+            while (ClientKeyMappings.SCOPE_RANGEFINDER.consumeClick()) {
+                // Drop queued key presses from outside scope.
+            }
             return;
         }
         boolean shiftDown = mc.options.keyShift.isDown();
@@ -88,6 +83,9 @@ public final class ClientForgeEvents {
         }
         while (ClientKeyMappings.SCOPE_FREE_LOOK.consumeClick()) {
             ClientScopeState.toggleFreeLook();
+        }
+        while (ClientKeyMappings.SCOPE_RANGEFINDER.consumeClick()) {
+            ClientScopeState.triggerRangefinder();
         }
         sendMouseAimTargetIfNeeded();
     }
@@ -157,6 +155,8 @@ public final class ClientForgeEvents {
         drawBallisticMarks(graphics, mc, sightScopeX, sightScopeY, scopeW, scopeH);
         drawFreeLookTargetCircle(graphics, screenW, screenH);
 
+        drawRangefinderText(graphics, mc, sightScopeX, sightScopeY, scopeW, scopeH);
+
         // Disabled: per-frame debug overlay is expensive (Font rendering + formatting) and was a major hotspot in spark.
         // String debug = ScopeDebug.overlayLine(mc.gameRenderer.getMainCamera());
         // BallisticProfile profile = ClientScopeState.ballisticProfile();
@@ -179,6 +179,49 @@ public final class ClientForgeEvents {
         graphics.fill(cx - 1, cy + 4, cx + 2, cy + 6, color);
         graphics.fill(cx - 5, cy - 1, cx - 3, cy + 2, color);
         graphics.fill(cx + 4, cy - 1, cx + 6, cy + 2, color);
+    }
+
+    private static void drawRangefinderText(GuiGraphics graphics, Minecraft mc, double x, double y0, int w, int h) {
+        long timeSince = net.minecraft.Util.getMillis() - ClientScopeState.rangefinderTimestamp();
+
+        // Hide if not triggered, or after 7 seconds (3s calculation + 4s display)
+        if (ClientScopeState.rangefinderTimestamp() == 0L || timeSince > 7000) {
+            return;
+        }
+
+        // Position it slightly to the bottom right of the crosshair
+        int cx = (int) Math.round(x + w / 2.0);
+        int cy = (int) Math.round(y0 + h / 2.0);
+        int elementX = cx + 30;
+        int elementY = cy + 30;
+
+        // Bright green color
+        int color = 0xFF22FF22;
+
+        if (timeSince < 3000) {
+            // 1. MEASURING PHASE
+            // The 'false' at the end disables the text shadow for better performance
+            graphics.drawString(mc.font, "RNG: CALC", elementX, elementY, color, false);
+
+            // Draw a simple progress bar under the text
+            int barWidth = 53;
+            int barHeight = 2;
+            int progress = (int) ((timeSince / 3000.0f) * barWidth);
+            int barY = elementY + 10; // Positioned just under the text
+
+            // Draw background track (dark green)
+            graphics.fill(elementX, barY, elementX + barWidth, barY + barHeight, 0xFF114411);
+            // Draw active progress (bright green)
+            graphics.fill(elementX, barY, elementX + progress, barY + barHeight, color);
+
+        } else {
+            // 2. RESULT PHASE
+            double distance = ClientScopeState.rangefinderDistance();
+            String text = distance >= 0 ? String.format("RNG: %.0f", distance) : "RNG: ---";
+
+            // The 'false' at the end disables the text shadow for better performance
+            graphics.drawString(mc.font, text, elementX, elementY, color, false);
+        }
     }
 
     private static double[] projectedSightOffset(int scopeW, int scopeH, float partialTick) {
