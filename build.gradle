@@ -103,7 +103,7 @@ dependencies {
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
     compileOnly fg.deobf('vs23.local:create-1.20.1:0.5.1.j')
     compileOnly 'com.tterrag.registrate:Registrate:MC1.20-1.3.3'
-    compileOnly "maven.modrinth:DistantHorizonsApi:2.1.0"
+    compileOnly "maven.modrinth:DistantHorizonsApi:5.1.0"
 
     vs23RuntimeModCoordinates.each { runtimeOnly fg.deobf(it) }
     minecraftLibrary('org.jetbrains.kotlin:kotlin-stdlib:1.8.22') {
