@@ -72,8 +72,7 @@ dependencies {
     // The Modrinth-published DH API jar is a developer jar (no SRG/MCP mapping
     // variants exist on Modrinth), so resolve it directly through the Modrinth
     // maven declared in the repositories{} block above. fg.deobf(...) would
-    // try to fetch a non-existent 2.1.0_mapped_official_1.20.1 classifier.
-    compileOnly "maven.modrinth:DistantHorizonsApi:2.1.0"
+    compileOnly "maven.modrinth:DistantHorizonsApi:5.1.0"
 }
 
 tasks.named('processResources', ProcessResources).configure {
