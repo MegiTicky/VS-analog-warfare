@@ -45,6 +45,19 @@ repositories {
     maven { url = "https://maven.createmod.net" }
     maven { url = "https://maven.ithundxr.dev/mirror" }
     maven { url = "https://maven.tterrag.com/" }
+
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "Modrinth"
+                url = "https://api.modrinth.com/maven"
+            }
+        }
+        filter {
+            includeGroup "maven.modrinth"
+        }
+    }
+
     mavenCentral()
     mavenLocal()
 }
@@ -55,6 +68,12 @@ dependencies {
     compileOnly fg.deobf("net.createmod.ponder:Ponder-Forge-${minecraft_version}:${ponder_version}")
     compileOnly fg.deobf("dev.engine-room.flywheel:flywheel-forge-api-${minecraft_version}:${flywheel_version}")
     compileOnly fg.deobf("com.tterrag.registrate:Registrate:${registrate_version}")
+
+    // The Modrinth-published DH API jar is a developer jar (no SRG/MCP mapping
+    // variants exist on Modrinth), so resolve it directly through the Modrinth
+    // maven declared in the repositories{} block above. fg.deobf(...) would
+    // try to fetch a non-existent 2.1.0_mapped_official_1.20.1 classifier.
+    compileOnly "maven.modrinth:DistantHorizonsApi:2.1.0"
 }
 
 tasks.named('processResources', ProcessResources).configure {

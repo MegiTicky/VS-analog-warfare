@@ -22,5 +22,6 @@ public final class ClientModEvents {
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(ClientKeyMappings.SCOPE_ZOOM);
         event.register(ClientKeyMappings.SCOPE_FREE_LOOK);
+        event.register(ClientKeyMappings.SCOPE_RANGEFINDER); // Add this line
     }
 }

@@ -82,4 +82,35 @@ public final class BallisticSolver {
         }
         return velocity.add(0.0, profile.gravity(), 0.0);
     }
+
+    //for ship rangefinder
+    public static double intersectRayAABB(Vec3 start, Vec3 dir, double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
+        double tmin = (minX - start.x) / dir.x;
+        double tmax = (maxX - start.x) / dir.x;
+        if (tmin > tmax) { double temp = tmin; tmin = tmax; tmax = temp; }
+
+        double tymin = (minY - start.y) / dir.y;
+        double tymax = (maxY - start.y) / dir.y;
+        if (tymin > tymax) { double temp = tymin; tymin = tymax; tymax = temp; }
+
+        if ((tmin > tymax) || (tymin > tmax)) return -1.0;
+
+        if (tymin > tmin) tmin = tymin;
+        if (tymax < tmax) tmax = tymax;
+
+        double tzmin = (minZ - start.z) / dir.z;
+        double tzmax = (maxZ - start.z) / dir.z;
+        if (tzmin > tzmax) { double temp = tzmin; tzmin = tzmax; tzmax = temp; }
+
+        if ((tmin > tzmax) || (tzmin > tmax)) return -1.0;
+
+        if (tzmin > tmin) tmin = tzmin;
+        if (tzmax < tmax) tmax = tzmax;
+
+        // If tmax < 0, the box is behind the player
+        if (tmax < 0) return -1.0;
+
+        // If tmin < 0, the player is INSIDE the box
+        return tmin < 0 ? tmax : tmin;
+    }
 }
