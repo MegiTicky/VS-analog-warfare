@@ -110,18 +110,6 @@ public final class ClientForgeEvents {
     }
 
     @SubscribeEvent
-    public static void onInteractionKeyMappingTriggered(InputEvent.InteractionKeyMappingTriggered event) {
-        if (!ClientScopeState.active() || !ClientConfig.disablePlayerBlockInteractionWhileScoped()) {
-            return;
-        }
-        if (event.isAttack() || event.isUseItem()) {
-            event.setSwingHand(false);
-            event.setCanceled(true);
-        }
-    }
-
-
-    @SubscribeEvent
     public static void onRenderOverlayPre(RenderGuiOverlayEvent.Pre event) {
         if (ClientScopeState.active() && event.getOverlay().id().equals(VanillaGuiOverlay.CROSSHAIR.id())) {
             event.setCanceled(true);
@@ -184,43 +172,41 @@ public final class ClientForgeEvents {
     private static void drawRangefinderText(GuiGraphics graphics, Minecraft mc, double x, double y0, int w, int h) {
         long timeSince = net.minecraft.Util.getMillis() - ClientScopeState.rangefinderTimestamp();
 
-        // Hide if not triggered, or after 7 seconds (3s calculation + 4s display)
+        // Hide if not triggered, or after 7 seconds
         if (ClientScopeState.rangefinderTimestamp() == 0L || timeSince > 7000) {
             return;
         }
 
-        // Position it slightly to the bottom right of the crosshair
         int cx = (int) Math.round(x + w / 2.0);
         int cy = (int) Math.round(y0 + h / 2.0);
         int elementX = cx + 30;
         int elementY = cy + 30;
 
-        // Bright green color
-        int color = 0xFF22FF22;
-
         if (timeSince < 3000) {
             // 1. MEASURING PHASE
-            // The 'false' at the end disables the text shadow for better performance
+            int color = 0xFF22FF22;
             graphics.drawString(mc.font, "RNG: CALC", elementX, elementY, color, false);
 
-            // Draw a simple progress bar under the text
             int barWidth = 53;
             int barHeight = 2;
             int progress = (int) ((timeSince / 3000.0f) * barWidth);
-            int barY = elementY + 10; // Positioned just under the text
+            int barY = elementY + 10;
 
-            // Draw background track (dark green)
             graphics.fill(elementX, barY, elementX + barWidth, barY + barHeight, 0xFF114411);
-            // Draw active progress (bright green)
             graphics.fill(elementX, barY, elementX + progress, barY + barHeight, color);
 
         } else {
             // 2. RESULT PHASE
             double distance = ClientScopeState.rangefinderDistance();
-            String text = distance >= 0 ? String.format("RNG: %.0f", distance) : "RNG: ---";
-
-            // The 'false' at the end disables the text shadow for better performance
-            graphics.drawString(mc.font, text, elementX, elementY, color, false);
+            if (distance >= 0) {
+                // Success: Draw green distance
+                String text = String.format("RNG: %.0f", distance);
+                graphics.drawString(mc.font, text, elementX, elementY, 0xFF22FF22, false);
+            } else {
+                // Failure: Dynamically display the max range from the config!
+                int maxDisplay = (int) Math.round(com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance());
+                graphics.drawString(mc.font, "RNG: > " + maxDisplay, elementX, elementY, 0xFFFF2222, false);
+            }
         }
     }
 
@@ -371,6 +357,27 @@ public final class ClientForgeEvents {
             if (mark.distance() % 100 == 0) {
                 graphics.drawString(mc.font, Integer.toString(mark.distance()), ix + half + 4, y - 4, textColor, false);
             }
+        }
+    }
+
+    @SubscribeEvent
+    public static void onRightClickBlock(net.minecraftforge.event.entity.player.PlayerInteractEvent.RightClickBlock event) {
+        // If the player is scoped and the config is set to block interactions
+        if (event.getLevel().isClientSide && ClientScopeState.active() && com.erika.vsanalogwarfare.config.ClientConfig.disablePlayerBlockInteractionWhileScoped()) {
+
+            // DENY the block interaction (e.g., prevents opening doors, flipping levers, opening chests)
+            event.setUseBlock(net.minecraftforge.eventbus.api.Event.Result.DENY);
+
+            // ALLOW the item interaction (e.g., forces the Redstone Controller or food to be used instead)
+            event.setUseItem(net.minecraftforge.eventbus.api.Event.Result.ALLOW);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onLeftClickBlock(net.minecraftforge.event.entity.player.PlayerInteractEvent.LeftClickBlock event) {
+        // Prevent the player from mining/breaking blocks while scoped
+        if (event.getLevel().isClientSide && ClientScopeState.active() && com.erika.vsanalogwarfare.config.ClientConfig.disablePlayerBlockInteractionWhileScoped()) {
+            event.setCanceled(true);
         }
     }
 

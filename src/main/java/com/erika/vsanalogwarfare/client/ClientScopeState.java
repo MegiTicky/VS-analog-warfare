@@ -138,9 +138,11 @@ public final class ClientScopeState {
         return cachedCameraPose;
     }
 
+
     public static Vec3 freeLookDirection() {
         return directionFromYawPitch(freeLookYaw, freeLookPitch);
     }
+
 
     public static void toggleFreeLook() {
         if (!active) {
@@ -155,6 +157,7 @@ public final class ClientScopeState {
         }
     }
 
+
     public static void addFreeLookInput(double deltaYaw, double deltaPitch) {
         if (!freeLookEnabled()) {
             return;
@@ -163,6 +166,7 @@ public final class ClientScopeState {
         freeLookPitch = clamp((float) (freeLookPitch + deltaPitch), -89.9f, 89.9f);
     }
 
+
     public static Vec3 directionFromYawPitch(float yaw, float pitch) {
         double yawRad = Math.toRadians(yaw + 90.0f);
         double pitchRad = Math.toRadians(pitch);
@@ -170,58 +174,72 @@ public final class ClientScopeState {
         return new Vec3(Math.cos(yawRad) * horizontal, -Math.sin(pitchRad), Math.sin(yawRad) * horizontal).normalize();
     }
 
+
     public static Vec3 cameraPosition() {
         return cameraPosition(1.0f);
     }
+
 
     public static Vec3 cameraPosition(float partialTick) {
         return currentPose(partialTick).position();
     }
 
+
     public static float yaw() {
         return yaw(1.0f);
     }
+
 
     public static float yaw(float partialTick) {
         return currentPose(partialTick).yaw();
     }
 
+
     public static float pitch() {
         return pitch(1.0f);
     }
+
 
     public static float pitch(float partialTick) {
         return currentPose(partialTick).pitch();
     }
 
+
     public static float qx() {
         return currentPose(1.0f).qx();
     }
+
 
     public static float qy() {
         return currentPose(1.0f).qy();
     }
 
+
     public static float qz() {
         return currentPose(1.0f).qz();
     }
 
+
     public static float qw() {
         return currentPose(1.0f).qw();
     }
+
 
     public static Quaternionf quaternion(float partialTick) {
         CameraPose pose = cameraPose(partialTick);
         return new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize();
     }
 
+
     public static float roll() {
         return roll(1.0f);
     }
 
+
     public static float roll(float partialTick) {
         return roll(currentPose(partialTick));
     }
+
 
     public static float roll(CameraPose pose) {
         Quaternionf desired = new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize();
@@ -239,6 +257,7 @@ public final class ClientScopeState {
         float cos = uprightUp.dot(desiredUp);
         return (float) Math.toDegrees(Math.atan2(sin, cos));
     }
+
 
     public static void set(boolean active, float fov, int zoomMagnification, @Nullable BlockPos scopePos, @Nullable BlockPos mountPos,
                            double x, double y, double z, float yaw, float pitch,
@@ -279,10 +298,15 @@ public final class ClientScopeState {
                     ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
                     : List.of();
         }
+
+        // Invalidate pose cache immediately (scope toggles, zoom changes, etc.).
+        cachedFrameId = Integer.MIN_VALUE;
     }
+
     private static float clamp(float value, float min, float max) {
         return Math.max(min, Math.min(max, value));
     }
+
 
     private static float wrapDegrees(float value) {
         value %= 360.0f;
@@ -290,6 +314,7 @@ public final class ClientScopeState {
         if (value < -180.0f) value += 360.0f;
         return value;
     }
+
 
     private static void updateZoomAnimation() {
         long elapsed = Math.max(0L, net.minecraft.Util.getMillis() - zoomAnimationStartMillis);
@@ -360,14 +385,13 @@ public final class ClientScopeState {
         CameraPose pose = cameraPose(1.0f);
         Vec3 cameraPos = pose.position();
         Vec3 direction = pose.direction();
-        double maxRange = 2000.0;
+        double maxRange = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
 
-        // Offset raycast start to prevent hitting our own scope glass
         double offset = 1.5;
         Vec3 start = cameraPos.add(direction.scale(offset));
         Vec3 end = cameraPos.add(direction.scale(maxRange));
 
-        // --- 1. VANILLA TERRAIN RAYCAST (Instant/Sync) ---
+        // --- 1. VANILLA TERRAIN RAYCAST ---
         net.minecraft.world.level.ClipContext context = new net.minecraft.world.level.ClipContext(
                 start, end, net.minecraft.world.level.ClipContext.Block.COLLIDER,
                 net.minecraft.world.level.ClipContext.Fluid.NONE, mc.player);
@@ -377,35 +401,49 @@ public final class ClientScopeState {
                 ? cameraPos.distanceTo(hitResult.getLocation())
                 : -1.0;
 
-        // Immediately set distance (UI will see vanilla hit, or start waiting)
         rangefinderDistance = vanillaDistance;
         rangefinderTimestamp = net.minecraft.Util.getMillis();
+        rangefinderTasksPending = 2; // We are waiting on 2 tasks: DH and Server Ship
 
-        // --- 2. DISTANT HORIZONS RAYCAST (Async Background Thread) ---
+        // --- 2. DISTANT HORIZONS RAYCAST ---
         if (vanillaDistance < 0) {
-            // Push the heavy DH math to a background worker so the game never freezes
             java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                 return com.erika.vsanalogwarfare.scope.compat.DhCompat
                         .getDistantHorizonsRaycastDistance(start, direction, maxRange);
             }).thenAccept(dhDist -> {
-                if (dhDist > 0) {
-                    double finalDhDist = dhDist + offset;
-
-                    // Ignore DH ghost blocks that spawn right in your face
-                    if (finalDhDist >= 32.0) {
-                        // Safely push the result back to the main rendering thread
-                        mc.execute(() -> {
+                mc.execute(() -> {
+                    if (dhDist > 0) {
+                        double finalDhDist = dhDist + offset;
+                        if (finalDhDist >= 32.0) {
                             double current = rangefinderDistance;
                             if (current < 0 || finalDhDist < current) {
                                 rangefinderDistance = finalDhDist;
                             }
-                        });
+                        }
                     }
-                }
+                    decrementRangefinderTasks(); // Mark DH task as completed
+                });
             });
+        } else {
+            // Vanilla already hit, but we still need to mark the DH task as "done" since we skipped it
+            decrementRangefinderTasks();
         }
 
-        // --- 3. VS2 SERVER SHIP RAYCAST (Async via Network Packet) ---
+        // --- 3. VS2 SERVER SHIP RAYCAST ---
         ModNetwork.sendToServer(new ModNetwork.RangefinderRequestPacket(cameraPos, direction));
+    }
+
+    private static int rangefinderTasksPending = 0;
+
+    public static void decrementRangefinderTasks() {
+        if (rangefinderTasksPending > 0) {
+            rangefinderTasksPending--;
+
+            // If both background tasks finished and we STILL hit nothing, fast-forward the UI timer!
+            if (rangefinderTasksPending == 0 && rangefinderDistance < 0) {
+                // Safely force the timer exactly 3 seconds into the past to trigger the result phase instantly
+                rangefinderTimestamp = net.minecraft.Util.getMillis() - 3000L;
+            }
+        }
     }
 }
