@@ -105,7 +105,7 @@ public final class ClientForgeEvents {
         if (scopePos == null || mountPos == null) {
             return;
         }
-        Vec3 direction = ClientScopeState.freeLookDirection();
+        Vec3 direction = ClientScopeState.zeroedFreeLookDirection();
         ModNetwork.sendToServer(new MouseAimTargetPacket(scopePos, mountPos, direction.x, direction.y, direction.z));
     }
 
@@ -220,7 +220,18 @@ public final class ClientForgeEvents {
         Vec3 forward = camera.direction();
         Vec3 left = camera.left();
         Vec3 up = camera.up();
-        Vec3 sightDir = sight.direction();
+
+        // CHANGED: Correct the sight direction so the scope aperture tracks the zeroed crosshair,
+        // rather than flying off-screen to follow the raw elevated barrel!
+        double zeroPitch = ClientScopeState.getZeroPitch();
+        Vec3 sightDir;
+        if (zeroPitch > 0) {
+            // Apply the zeroing drop to the physical barrel's pitch to find the virtual zeroed aim point
+            sightDir = ClientScopeState.directionFromYawPitch(sight.yaw(), (float)(sight.pitch() + zeroPitch));
+        } else {
+            sightDir = sight.direction();
+        }
+
         double forwardDot = clamp(sightDir.dot(forward), -1.0, 1.0);
         double leftDot = sightDir.dot(left);
         double upDot = sightDir.dot(up);
@@ -278,7 +289,13 @@ public final class ClientForgeEvents {
 
     private static void blitZoomedScopeBase(GuiGraphics graphics, int screenW, int screenH, double x, double y, int w, int h) {
         float zoom = Math.max(3.0f, ClientScopeState.animatedZoom());
-        float scale = Math.max(1.0f, zoom / 3.0f);
+
+        // Base enlargement multiplier. You can tweak this number (e.g., 1.15f or 1.35f) to get the perfect size.
+        float baseEnlargement = 1.25f;
+
+        // Apply the enlargement to the base scale
+        float scale = Math.max(1.0f, zoom / 3.0f) * baseEnlargement;
+
         int drawW = Math.round(w * scale);
         int drawH = Math.round(h * scale);
         double drawX = x + w / 2.0 - drawW / 2.0;
@@ -339,12 +356,37 @@ public final class ClientForgeEvents {
         if (!profile.valid()) {
             return;
         }
+
         double pxPerDegree = h / Math.max(1.0, ClientScopeState.fov());
         double cx = x + w / 2.0;
-        double cy = y0 + h / 2.0;
+
+        // --- SIGHT ZEROING CALCULATIONS ---
+        int currentZeroDistance = ClientScopeState.sightZeroDistance();
+        double zeroOffsetPixels = 0.0;
+
+        if (currentZeroDistance > 0) {
+            // Fix: Use your existing solvePitch method from BallisticSolver
+            com.erika.vsanalogwarfare.scope.ballistics.ReticleMark zeroMark =
+                    com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
+                            profile,
+                            currentZeroDistance,
+                            com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG
+                    );
+
+            // If the solver found a valid trajectory for the zero distance, calculate the pixel shift
+            if (zeroMark != null) {
+                zeroOffsetPixels = zeroMark.pitchDegrees() * pxPerDegree;
+            }
+        }
+
+        // Apply the calculation: Shifting the center axis position UPWARD (- zeroOffsetPixels)
+        double cy = (y0 + h / 2.0) - zeroOffsetPixels;
+
         int markColor = 0xE0000000;
         int textColor = 0xD0101010;
         int thickness = Math.max(1, Math.round((h / 720.0f) * (ClientScopeState.animatedZoom() / 3.0f)));
+
+        // Draw the ballistic marks relative to our new zeroed center position
         for (ReticleMark mark : ClientScopeState.reticleMarks()) {
             int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
             if (y < y0 || y >= y0 + h) {
@@ -356,6 +398,51 @@ public final class ClientForgeEvents {
             graphics.fill(ix - half, y0Line, ix + half + 1, y0Line + thickness, markColor);
             if (mark.distance() % 100 == 0) {
                 graphics.drawString(mc.font, Integer.toString(mark.distance()), ix + half + 4, y - 4, textColor, false);
+            }
+        }
+
+        // Draw the current Zeroing setting text
+        String zeroText = String.format("ZRN: %dm", currentZeroDistance);
+        int textX = (int) Math.round(cx - 65);
+        int textY = (int) Math.round((y0 + h / 2.0) + 30);
+
+        graphics.drawString(mc.font, zeroText, textX, textY, 0xFF22FF22, false);
+    }
+
+    @SubscribeEvent
+    public static void onMouseScroll(net.minecraftforge.client.event.InputEvent.MouseScrollingEvent event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (ClientScopeState.active() && mc.player != null) {
+            if (ClientKeyMappings.SCOPE_ZEROING.isDown()) {
+                double scrollDelta = event.getScrollDelta();
+                if (scrollDelta != 0) {
+                    int currentZero = ClientScopeState.sightZeroDistance();
+                    int change = scrollDelta > 0 ? 50 : -50;
+                    int newZero = currentZero + change;
+
+                    double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
+                    newZero = Math.max(0, Math.min((int) maxDist, newZero));
+
+                    if (newZero != currentZero) {
+                        // Calculate how much the angle drops between the old distance and the new distance
+                        double oldPitch = ClientScopeState.getZeroPitch();
+                        ClientScopeState.setSightZeroDistance(newZero);
+                        double newPitch = ClientScopeState.getZeroPitch();
+
+                        float deltaPitch = (float) (newPitch - oldPitch);
+                        BlockPos mountPos = ClientScopeState.mountPos();
+
+                        // Tell the server to physically turn the elevation handwheel by that amount!
+                        if (mountPos != null && deltaPitch != 0) {
+                            com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
+                                    new com.erika.vsanalogwarfare.network.AdjustMountPitchPacket(mountPos, deltaPitch)
+                            );
+                        }
+
+                        mc.player.playSound(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK.get(), 0.3F, 1.5F);
+                    }
+                    event.setCanceled(true);
+                }
             }
         }
     }

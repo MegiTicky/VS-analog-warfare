@@ -200,4 +200,23 @@ public final class MouseAimController {
             return new AimAngles(wrapDegrees(yaw), pitch);
         }
     }
+
+    public static void adjustPitch(Level level, BlockPos mountPos, float deltaPitch) {
+        BlockEntity mount = level.getBlockEntity(mountPos);
+        if (!CbcCompat.isCannonMount(mount)) {
+            return;
+        }
+
+        // Read the current position of the mount
+        float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(0.0f);
+        float currentPitch = readFloat(mount, "getPitchOffset", 1.0f).orElse(0.0f);
+
+        // Add the delta and clamp it so the gun doesn't break its physical limits
+        float nextPitch = clampPitchToMount(mount, currentPitch + deltaPitch);
+
+        // Apply the new position
+        writeYawPitch(mount, currentYaw, nextPitch);
+        callNoArg(mount, "applyRotation");
+        callNoArg(mount, "sendData");
+    }
 }

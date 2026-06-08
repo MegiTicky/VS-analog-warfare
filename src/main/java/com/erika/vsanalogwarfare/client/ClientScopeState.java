@@ -267,6 +267,7 @@ public final class ClientScopeState {
         int newZoom = active ? zoomMagnification : 3;
         if (!active) {
             freeLookEnabled = false;
+            sightZeroDistance = 0; // <--- ADD THIS LINE HERE
         }
         if (!wasActive || !active) {
             ClientScopeState.targetFov = fov;
@@ -334,18 +335,16 @@ public final class ClientScopeState {
             return;
         }
 
-        // Cache keyed by a coarse time bucket. This keeps pose math to ~once per frame
-        // in practice without relying on version-specific Minecraft APIs.
         Minecraft mc = Minecraft.getInstance();
         int frameId = (int) (net.minecraft.Util.getMillis() / 8L);
-
         if (frameId == cachedFrameId && Math.abs(partialTick - cachedPartialTick) < 1.0e-4f) {
             return;
         }
+
         cachedFrameId = frameId;
         cachedPartialTick = partialTick;
-
         Level level = mc.level;
+
         if (level == null || scopePos == null || mountPos == null || !level.isLoaded(scopePos)) {
             cachedSightPose = fallbackPose;
             cachedCameraPose = fallbackPose;
@@ -366,8 +365,19 @@ public final class ClientScopeState {
         }
 
         if (!freeLookEnabled()) {
-            cachedCameraPose = cachedSightPose;
+            // FreeLook is OFF: Counter-rotate the camera down to match the gun elevating!
+            double zeroPitch = getZeroPitch();
+            if (zeroPitch > 0) {
+                cachedCameraPose = CameraPose.looking(
+                        cachedSightPose.position(),
+                        directionFromYawPitch(cachedSightPose.yaw(), (float)(cachedSightPose.pitch() + zeroPitch)),
+                        new Vec3(0.0, 1.0, 0.0)
+                );
+            } else {
+                cachedCameraPose = cachedSightPose;
+            }
         } else {
+            // FreeLook is ON
             cachedCameraPose = CameraPose.looking(
                     cachedSightPose.position(),
                     directionFromYawPitch(freeLookYaw, freeLookPitch),
@@ -445,5 +455,36 @@ public final class ClientScopeState {
                 rangefinderTimestamp = net.minecraft.Util.getMillis() - 3000L;
             }
         }
+    }
+
+    private static int sightZeroDistance = 0;
+
+    public static int sightZeroDistance() {
+        return sightZeroDistance;
+    }
+
+    public static void setSightZeroDistance(int dist) {
+        double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
+        sightZeroDistance = Math.max(0, Math.min((int) maxDist, dist));
+    }
+
+    public static double getZeroPitch() {
+        if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
+            com.erika.vsanalogwarfare.scope.ballistics.ReticleMark mark =
+                    com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
+                            ballisticProfile, sightZeroDistance,
+                            com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG
+                    );
+            if (mark != null) {
+                return mark.pitchDegrees();
+            }
+        }
+        return 0.0;
+    }
+
+    public static Vec3 zeroedFreeLookDirection() {
+        double zeroPitch = getZeroPitch();
+        // Force the physical cannon to aim HIGHER than the free-look camera
+        return directionFromYawPitch(freeLookYaw, (float)(freeLookPitch - zeroPitch));
     }
 }
