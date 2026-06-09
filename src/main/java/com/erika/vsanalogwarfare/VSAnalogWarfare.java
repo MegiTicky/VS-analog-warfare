@@ -18,6 +18,14 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 
+//just for debugging a modpack issue
+/*import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.BlockItem;
+import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+@Mod.EventBusSubscriber(modid = "vs_analog_warfare", bus = Mod.EventBusSubscriber.Bus.MOD)*/
+
 @Mod(VSAnalogWarfare.MOD_ID)
 public class VSAnalogWarfare {
     public static final String MOD_ID = "vs_analog_warfare";
@@ -34,4 +42,16 @@ public class VSAnalogWarfare {
         ModLoadingContext.get().registerConfig(ModConfig.Type.CLIENT, ClientConfig.SPEC);
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> ScopeDebug::logLoaded);
     }
+
+    /*@SubscribeEvent
+    public static void onCommonSetup(FMLCommonSetupEvent event) {
+        System.out.println("[DEBUG] Checking for null blocks in BlockItems...");
+        BuiltInRegistries.ITEM.forEach(item -> {
+            if (item instanceof BlockItem blockItem) {
+                if (blockItem.getBlock() == null) {
+                    System.err.println("[BAD BLOCKITEM FOUND]: " + BuiltInRegistries.ITEM.getKey(item));
+                }
+            }
+        });
+    }*/
 }

@@ -26,7 +26,7 @@ public final class BallisticSolver {
         double bestPitch = Double.NaN;
         double bestError = Double.POSITIVE_INFINITY;
         // Coarse + fine scan is stable for both low and high arcs; reticle uses the lowest valid arc.
-        for (double pitch = 0.0; pitch <= maxPitchDeg; pitch += 0.25) {
+        for (double pitch = 0.0; pitch <= maxPitchDeg; pitch += 0.5) {
             double err = rangeError(profile, targetDistance, pitch);
             if (err < bestError) {
                 bestError = err;
@@ -35,7 +35,7 @@ public final class BallisticSolver {
         }
         double start = Math.max(0.0, bestPitch - 0.35);
         double end = Math.min(maxPitchDeg, bestPitch + 0.35);
-        for (double pitch = start; pitch <= end; pitch += 0.01) {
+        for (double pitch = start; pitch <= end; pitch += 0.1) {
             double err = rangeError(profile, targetDistance, pitch);
             if (err < bestError) {
                 bestError = err;
