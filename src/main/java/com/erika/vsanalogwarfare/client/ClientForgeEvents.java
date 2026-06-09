@@ -10,7 +10,14 @@ import com.erika.vsanalogwarfare.network.ToggleScopeZoomPacket;
 import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfile;
 import com.erika.vsanalogwarfare.scope.ballistics.ReticleMark;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
+import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.blaze3d.vertex.BufferBuilder;
+import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+import com.mojang.blaze3d.vertex.Tesselator;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
@@ -23,6 +30,7 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.joml.Matrix4f;
 
 @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class ClientForgeEvents {
@@ -31,13 +39,6 @@ public final class ClientForgeEvents {
     private static int mouseAimPacketCooldown;
 
     private ClientForgeEvents() {
-    }
-
-    private static final String[] PRE_CACHED_RANGES = new String[201];
-    static {
-        for (int i = 0; i < PRE_CACHED_RANGES.length; i++) {
-            PRE_CACHED_RANGES[i] = String.valueOf(i * 100);
-        }
     }
 
     @SubscribeEvent
@@ -253,27 +254,56 @@ public final class ClientForgeEvents {
 
     private static void drawScopeApertureMask(GuiGraphics graphics, int screenW, int screenH, int scopeX, int scopeY, int scopeW, int scopeH) {
         int black = 0xFF000000;
-        int padding = 1; // pixels to shrink from each side
+        int padding = 1;
         int left = Math.max(0, scopeX + padding);
         int top = Math.max(0, scopeY + padding);
         int right = Math.min(screenW, scopeX + scopeW - padding);
         int bottom = Math.min(screenH, scopeY + scopeH - padding);
 
-        if (top > 0) {
-            graphics.fill(0, 0, screenW, top, black);
-        }
-        if (bottom < screenH) {
-            graphics.fill(0, bottom, screenW, screenH, black);
-        }
-        if (left > 0 && bottom > top) {
-            graphics.fill(0, top, left, bottom, black);
-        }
-        if (right < screenW && bottom > top) {
-            graphics.fill(right, top, screenW, bottom, black);
-        }
         if (left >= right || top >= bottom) {
             graphics.fill(0, 0, screenW, screenH, black);
+            return;
         }
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder buffer = tesselator.getBuilder();
+        RenderSystem.enableBlend();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+        Matrix4f matrix = graphics.pose().last().pose();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+
+        float a = 1.0f;
+
+        if (top > 0) {
+            buffer.vertex(matrix, 0, 0, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, 0, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        if (bottom < screenH) {
+            buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, 0, screenH, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, screenH, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        if (left > 0 && bottom > top) {
+            buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, left, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, left, top, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        if (right < screenW && bottom > top) {
+            buffer.vertex(matrix, right, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, right, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        tesselator.end();
     }
 
     private static void drawScopeBlackBars(GuiGraphics graphics, int screenW, int screenH, int scopeX, int scopeY, int scopeW, int scopeH) {
@@ -320,29 +350,57 @@ public final class ClientForgeEvents {
     }
 
     private static void fillBeyondScopeBase(GuiGraphics graphics, int screenW, int screenH, double x, double y, int w, int h) {
-        int black = 0xFF000000;
-        int padding = 1; // inward amount in pixels
+        int padding = 1;
 
         int left = Math.max(0, (int) Math.floor(x) + padding);
         int top = Math.max(0, (int) Math.floor(y) + padding);
         int right = Math.min(screenW, (int) Math.ceil(x + w) - padding);
         int bottom = Math.min(screenH, (int) Math.ceil(y + h) - padding);
 
-        if (top > 0) {
-            graphics.fill(0, 0, screenW, top, black);
-        }
-        if (bottom < screenH) {
-            graphics.fill(0, bottom, screenW, screenH, black);
-        }
-        if (left > 0 && bottom > top) {
-            graphics.fill(0, top, left, bottom, black);
-        }
-        if (right < screenW && bottom > top) {
-            graphics.fill(right, top, screenW, bottom, black);
-        }
         if (left >= right || top >= bottom) {
-            graphics.fill(0, 0, screenW, screenH, black);
+            graphics.fill(0, 0, screenW, screenH, 0xFF000000);
+            return;
         }
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder buffer = tesselator.getBuilder();
+        RenderSystem.enableBlend();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+        Matrix4f matrix = graphics.pose().last().pose();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+
+        float a = 1.0f;
+
+        if (top > 0) {
+            buffer.vertex(matrix, 0, 0, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, 0, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        if (bottom < screenH) {
+            buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, 0, screenH, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, screenH, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        if (left > 0 && bottom > top) {
+            buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, left, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, left, top, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        if (right < screenW && bottom > top) {
+            buffer.vertex(matrix, right, top, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, right, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
+            buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
+        }
+
+        tesselator.end();
     }
 
     private static int[] fitScopeRect(int screenW, int screenH) {
@@ -356,6 +414,14 @@ public final class ClientForgeEvents {
         int drawX = (screenW - drawW) / 2;
         int drawY = (screenH - drawH) / 2;
         return new int[]{drawX, drawY, drawW, drawH};
+    }
+
+    // Pre-cached strings remain here at the top!
+    private static final String[] PRE_CACHED_RANGES = new String[201];
+    static {
+        for (int i = 0; i < PRE_CACHED_RANGES.length; i++) {
+            PRE_CACHED_RANGES[i] = String.valueOf(i * 100);
+        }
     }
 
     private static void drawBallisticMarks(GuiGraphics graphics, Minecraft mc, double x, double y0, int w, int h) {
@@ -374,9 +440,23 @@ public final class ClientForgeEvents {
         int markColor = 0xE0000000;
         int textColor = 0xD0101010;
         int thickness = Math.max(1, Math.round((h / 720.0f) * (ClientScopeState.animatedZoom() / 3.0f)));
+        java.util.List<ReticleMark> marks = ClientScopeState.reticleMarks();
+
+        float a = ((markColor >> 24) & 0xFF) / 255.0f;
+        float r = ((markColor >> 16) & 0xFF) / 255.0f;
+        float g = ((markColor >> 8) & 0xFF) / 255.0f;
+        float b = (markColor & 0xFF) / 255.0f;
+
+        Tesselator tesselator = Tesselator.getInstance();
+        BufferBuilder buffer = tesselator.getBuilder();
+        RenderSystem.enableBlend();
+        RenderSystem.setShader(GameRenderer::getPositionColorShader);
+
+        Matrix4f matrix = graphics.pose().last().pose();
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
 
         int lastLineY = -999;
-        for (ReticleMark mark : ClientScopeState.reticleMarks()) {
+        for (ReticleMark mark : marks) {
             int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
 
             if (y < y0 || y >= y0 + h) continue;
@@ -389,12 +469,19 @@ public final class ClientForgeEvents {
             int half = mark.distance() % 500 == 0 ? 6 : 4;
             int y0Line = y - thickness / 2;
             int ix = (int) Math.round(cx);
+            int y1Line = y0Line + thickness;
 
-            graphics.fill(ix - half, y0Line, ix + half + 1, y0Line + thickness, markColor);
+            buffer.vertex(matrix, ix - half, y0Line, 0).color(r, g, b, a).endVertex();
+            buffer.vertex(matrix, ix - half, y1Line, 0).color(r, g, b, a).endVertex();
+            buffer.vertex(matrix, ix + half + 1, y1Line, 0).color(r, g, b, a).endVertex();
+            buffer.vertex(matrix, ix + half + 1, y0Line, 0).color(r, g, b, a).endVertex();
         }
 
+        tesselator.end();
+
+        net.minecraft.client.gui.Font font = mc.font;
         int lastTextY = -999;
-        for (ReticleMark mark : ClientScopeState.reticleMarks()) {
+        for (ReticleMark mark : marks) {
             if (mark.distance() % 100 != 0) continue;
 
             int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
@@ -413,13 +500,13 @@ public final class ClientForgeEvents {
             int half = mark.distance() % 500 == 0 ? 6 : 4;
             int ix = (int) Math.round(cx);
 
-            graphics.drawString(mc.font, textToDraw, ix + half + 4, y - 4, textColor, false);
+            graphics.drawString(font, textToDraw, ix + half + 4, y - 4, textColor, false);
         }
 
         String zeroText = "ZRN: " + currentZeroDistance + "m";
         int textX = (int) Math.round(cx - 65);
         int textY = (int) Math.round((y0 + h / 2.0) + 30);
-        graphics.drawString(mc.font, zeroText, textX, textY, 0xFF22FF22, false);
+        graphics.drawString(font, zeroText, textX, textY, 0xFF22FF22, false);
     }
 
     @SubscribeEvent
