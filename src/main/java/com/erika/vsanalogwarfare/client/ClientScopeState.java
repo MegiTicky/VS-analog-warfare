@@ -298,13 +298,19 @@ public final class ClientScopeState {
         ClientScopeState.mountPos = mountPos;
         ClientScopeState.fallbackPose = new CameraPose(new Vec3(x, y, z), yaw, pitch, qx, qy, qz, qw);
 
+        // Correctly initialize newProfile and check for updates
         BallisticProfile newProfile = active && profile != null ? profile : BallisticProfile.EMPTY;
         if (!newProfile.equals(ClientScopeState.ballisticProfile)) {
             ClientScopeState.ballisticProfile = newProfile;
             zeroPitchDirty = true;
+            ReticleCache.markDirty();
             ClientScopeState.reticleMarks = newProfile.valid()
                     ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
                     : List.of();
+        }
+
+        if (!active) {
+            ReticleCache.cleanup();
         }
 
         // Invalidate pose cache immediately (scope toggles, zoom changes, etc.).
@@ -346,7 +352,6 @@ public final class ClientScopeState {
         if (Float.compare(partialTick, cachedPartialTick) == 0) {
             return;
         }
-
         cachedPartialTick = partialTick;
 
         Level level = mc.level;
@@ -474,7 +479,7 @@ public final class ClientScopeState {
         int newDist = Math.max(0, Math.min((int) maxDist, dist));
         if (sightZeroDistance != newDist) {
             sightZeroDistance = newDist;
-            zeroPitchDirty = true;
+            zeroPitchDirty = true; // Mark for recalculation
         }
     }
 
