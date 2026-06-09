@@ -15,6 +15,7 @@ import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
+import com.mojang.blaze3d.vertex.VertexSorting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.GameRenderer;
@@ -435,74 +436,64 @@ public final class ClientForgeEvents {
 
         int currentZeroDistance = ClientScopeState.sightZeroDistance();
         double zeroOffsetPixels = ClientScopeState.getZeroPitch() * pxPerDegree;
-        double cy = (y0 + h / 2.0) - zeroOffsetPixels;
 
-        int markColor = 0xE0000000;
-        int textColor = 0xD0101010;
-        int thickness = Math.max(1, Math.round((h / 720.0f) * (ClientScopeState.animatedZoom() / 3.0f)));
         java.util.List<ReticleMark> marks = ClientScopeState.reticleMarks();
 
-        float a = ((markColor >> 24) & 0xFF) / 255.0f;
-        float r = ((markColor >> 16) & 0xFF) / 255.0f;
-        float g = ((markColor >> 8) & 0xFF) / 255.0f;
-        float b = (markColor & 0xFF) / 255.0f;
+        ReticleCache.rebuildIfNeeded(h, ClientScopeState.fov(), profile, marks);
 
+        com.mojang.blaze3d.pipeline.TextureTarget reticleTarget = ReticleCache.getReticleTarget();
+        if (reticleTarget == null) {
+            return;
+        }
+
+        int textureWidth = ReticleCache.getTextureWidth();
+        int textureHeight = ReticleCache.getTextureHeight();
+        double textureCy = textureHeight / 2.0;
+
+        double zeroPitch = ClientScopeState.getZeroPitch();
+        double textureZeroOffset = zeroPitch * (ReticleCache.getCachedPxPerDegree());
+
+        double sourceY = textureCy - textureZeroOffset - h / 2.0;
+
+        graphics.pose().pushPose();
+
+        graphics.pose().translate(x, y0, 0);
+
+        RenderSystem.enableBlend();
+        RenderSystem.blendFuncSeparate(
+            com.mojang.blaze3d.platform.GlStateManager.SourceFactor.SRC_ALPHA,
+            com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
+            com.mojang.blaze3d.platform.GlStateManager.SourceFactor.ONE,
+            com.mojang.blaze3d.platform.GlStateManager.DestFactor.ZERO
+        );
+
+        RenderSystem.setShaderTexture(0, reticleTarget.getColorTextureId());
+        RenderSystem.setShader(GameRenderer::getPositionTexShader);
+
+        Matrix4f matrix = graphics.pose().last().pose();
         Tesselator tesselator = Tesselator.getInstance();
         BufferBuilder buffer = tesselator.getBuilder();
-        RenderSystem.enableBlend();
-        RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        
-        Matrix4f matrix = graphics.pose().last().pose();
-        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-        
-        int lastLineY = -999;
-        for (ReticleMark mark : marks) {
-            int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
 
-            if (y < y0 || y >= y0 + h) continue;
+        buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_TEX);
 
-            if (mark.distance() % 500 != 0 && Math.abs(y - lastLineY) < 4) {
-                continue;
-            }
-            lastLineY = y;
+        float u0 = 0.0f;
+        float u1 = 1.0f;
+        float v0 = (float)((sourceY + h) / textureHeight);
+        float v1 = (float)(sourceY / textureHeight);
 
-            int half = mark.distance() % 500 == 0 ? 6 : 4;
-            int y0Line = y - thickness / 2;
-            int ix = (int) Math.round(cx);
-            int y1Line = y0Line + thickness;
+        double markX = w / 2.0;
+        buffer.vertex(matrix, (float)(markX - textureWidth/2.0), 0, 0).uv(u0, v0).endVertex();
+        buffer.vertex(matrix, (float)(markX - textureWidth/2.0), h, 0).uv(u0, v1).endVertex();
+        buffer.vertex(matrix, (float)(markX + textureWidth/2.0), h, 0).uv(u1, v1).endVertex();
+        buffer.vertex(matrix, (float)(markX + textureWidth/2.0), 0, 0).uv(u1, v0).endVertex();
 
-            buffer.vertex(matrix, ix - half, y0Line, 0).color(r, g, b, a).endVertex();
-            buffer.vertex(matrix, ix - half, y1Line, 0).color(r, g, b, a).endVertex();
-            buffer.vertex(matrix, ix + half + 1, y1Line, 0).color(r, g, b, a).endVertex();
-            buffer.vertex(matrix, ix + half + 1, y0Line, 0).color(r, g, b, a).endVertex();
-        }
-        
         tesselator.end();
 
+        RenderSystem.disableBlend();
+
+        graphics.pose().popPose();
+
         net.minecraft.client.gui.Font font = mc.font;
-        int lastTextY = -999;
-        for (ReticleMark mark : marks) {
-            if (mark.distance() % 100 != 0) continue;
-
-            int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
-            if (y < y0 || y >= y0 + h) continue;
-
-            if (mark.distance() % 500 != 0 && Math.abs(y - lastTextY) < 9) {
-                continue;
-            }
-            lastTextY = y;
-
-            int cacheIdx = mark.distance() / 100;
-            String textToDraw = (cacheIdx >= 0 && cacheIdx < PRE_CACHED_RANGES.length)
-                    ? PRE_CACHED_RANGES[cacheIdx]
-                    : String.valueOf(mark.distance());
-
-            int half = mark.distance() % 500 == 0 ? 6 : 4;
-            int ix = (int) Math.round(cx);
-
-            graphics.drawString(font, textToDraw, ix + half + 4, y - 4, textColor, false);
-        }
-
         String zeroText = "ZRN: " + currentZeroDistance + "m";
         int textX = (int) Math.round(cx - 65);
         int textY = (int) Math.round((y0 + h / 2.0) + 30);

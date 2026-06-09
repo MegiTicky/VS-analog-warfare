@@ -302,10 +302,15 @@ public final class ClientScopeState {
         BallisticProfile newProfile = active && profile != null ? profile : BallisticProfile.EMPTY;
         if (!newProfile.equals(ClientScopeState.ballisticProfile)) {
             ClientScopeState.ballisticProfile = newProfile;
-            zeroPitchDirty = true; // Recalculate zeroing for new ammo
+            zeroPitchDirty = true;
+            ReticleCache.markDirty();
             ClientScopeState.reticleMarks = newProfile.valid()
                     ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
                     : List.of();
+        }
+
+        if (!active) {
+            ReticleCache.cleanup();
         }
 
         // Invalidate pose cache immediately (scope toggles, zoom changes, etc.).
