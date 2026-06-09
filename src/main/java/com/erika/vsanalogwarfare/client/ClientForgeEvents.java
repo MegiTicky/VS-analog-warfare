@@ -33,6 +33,13 @@ public final class ClientForgeEvents {
     private ClientForgeEvents() {
     }
 
+    private static final String[] PRE_CACHED_RANGES = new String[201];
+    static {
+        for (int i = 0; i < PRE_CACHED_RANGES.length; i++) {
+            PRE_CACHED_RANGES[i] = String.valueOf(i * 100);
+        }
+    }
+
     @SubscribeEvent
     public static void onComputeFov(ViewportEvent.ComputeFov event) {
         if (ClientScopeState.active()) {
@@ -200,7 +207,7 @@ public final class ClientForgeEvents {
             double distance = ClientScopeState.rangefinderDistance();
             if (distance >= 0) {
                 // Success: Draw green distance
-                String text = String.format("RNG: %.0f", distance);
+                String text = "RNG: " + Math.round(distance);
                 graphics.drawString(mc.font, text, elementX, elementY, 0xFF22FF22, false);
             } else {
                 // Failure: Dynamically display the max range from the config!
@@ -360,52 +367,58 @@ public final class ClientForgeEvents {
         double pxPerDegree = h / Math.max(1.0, ClientScopeState.fov());
         double cx = x + w / 2.0;
 
-        // --- SIGHT ZEROING CALCULATIONS ---
         int currentZeroDistance = ClientScopeState.sightZeroDistance();
-        double zeroOffsetPixels = 0.0;
-
-        if (currentZeroDistance > 0) {
-            // Fix: Use your existing solvePitch method from BallisticSolver
-            com.erika.vsanalogwarfare.scope.ballistics.ReticleMark zeroMark =
-                    com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
-                            profile,
-                            currentZeroDistance,
-                            com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG
-                    );
-
-            // If the solver found a valid trajectory for the zero distance, calculate the pixel shift
-            if (zeroMark != null) {
-                zeroOffsetPixels = zeroMark.pitchDegrees() * pxPerDegree;
-            }
-        }
-
-        // Apply the calculation: Shifting the center axis position UPWARD (- zeroOffsetPixels)
+        double zeroOffsetPixels = ClientScopeState.getZeroPitch() * pxPerDegree;
         double cy = (y0 + h / 2.0) - zeroOffsetPixels;
 
         int markColor = 0xE0000000;
         int textColor = 0xD0101010;
         int thickness = Math.max(1, Math.round((h / 720.0f) * (ClientScopeState.animatedZoom() / 3.0f)));
 
-        // Draw the ballistic marks relative to our new zeroed center position
+        int lastLineY = -999;
         for (ReticleMark mark : ClientScopeState.reticleMarks()) {
             int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
-            if (y < y0 || y >= y0 + h) {
+
+            if (y < y0 || y >= y0 + h) continue;
+
+            if (mark.distance() % 500 != 0 && Math.abs(y - lastLineY) < 4) {
                 continue;
             }
+            lastLineY = y;
+
             int half = mark.distance() % 500 == 0 ? 6 : 4;
             int y0Line = y - thickness / 2;
             int ix = (int) Math.round(cx);
+
             graphics.fill(ix - half, y0Line, ix + half + 1, y0Line + thickness, markColor);
-            if (mark.distance() % 100 == 0) {
-                graphics.drawString(mc.font, Integer.toString(mark.distance()), ix + half + 4, y - 4, textColor, false);
-            }
         }
 
-        // Draw the current Zeroing setting text
-        String zeroText = String.format("ZRN: %dm", currentZeroDistance);
+        int lastTextY = -999;
+        for (ReticleMark mark : ClientScopeState.reticleMarks()) {
+            if (mark.distance() % 100 != 0) continue;
+
+            int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
+            if (y < y0 || y >= y0 + h) continue;
+
+            if (mark.distance() % 500 != 0 && Math.abs(y - lastTextY) < 9) {
+                continue;
+            }
+            lastTextY = y;
+
+            int cacheIdx = mark.distance() / 100;
+            String textToDraw = (cacheIdx >= 0 && cacheIdx < PRE_CACHED_RANGES.length)
+                    ? PRE_CACHED_RANGES[cacheIdx]
+                    : String.valueOf(mark.distance());
+
+            int half = mark.distance() % 500 == 0 ? 6 : 4;
+            int ix = (int) Math.round(cx);
+
+            graphics.drawString(mc.font, textToDraw, ix + half + 4, y - 4, textColor, false);
+        }
+
+        String zeroText = "ZRN: " + currentZeroDistance + "m";
         int textX = (int) Math.round(cx - 65);
         int textY = (int) Math.round((y0 + h / 2.0) + 30);
-
         graphics.drawString(mc.font, zeroText, textX, textY, 0xFF22FF22, false);
     }
 

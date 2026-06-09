@@ -49,6 +49,9 @@ public final class ClientScopeState {
     private static CameraPose cachedSightPose = fallbackPose;
     private static CameraPose cachedCameraPose = fallbackPose;
 
+    private static double cachedZeroPitch = 0.0;
+    private static boolean zeroPitchDirty = true;
+
     // For rangefinder
     private static double rangefinderDistance = -1.0;
     private static long rangefinderTimestamp = 0L;
@@ -265,9 +268,10 @@ public final class ClientScopeState {
         boolean wasActive = ClientScopeState.active;
         ClientScopeState.active = active;
         int newZoom = active ? zoomMagnification : 3;
+
         if (!active) {
             freeLookEnabled = false;
-            sightZeroDistance = 0; // <--- ADD THIS LINE HERE
+            sightZeroDistance = 0;
         }
         if (!wasActive || !active) {
             ClientScopeState.targetFov = fov;
@@ -288,13 +292,16 @@ public final class ClientScopeState {
             ClientScopeState.targetFov = fov;
             ClientScopeState.targetZoom = newZoom;
         }
+
         ClientScopeState.zoomMagnification = newZoom;
         ClientScopeState.scopePos = scopePos;
         ClientScopeState.mountPos = mountPos;
         ClientScopeState.fallbackPose = new CameraPose(new Vec3(x, y, z), yaw, pitch, qx, qy, qz, qw);
+
         BallisticProfile newProfile = active && profile != null ? profile : BallisticProfile.EMPTY;
         if (!newProfile.equals(ClientScopeState.ballisticProfile)) {
             ClientScopeState.ballisticProfile = newProfile;
+            zeroPitchDirty = true;
             ClientScopeState.reticleMarks = newProfile.valid()
                     ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
                     : List.of();
@@ -336,13 +343,12 @@ public final class ClientScopeState {
         }
 
         Minecraft mc = Minecraft.getInstance();
-        int frameId = (int) (net.minecraft.Util.getMillis() / 8L);
-        if (frameId == cachedFrameId && Math.abs(partialTick - cachedPartialTick) < 1.0e-4f) {
+        if (Float.compare(partialTick, cachedPartialTick) == 0) {
             return;
         }
 
-        cachedFrameId = frameId;
         cachedPartialTick = partialTick;
+
         Level level = mc.level;
 
         if (level == null || scopePos == null || mountPos == null || !level.isLoaded(scopePos)) {
@@ -465,21 +471,28 @@ public final class ClientScopeState {
 
     public static void setSightZeroDistance(int dist) {
         double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
-        sightZeroDistance = Math.max(0, Math.min((int) maxDist, dist));
+        int newDist = Math.max(0, Math.min((int) maxDist, dist));
+        if (sightZeroDistance != newDist) {
+            sightZeroDistance = newDist;
+            zeroPitchDirty = true;
+        }
     }
 
     public static double getZeroPitch() {
-        if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
-            com.erika.vsanalogwarfare.scope.ballistics.ReticleMark mark =
-                    com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
-                            ballisticProfile, sightZeroDistance,
-                            com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG
-                    );
-            if (mark != null) {
-                return mark.pitchDegrees();
+        if (zeroPitchDirty) {
+            if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
+                com.erika.vsanalogwarfare.scope.ballistics.ReticleMark mark =
+                        com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
+                                ballisticProfile, sightZeroDistance,
+                                com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG
+                        );
+                cachedZeroPitch = mark != null ? mark.pitchDegrees() : 0.0;
+            } else {
+                cachedZeroPitch = 0.0;
             }
+            zeroPitchDirty = false;
         }
-        return 0.0;
+        return cachedZeroPitch;
     }
 
     public static Vec3 zeroedFreeLookDirection() {
