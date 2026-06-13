@@ -1,17 +1,21 @@
 package com.erika.vsanalogwarfare.scope.compat;
 
+import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
+import org.slf4j.Logger;
 
 import java.lang.reflect.Method;
 import java.util.Optional;
 
 public final class CbcCompat {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final String CANNON_MOUNT = "rbasamoyai.createbigcannons.cannon_control.cannon_mount.CannonMountBlockEntity";
     private static final String FIXED_CANNON_MOUNT = "rbasamoyai.createbigcannons.cannon_control.fixed_cannon_mount.FixedCannonMountBlockEntity";
+    private static long lastAimDirectionLogMs = 0;
 
     private CbcCompat() {
     }
@@ -59,17 +63,40 @@ public final class CbcCompat {
 
     public static Optional<Vec3> getAimDirection(Level level, BlockPos mountPos, Direction fallbackFacing, float partialTicks) {
         BlockEntity be = level.getBlockEntity(mountPos);
-        if (!isCannonMount(be)) {
-            return Optional.of(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
+        boolean isMount = isCannonMount(be);
+        
+        long now = System.currentTimeMillis();
+        if (now - lastAimDirectionLogMs >= 1000L) {
+            lastAimDirectionLogMs = now;
+            LOGGER.info("[VSAW_SCOPE] getAimDirection: mountPos={} isCannonMount={}", mountPos, isMount);
+        }
+        
+        if (!isMount) {
+            Vec3 fallback = Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize();
+            return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, fallback));
         }
 
         Vec3 byContraption = tryDirectionFromContraption(be, partialTicks).orElse(null);
+        if (now - lastAimDirectionLogMs >= 1000L) {
+            LOGGER.info("[VSAW_SCOPE] getAimDirection: byContraption={}", byContraption);
+        }
         if (byContraption != null) {
-            return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, byContraption));
+            Vec3 transformed = VsCompat.shipToWorldDirection(level, mountPos, byContraption);
+            if (now - lastAimDirectionLogMs >= 1000L) {
+                LOGGER.info("[VSAW_SCOPE] getAimDirection: byContraption after shipTransform={}", transformed);
+            }
+            return Optional.of(transformed);
         }
 
         Vec3 byMount = tryDirectionFromMountOffsets(be, partialTicks).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
-        return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, byMount));
+        if (now - lastAimDirectionLogMs >= 1000L) {
+            LOGGER.info("[VSAW_SCOPE] getAimDirection: byMount={} (before shipTransform)", byMount);
+        }
+        Vec3 result = VsCompat.shipToWorldDirection(level, mountPos, byMount);
+        if (now - lastAimDirectionLogMs >= 1000L) {
+            LOGGER.info("[VSAW_SCOPE] getAimDirection: byMount after shipTransform={}", result);
+        }
+        return Optional.of(result);
     }
 
     public static Optional<Vec3> getAimUpDirection(Level level, BlockPos mountPos, Direction fallbackFacing, Direction scopeUp, float partialTicks) {

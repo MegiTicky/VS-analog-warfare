@@ -388,11 +388,11 @@ public final class ClientScopeState {
                 cachedCameraPose = cachedSightPose;
             }
         } else {
-            // FreeLook is ON
+            // FreeLook is ON - use sight pose's up to preserve roll from ship orientation
             cachedCameraPose = CameraPose.looking(
                     cachedSightPose.position(),
                     directionFromYawPitch(freeLookYaw, freeLookPitch),
-                    new Vec3(0.0, 1.0, 0.0)
+                    cachedSightPose.up()
             );
         }
     }
