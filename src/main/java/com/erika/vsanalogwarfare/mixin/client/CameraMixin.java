@@ -2,8 +2,11 @@ package com.erika.vsanalogwarfare.mixin.client;
 
 import com.erika.vsanalogwarfare.client.ClientScopeState;
 import com.erika.vsanalogwarfare.client.ScopeDebug;
+import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
 import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.phys.Vec3;
@@ -16,17 +19,11 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 import org.valkyrienskies.core.api.ships.ClientShip;
 
 @Mixin(value = Camera.class, priority = 900)
 public abstract class CameraMixin {
-    /*
-     * Use SRG names directly and disable remapping. The CurseForge/Forge runtime in the
-     * crash log loads client-1.20.1-20230612.114412-srg.jar and this MVP project was not
-     * producing a refmap, so named shadows such as setPosition could not be found at
-     * startup. These are Camera#setPosition(Vec3), Camera#setRotation(float,float), and
-     * Camera#setup(...) in the 1.20.1 SRG namespace.
-     */
     @Shadow(remap = false)
     protected abstract void m_90581_(Vec3 position);
 
@@ -63,15 +60,6 @@ public abstract class CameraMixin {
         }
     }
 
-    /*
-     * Valkyrien Skies calls its own Camera#setupWithShipMounted(...) later during
-     * renderLevel for passengers seated on moving ships. That overwrites vanilla
-     * Camera#setup, which is why the scope appeared yaw-dependent/180-ish wrong
-     * only when used from a Create seat on a ship. Inject after that method too.
-     *
-     * This method is added to Camera by VS's mixin, so this mixin has lower priority
-     * and require=0 for safer startup behavior.
-     */
     @Inject(method = "setupWithShipMounted", at = @At("TAIL"), remap = false, require = 0)
     private void vs_analog_warfare$useVirtualScopeViewAfterVsMountedSetup(BlockGetter level, Entity renderViewEntity,
                                                                           boolean thirdPerson, boolean thirdPersonReverse,
@@ -95,8 +83,6 @@ public abstract class CameraMixin {
         Quaternionf scopeRotation = new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize();
         m_90581_(cameraPosition);
 
-        // Start from the vanilla yaw/pitch path to keep any vanilla side effects, then
-        // overwrite the quaternion and basis vectors with the rolled optic orientation.
         m_90572_(yaw, pitch);
         this.f_90558_ = yaw;
         this.f_90557_ = pitch;

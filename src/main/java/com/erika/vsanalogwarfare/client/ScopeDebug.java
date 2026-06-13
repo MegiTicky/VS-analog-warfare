@@ -3,7 +3,9 @@ package com.erika.vsanalogwarfare.client;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.Camera;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Quaterniondc;
 import org.joml.Quaternionf;
+import org.joml.Quaternionfc;
 import org.joml.Vector3f;
 import org.slf4j.Logger;
 
@@ -11,7 +13,7 @@ import java.util.Locale;
 
 public final class ScopeDebug {
     private static final Logger LOGGER = LogUtils.getLogger();
-    public static final String BUILD_MARKER = "scope-client-frame-debug-2026-05-22-a";
+    public static final String BUILD_MARKER = "scope-client-frame-debug-2026-06-13-vs-agnostic";
 
     private static final ThreadLocal<Boolean> IN_VS_MOUNTED_CAMERA_WRAPPER = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
@@ -20,6 +22,7 @@ public final class ScopeDebug {
     private static float lastCameraForwardYaw = Float.NaN;
     private static long lastClientLogMs;
     private static long lastPoseSkipLogMs;
+    private static long lastReapplyLogMs;
 
     private ScopeDebug() {
     }
@@ -84,6 +87,14 @@ public final class ScopeDebug {
         IN_VS_MOUNTED_CAMERA_WRAPPER.set(Boolean.FALSE);
     }
 
+    public static void logScopeReappliedAfterVs() {
+        long now = System.currentTimeMillis();
+        if (now - lastReapplyLogMs >= 1000L) {
+            lastReapplyLogMs = now;
+            LOGGER.info("[VSAW_SCOPE] re-applied scope pose after VS ship-mounted camera setup");
+        }
+    }
+
     private static float extractShipYaw(Object shipMountedTo) {
         try {
             Object renderTransform = shipMountedTo.getClass().getMethod("getRenderTransform").invoke(shipMountedTo);
@@ -91,14 +102,13 @@ public final class ScopeDebug {
             Quaternionf q = new Quaternionf();
             if (rotation instanceof Quaternionf qf) {
                 q.set(qf);
-            } else if (rotation instanceof org.joml.Quaternionfc qfc) {
+            } else if (rotation instanceof Quaternionfc qfc) {
                 q.set(qfc);
-            } else if (rotation instanceof org.joml.Quaterniondc qdc) {
+            } else if (rotation instanceof Quaterniondc qdc) {
                 q.set(qdc);
             } else {
                 return Float.NaN;
             }
-            // Ship local +X projected into world X/Z. This gives 0 when ship +X is world +X.
             Vector3f shipPlusX = q.transform(new Vector3f(1.0f, 0.0f, 0.0f));
             return yawFromVector(shipPlusX);
         } catch (ReflectiveOperationException | LinkageError ignored) {
@@ -117,5 +127,4 @@ public final class ScopeDebug {
     private static String fmt(Vec3 vec) {
         return String.format(Locale.ROOT, "%.2f,%.2f,%.2f", vec.x, vec.y, vec.z);
     }
-
 }

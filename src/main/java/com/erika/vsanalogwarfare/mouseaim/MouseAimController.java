@@ -58,7 +58,12 @@ public final class MouseAimController {
             return;
         }
 
-        Vec3 localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection);
+        Vec3 localTarget;
+        if (VsCompat.isPlayerMountedToShip()) {
+            localTarget = targetWorldDirection;
+        } else {
+            localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection);
+        }
         AimAngles desired = AimAngles.fromDirection(localTarget);
 
         float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(desired.yaw());
