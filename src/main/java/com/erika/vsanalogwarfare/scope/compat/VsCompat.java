@@ -1,19 +1,56 @@
 package com.erika.vsanalogwarfare.scope.compat;
 
+import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Vector3d;
+import org.slf4j.Logger;
 
 import java.lang.reflect.Method;
 import java.util.Optional;
 
 public final class VsCompat {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static Class<?> vsGameUtilsClass;
     private static Method getShipManagingPos;
     private static Method getShipObjectManagingPosClient;
+    private static Method getShipMountedToMethod;
+    private static boolean getShipMountedToInitialized = false;
+    private static long lastShipDirectionLogMs = 0;
 
     private VsCompat() {
+    }
+
+    public static boolean isPlayerMountedToShip() {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return false;
+        }
+        if (player.getVehicle() == null) {
+            return false;
+        }
+        try {
+            if (vsGameUtilsClass == null) {
+                vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
+            }
+            if (!getShipMountedToInitialized) {
+                getShipMountedToInitialized = true;
+                try {
+                    getShipMountedToMethod = vsGameUtilsClass.getMethod("getShipMountedTo", net.minecraft.world.entity.Entity.class);
+                } catch (NoSuchMethodException ignored) {
+                }
+            }
+            if (getShipMountedToMethod == null) {
+                return false;
+            }
+            Object result = getShipMountedToMethod.invoke(null, player);
+            return result != null;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return false;
+        }
     }
 
     public static Optional<Long> findShipId(Level level, BlockPos pos) {
@@ -41,6 +78,9 @@ public final class VsCompat {
     }
 
     public static Vec3 shipToWorldDirection(Level level, BlockPos anchorPos, Vec3 localDirection) {
+        if (isPlayerMountedToShip()) {
+            return localDirection.normalize();
+        }
         Object ship = findShip(level, anchorPos);
         if (ship == null) {
             return localDirection.normalize();
@@ -49,7 +89,17 @@ public final class VsCompat {
         if (transformed == null) {
             return localDirection.normalize();
         }
-        return new Vec3(transformed.x, transformed.y, transformed.z).normalize();
+        Vec3 result = new Vec3(transformed.x, transformed.y, transformed.z).normalize();
+        
+        long now = System.currentTimeMillis();
+        if (now - lastShipDirectionLogMs >= 1000L) {
+            lastShipDirectionLogMs = now;
+            LOGGER.info("[VSAW_SCOPE] shipToWorldDirection: local={} -> world={}", 
+                String.format("%.2f,%.2f,%.2f", localDirection.x, localDirection.y, localDirection.z),
+                String.format("%.2f,%.2f,%.2f", result.x, result.y, result.z));
+        }
+        
+        return result;
     }
 
     public static Vec3 worldToShipDirection(Level level, BlockPos anchorPos, Vec3 worldDirection) {
@@ -81,7 +131,12 @@ public final class VsCompat {
                                 BlockPos.class
                         );
                     }
-                    return getShipObjectManagingPosClient.invoke(null, level, pos);
+                    Object ship = getShipObjectManagingPosClient.invoke(null, level, pos);
+                    long now = System.currentTimeMillis();
+                    if (now - lastShipDirectionLogMs >= 1000L) {
+                        LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
+                    }
+                    return ship;
                 }
             } catch (ReflectiveOperationException | LinkageError ignored) {
                 // Fall back to the generic ship lookup below.
@@ -90,8 +145,17 @@ public final class VsCompat {
             if (getShipManagingPos == null) {
                 getShipManagingPos = vsGameUtilsClass.getMethod("getShipManagingPos", Level.class, BlockPos.class);
             }
-            return getShipManagingPos.invoke(null, level, pos);
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+            Object ship = getShipManagingPos.invoke(null, level, pos);
+            long now = System.currentTimeMillis();
+            if (now - lastShipDirectionLogMs >= 1000L) {
+                LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
+            }
+            return ship;
+        } catch (ReflectiveOperationException | LinkageError e) {
+            long now = System.currentTimeMillis();
+            if (now - lastShipDirectionLogMs >= 1000L) {
+                LOGGER.info("[VSAW_SCOPE] findShip(pos={}): exception {}", pos, e.getClass().getSimpleName());
+            }
             return null;
         }
     }
