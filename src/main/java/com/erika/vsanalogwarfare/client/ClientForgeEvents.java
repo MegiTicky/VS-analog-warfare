@@ -37,7 +37,6 @@ import org.joml.Matrix4f;
 @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class ClientForgeEvents {
     private static final ResourceLocation SCOPE_BASE = new ResourceLocation(VSAnalogWarfare.MOD_ID, "textures/misc/scope_base.png");
-    private static boolean shiftWasDown;
     private static int mouseAimPacketCooldown;
 
     private ClientForgeEvents() {
@@ -69,31 +68,33 @@ public final class ClientForgeEvents {
     }
 
     @SubscribeEvent
+    public static void onClientTickStart(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (ClientScopeState.active() && mc.options.keyShift.isDown()) {
+            ModNetwork.sendToServer(new StopScopePacket());
+            mc.options.keyShift.setDown(false);
+        }
+    }
+
+    @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
         if (!ClientScopeState.active()) {
-            shiftWasDown = mc.options.keyShift.isDown();
             mouseAimPacketCooldown = 0;
             while (ClientKeyMappings.SCOPE_ZOOM.consumeClick()) {
-                // Drop queued key presses from outside scope.
             }
             while (ClientKeyMappings.SCOPE_FREE_LOOK.consumeClick()) {
-                // Drop queued key presses from outside scope.
             }
             while (ClientKeyMappings.SCOPE_RANGEFINDER.consumeClick()) {
-                // Drop queued key presses from outside scope.
             }
             return;
         }
-        boolean shiftDown = mc.options.keyShift.isDown();
-        if (shiftDown && !shiftWasDown) {
-            ModNetwork.sendToServer(new StopScopePacket());
-        }
-        shiftWasDown = shiftDown;
-
         while (ClientKeyMappings.SCOPE_ZOOM.consumeClick()) {
             ModNetwork.sendToServer(new ToggleScopeZoomPacket());
         }
