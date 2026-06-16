@@ -1,12 +1,19 @@
 package com.erika.vsanalogwarfare.debug;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
-import com.erika.vsanalogwarfare.scope.ScopeSession;
-import com.erika.vsanalogwarfare.scope.ScopeSessionManager;
+import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
+import com.erika.vsanalogwarfare.scope.compat.VsCompat;
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
@@ -14,95 +21,256 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class AccuracyOverrideDebug {
-    private static boolean enabled = false;
+    private static final Map<CannonMod, Boolean> ENABLED_MODS = new ConcurrentHashMap<>();
     private static double searchRadius = 96.0;
+    private static boolean requireScope = true;
 
     private AccuracyOverrideDebug() {}
+
+    public static boolean isEnabled() {
+        return ENABLED_MODS.values().stream().anyMatch(Boolean::booleanValue);
+    }
+
+    public static boolean isEnabled(CannonMod mod) {
+        return ENABLED_MODS.getOrDefault(mod, false);
+    }
+
+    public static void setEnabled(CannonMod mod, boolean enabled) {
+        ENABLED_MODS.put(mod, enabled);
+    }
+
+    public static boolean requireScope() {
+        return requireScope;
+    }
+
+    public static void setRequireScope(boolean value) {
+        requireScope = value;
+    }
+
+    public static double searchRadius() {
+        return searchRadius;
+    }
 
     @SubscribeEvent
     public static void onRegisterCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("vsaw_accuracy_override")
                 .requires(source -> source.hasPermission(2))
-                .then(Commands.literal("enable").executes(ctx -> {
-                    enabled = true;
-                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
-                    return 1;
-                }))
-                .then(Commands.literal("disable").executes(ctx -> {
-                    enabled = false;
-                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
-                    return 1;
-                }))
-                .then(Commands.literal("status").executes(ctx -> {
-                    ctx.getSource().sendSuccess(() -> statusComponent(), false);
-                    return enabled ? 1 : 0;
-                }))
-                .then(Commands.literal("radius")
-                        .then(Commands.argument("blocks", DoubleArgumentType.doubleArg(1.0, 512.0)).executes(ctx -> {
-                            searchRadius = DoubleArgumentType.getDouble(ctx, "blocks");
-                            ctx.getSource().sendSuccess(() -> statusComponent(), true);
+                .then(Commands.literal("enable")
+                        .then(Commands.argument("mod", StringArgumentType.word())
+                                .suggests((ctx, builder) -> {
+                                    for (CannonMod mod : CannonMod.values()) {
+                                        builder.suggest(mod.name().toLowerCase(Locale.ROOT));
+                                    }
+                                    return builder.buildFuture();
+                                })
+                                .executes(ctx -> {
+                                    String modName = StringArgumentType.getString(ctx, "mod");
+                                    CannonMod mod = CannonMod.fromString(modName);
+                                    if (mod == null) {
+                                        ctx.getSource().sendFailure(Component.literal("Unknown mod: " + modName));
+                                        return 0;
+                                    }
+                                    setEnabled(mod, true);
+                                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
+                                    return 1;
+                                })))
+                .then(Commands.literal("disable")
+                        .then(Commands.argument("mod", StringArgumentType.word())
+                                .suggests((ctx, builder) -> {
+                                    for (CannonMod mod : CannonMod.values()) {
+                                        builder.suggest(mod.name().toLowerCase(Locale.ROOT));
+                                    }
+                                    return builder.buildFuture();
+                                })
+                                .executes(ctx -> {
+                                    String modName = StringArgumentType.getString(ctx, "mod");
+                                    CannonMod mod = CannonMod.fromString(modName);
+                                    if (mod == null) {
+                                        ctx.getSource().sendFailure(Component.literal("Unknown mod: " + modName));
+                                        return 0;
+                                    }
+                                    setEnabled(mod, false);
+                                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
+                                    return 1;
+                                })))
+                .then(Commands.literal("all")
+                        .then(Commands.literal("enable")
+                                .executes(ctx -> {
+                                    for (CannonMod mod : CannonMod.values()) {
+                                        setEnabled(mod, true);
+                                    }
+                                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
+                                    return 1;
+                                }))
+                        .then(Commands.literal("disable")
+                                .executes(ctx -> {
+                                    for (CannonMod mod : CannonMod.values()) {
+                                        setEnabled(mod, false);
+                                    }
+                                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
+                                    return 1;
+                                })))
+                .then(Commands.literal("status")
+                        .executes(ctx -> {
+                            ctx.getSource().sendSuccess(() -> statusComponent(), false);
+                            return isEnabled() ? 1 : 0;
+                        }))
+                .then(Commands.literal("list")
+                        .executes(ctx -> {
+                            ctx.getSource().sendSuccess(() -> listComponent(), false);
                             return 1;
-                        }))));
+                        }))
+                .then(Commands.literal("radius")
+                        .then(Commands.argument("blocks", DoubleArgumentType.doubleArg(1.0, 512.0))
+                                .executes(ctx -> {
+                                    searchRadius = DoubleArgumentType.getDouble(ctx, "blocks");
+                                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
+                                    return 1;
+                                })))
+                .then(Commands.literal("global")
+                        .then(Commands.argument("value", BoolArgumentType.bool())
+                                .executes(ctx -> {
+                                    requireScope = BoolArgumentType.getBool(ctx, "value");
+                                    ctx.getSource().sendSuccess(() -> statusComponent(), true);
+                                    return 1;
+                                }))));
     }
 
     @SubscribeEvent
     public static void onEntityJoinLevel(EntityJoinLevelEvent event) {
-        if (!enabled || event.getLevel().isClientSide()) {
+        if (event.getLevel().isClientSide()) {
             return;
         }
         Entity entity = event.getEntity();
-        if (!isCannonProjectile(entity)) {
+        CannonMod mod = getCannonMod(entity);
+        if (mod == null) {
             return;
         }
-
+        if (!isEnabled(mod)) {
+            return;
+        }
+        Level level = event.getLevel();
         Vec3 velocity = entity.getDeltaMovement();
         double speed = velocity.length();
         if (speed < 1.0e-5) {
             return;
         }
-
-        Optional<ScopeSession> session = ScopeSessionManager.nearestSession(event.getLevel(), entity.position(), searchRadius);
-        if (session.isEmpty()) {
-            VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] no active scope session near projectile {} at {}", entity.getType(), entity.blockPosition());
+        Optional<BlockPos> mountPos = CbcCompat.findNearestMount(level, entity.blockPosition(), (int) searchRadius);
+        if (mountPos.isEmpty()) {
+            VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] No cannon mount found near projectile {} at {}", entity.getType(), entity.blockPosition());
             return;
         }
-
-        Vec3 aim = directionFromPose(session.get().currentPose().yaw(), session.get().currentPose().pitch()).normalize();
+        Optional<Long> shipId = VsCompat.findShipId(level, mountPos.get());
+        boolean isOnShip = shipId.isPresent();
+        BlockState mountState = level.getBlockState(mountPos.get());
+        Direction fallbackFacing = mountState.hasProperty(BlockStateProperties.HORIZONTAL_FACING) 
+                ? mountState.getValue(BlockStateProperties.HORIZONTAL_FACING) 
+                : Direction.NORTH;
+        Optional<Vec3> aimDirection = CbcCompat.getAimDirection(level, mountPos.get(), fallbackFacing, 1.0f, !isOnShip);
+        if (aimDirection.isEmpty()) {
+            VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] Could not get aim direction from mount at {}", mountPos.get());
+            return;
+        }
+        Vec3 aim = aimDirection.get().normalize();
         if (aim.lengthSqr() < 1.0e-8) {
             return;
         }
         entity.setDeltaMovement(aim.scale(speed));
         entity.hasImpulse = true;
-        VSAnalogWarfare.LOGGER.info("[AccuracyOverride] corrected {} speed={} aim=({}, {}, {}) nearScope={} nearMount={}",
+        VSAnalogWarfare.LOGGER.info("[AccuracyOverride] corrected {} speed={} aim=({}, {}, {}) mountPos={} onShip={}",
                 entity.getType(), String.format(Locale.ROOT, "%.4f", speed),
                 String.format(Locale.ROOT, "%.4f", aim.x), String.format(Locale.ROOT, "%.4f", aim.y), String.format(Locale.ROOT, "%.4f", aim.z),
-                session.get().scopePos(), session.get().mountPos());
+                mountPos.get(), isOnShip);
     }
 
     private static Component statusComponent() {
-        return Component.literal("VSAW temporary accuracy override: " + (enabled ? "enabled" : "disabled")
-                + ", radius=" + String.format(Locale.ROOT, "%.1f", searchRadius) + " blocks");
+        StringBuilder sb = new StringBuilder("VSAW accuracy override:\n");
+        sb.append("  Mods: ");
+        boolean anyEnabled = false;
+        for (CannonMod mod : CannonMod.values()) {
+            boolean enabled = isEnabled(mod);
+            if (enabled) {
+                anyEnabled = true;
+            }
+            sb.append(mod.name().toLowerCase(Locale.ROOT)).append("=").append(enabled ? "ON" : "OFF").append(" ");
+        }
+        sb.append("\n");
+        sb.append("  Mode: ").append(requireScope ? "requires scope" : "global (no scope needed)");
+        sb.append("\n");
+        sb.append("  Radius: ").append(String.format(Locale.ROOT, "%.1f", searchRadius)).append(" blocks");
+        sb.append("\n");
+        sb.append("  Status: ").append(anyEnabled ? "ENABLED" : "DISABLED");
+        return Component.literal(sb.toString());
     }
 
-    private static Vec3 directionFromPose(float yaw, float pitch) {
-        double yawRad = Math.toRadians(yaw + 90.0f);
-        double pitchRad = Math.toRadians(pitch);
-        double horizontal = Math.cos(pitchRad);
-        return new Vec3(Math.cos(yawRad) * horizontal, -Math.sin(pitchRad), Math.sin(yawRad) * horizontal);
+    private static Component listComponent() {
+        StringBuilder sb = new StringBuilder("VSAW accuracy override - available mods:\n");
+        for (CannonMod mod : CannonMod.values()) {
+            sb.append("  ").append(mod.name().toLowerCase(Locale.ROOT)).append(" - ").append(mod.description()).append(" [").append(isEnabled(mod) ? "ON" : "OFF").append("]\n");
+        }
+        sb.append("\nUsage:\n");
+        sb.append("  /vsaw_accuracy_override enable <mod>\n");
+        sb.append("  /vsaw_accuracy_override disable <mod>\n");
+        sb.append("  /vsaw_accuracy_override all enable\n");
+        sb.append("  /vsaw_accuracy_override global true/false\n");
+        return Component.literal(sb.toString());
     }
 
-    private static boolean isCannonProjectile(Entity entity) {
+    private static CannonMod getCannonMod(Entity entity) {
         String name = entity.getClass().getName().toLowerCase(Locale.ROOT);
         if (!name.contains("projectile")) {
-            return false;
+            return null;
         }
-        return name.contains("createbigcannons")
-                || name.contains("cbcmoreshells")
-                || name.contains("cbcmodernwarfare")
-                || name.contains("riftyboi");
+        if (name.contains("createbigcannons")) {
+            return CannonMod.CREATE_BIG_CANNONS;
+        }
+        if (name.contains("cbcmoreshells")) {
+            return CannonMod.CBC_MORE_SHELLS;
+        }
+        if (name.contains("cbcmodernwarfare")) {
+            return CannonMod.CBC_MODERN_WARFARE;
+        }
+        if (name.contains("riftyboi")) {
+            return CannonMod.RIFTY_BOI;
+        }
+        return null;
+    }
+
+    static {
+        for (CannonMod mod : CannonMod.values()) {
+            ENABLED_MODS.put(mod, false);
+        }
+    }
+
+    public enum CannonMod {
+        CREATE_BIG_CANNONS("Create Big Cannons"),
+        CBC_MORE_SHELLS("CBC More Shells"),
+        CBC_MODERN_WARFARE("CBC Modern Warfare"),
+        RIFTY_BOI("Rifty Boi");
+
+        private final String description;
+
+        CannonMod(String description) {
+            this.description = description;
+        }
+
+        public String description() {
+            return description;
+        }
+
+        public static CannonMod fromString(String name) {
+            for (CannonMod mod : CannonMod.values()) {
+                if (mod.name().equalsIgnoreCase(name)) {
+                    return mod;
+                }
+            }
+            return null;
+        }
     }
 }
