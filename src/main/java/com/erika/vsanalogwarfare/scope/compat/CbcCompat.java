@@ -62,18 +62,25 @@ public final class CbcCompat {
     }
 
     public static Optional<Vec3> getAimDirection(Level level, BlockPos mountPos, Direction fallbackFacing, float partialTicks) {
+        return getAimDirection(level, mountPos, fallbackFacing, partialTicks, true);
+    }
+
+    public static Optional<Vec3> getAimDirection(Level level, BlockPos mountPos, Direction fallbackFacing, float partialTicks, boolean applyShipTransform) {
         BlockEntity be = level.getBlockEntity(mountPos);
         boolean isMount = isCannonMount(be);
-        
+
         long now = System.currentTimeMillis();
         if (now - lastAimDirectionLogMs >= 1000L) {
             lastAimDirectionLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] getAimDirection: mountPos={} isCannonMount={}", mountPos, isMount);
+            LOGGER.info("[VSAW_SCOPE] getAimDirection: mountPos={} isCannonMount={} applyShipTransform={}", mountPos, isMount, applyShipTransform);
         }
-        
+
         if (!isMount) {
             Vec3 fallback = Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize();
-            return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, fallback));
+            if (applyShipTransform) {
+                fallback = VsCompat.shipToWorldDirection(level, mountPos, fallback);
+            }
+            return Optional.of(fallback);
         }
 
         Vec3 byContraption = tryDirectionFromContraption(be, partialTicks).orElse(null);
@@ -81,22 +88,28 @@ public final class CbcCompat {
             LOGGER.info("[VSAW_SCOPE] getAimDirection: byContraption={}", byContraption);
         }
         if (byContraption != null) {
-            Vec3 transformed = VsCompat.shipToWorldDirection(level, mountPos, byContraption);
-            if (now - lastAimDirectionLogMs >= 1000L) {
-                LOGGER.info("[VSAW_SCOPE] getAimDirection: byContraption after shipTransform={}", transformed);
+            if (applyShipTransform) {
+                Vec3 transformed = VsCompat.shipToWorldDirection(level, mountPos, byContraption);
+                if (now - lastAimDirectionLogMs >= 1000L) {
+                    LOGGER.info("[VSAW_SCOPE] getAimDirection: byContraption after shipTransform={}", transformed);
+                }
+                return Optional.of(transformed);
             }
-            return Optional.of(transformed);
+            return Optional.of(byContraption);
         }
 
         Vec3 byMount = tryDirectionFromMountOffsets(be, partialTicks).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
         if (now - lastAimDirectionLogMs >= 1000L) {
-            LOGGER.info("[VSAW_SCOPE] getAimDirection: byMount={} (before shipTransform)", byMount);
+            LOGGER.info("[VSAW_SCOPE] getAimDirection: byMount={} (applyShipTransform={})", byMount, applyShipTransform);
         }
-        Vec3 result = VsCompat.shipToWorldDirection(level, mountPos, byMount);
-        if (now - lastAimDirectionLogMs >= 1000L) {
-            LOGGER.info("[VSAW_SCOPE] getAimDirection: byMount after shipTransform={}", result);
+        if (applyShipTransform) {
+            Vec3 result = VsCompat.shipToWorldDirection(level, mountPos, byMount);
+            if (now - lastAimDirectionLogMs >= 1000L) {
+                LOGGER.info("[VSAW_SCOPE] getAimDirection: byMount after shipTransform={}", result);
+            }
+            return Optional.of(result);
         }
-        return Optional.of(result);
+        return Optional.of(byMount);
     }
 
     public static Optional<Vec3> getAimUpDirection(Level level, BlockPos mountPos, Direction fallbackFacing, Direction scopeUp, float partialTicks) {
@@ -184,8 +197,6 @@ public final class CbcCompat {
         double yaw = Math.toRadians(yawDeg);
         double pitch = Math.toRadians(pitchDeg);
         double x = -Math.sin(yaw) * Math.cos(pitch);
-        // CBC mount offsets are not Minecraft camera XRot values here: positive
-        // pitch is elevation, so positive pitch must produce positive Y.
         double y = Math.sin(pitch);
         double z = Math.cos(yaw) * Math.cos(pitch);
         return new Vec3(x, y, z).normalize();
