@@ -139,11 +139,28 @@ public final class ModNetwork {
         }
 
         // --- Reflection Helpers for VS2 Compatibility ---
+        private static Method getAllShipsMethod;
+        
+        private static Method findMethodByName(Class<?> clazz, String name, int paramCount) {
+            for (Method m : clazz.getDeclaredMethods()) {
+                if (m.getName().equals(name) && m.getParameterCount() == paramCount) {
+                    m.setAccessible(true);
+                    return m;
+                }
+            }
+            return null;
+        }
+
         private static Iterable<?> getAllShips(Level level) {
             try {
                 Class<?> vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-                Method getAllShips = vsGameUtilsClass.getMethod("getAllShips", Level.class);
-                return (Iterable<?>) getAllShips.invoke(null, level);
+                if (getAllShipsMethod == null) {
+                    getAllShipsMethod = findMethodByName(vsGameUtilsClass, "getAllShips", 1);
+                }
+                if (getAllShipsMethod == null) {
+                    return null;
+                }
+                return (Iterable<?>) getAllShipsMethod.invoke(null, level);
             } catch (Exception e) {
                 return null;
             }
