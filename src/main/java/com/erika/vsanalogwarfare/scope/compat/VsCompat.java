@@ -19,7 +19,6 @@ public final class VsCompat {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static Class<?> vsGameUtilsClass;
     private static Method getShipManagingPos;
-    private static Method getShipObjectManagingPosClient;
     private static Method getShipMountedToMethod;
     private static Method getAllShipsMethod;
     private static Method getShipObjectWorldMethod;
@@ -29,6 +28,16 @@ public final class VsCompat {
     private static long lastShipDirectionLogMs = 0;
 
     private VsCompat() {
+    }
+
+    private static Method findMethodByName(Class<?> clazz, String name, int paramCount) {
+        for (Method m : clazz.getDeclaredMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == paramCount) {
+                m.setAccessible(true);
+                return m;
+            }
+        }
+        return null;
     }
 
     public static boolean isPlayerMountedToShip() {
@@ -45,10 +54,7 @@ public final class VsCompat {
             }
             if (!getShipMountedToInitialized) {
                 getShipMountedToInitialized = true;
-                try {
-                    getShipMountedToMethod = vsGameUtilsClass.getMethod("getShipMountedTo", net.minecraft.world.entity.Entity.class);
-                } catch (NoSuchMethodException ignored) {
-                }
+                getShipMountedToMethod = findMethodByName(vsGameUtilsClass, "getShipMountedTo", 1);
             }
             if (getShipMountedToMethod == null) {
                 return false;
@@ -127,40 +133,23 @@ public final class VsCompat {
                 vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
             }
 
-            // On the client, prefer the ClientShip return type. It exposes getRenderTransform(),
-            // which is what VS uses for camera/render interpolation (partial ticks).
-            if (level.isClientSide()) {
-                try {
-                    if (getShipObjectManagingPosClient == null) {
-                        getShipObjectManagingPosClient = vsGameUtilsClass.getMethod(
-                                "getShipObjectManagingPos",
-                                net.minecraft.client.multiplayer.ClientLevel.class,
-                                BlockPos.class
-                        );
-                    }
-                    Object ship = getShipObjectManagingPosClient.invoke(null, level, pos);
-                    long now = System.currentTimeMillis();
-                    if (now - lastShipDirectionLogMs >= 1000L) {
-                        LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
-                    }
-                    return ship;
-                } catch (ReflectiveOperationException | LinkageError ignored) {
-                    // Fall back to the generic ship lookup below.
-                }
-            }
-
             if (getShipManagingPos == null) {
-                getShipManagingPos = vsGameUtilsClass.getMethod("getShipManagingPos", Level.class, BlockPos.class);
+                getShipManagingPos = findMethodByName(vsGameUtilsClass, "getShipManagingPos", 2);
+            }
+            if (getShipManagingPos == null) {
+                return null;
             }
             Object ship = getShipManagingPos.invoke(null, level, pos);
             long now = System.currentTimeMillis();
             if (now - lastShipDirectionLogMs >= 1000L) {
+                lastShipDirectionLogMs = now;
                 LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
             }
             return ship;
         } catch (ReflectiveOperationException | LinkageError e) {
             long now = System.currentTimeMillis();
             if (now - lastShipDirectionLogMs >= 1000L) {
+                lastShipDirectionLogMs = now;
                 LOGGER.info("[VSAW_SCOPE] findShip(pos={}): exception {}", pos, e.getClass().getSimpleName());
             }
             return null;
@@ -254,14 +243,8 @@ public final class VsCompat {
             
             if (!getAllShipsInitialized) {
                 getAllShipsInitialized = true;
-                try {
-                    getAllShipsMethod = vsGameUtilsClass.getMethod("getAllShips", Level.class);
-                } catch (NoSuchMethodException ignored) {
-                }
-                try {
-                    getShipObjectWorldMethod = vsGameUtilsClass.getMethod("getShipObjectWorld", Level.class);
-                } catch (NoSuchMethodException ignored) {
-                }
+                getAllShipsMethod = findMethodByName(vsGameUtilsClass, "getAllShips", 1);
+                getShipObjectWorldMethod = findMethodByName(vsGameUtilsClass, "getShipObjectWorld", 1);
             }
             
             if (getAllShipsMethod != null) {
@@ -390,11 +373,21 @@ public final class VsCompat {
         return java.util.Collections.emptyList();
     }
 
+    private static Method getYRangeMethod;
+
     public static int[] getChunkClaimCenter(Object chunkClaim, Level level) {
         try {
+            if (vsGameUtilsClass == null) {
+                vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
+            }
+            if (getYRangeMethod == null) {
+                getYRangeMethod = findMethodByName(vsGameUtilsClass, "getYRange", 1);
+            }
+            if (getYRangeMethod == null) {
+                return null;
+            }
             org.joml.Vector3i center = new org.joml.Vector3i();
-            Method getYRange = vsGameUtilsClass.getMethod("getYRange", Level.class);
-            Object yRange = getYRange.invoke(null, level);
+            Object yRange = getYRangeMethod.invoke(null, level);
             Method getCenterMethod = chunkClaim.getClass().getMethod("getCenterBlockCoordinates", Object.class, org.joml.Vector3i.class);
             getCenterMethod.invoke(chunkClaim, yRange, center);
             return new int[] { center.x, center.y, center.z };
