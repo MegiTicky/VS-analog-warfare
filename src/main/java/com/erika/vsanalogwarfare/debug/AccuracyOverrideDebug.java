@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.debug;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
+import com.erika.vsanalogwarfare.scope.compat.CbcCompat.MountMatchResult;
 import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
@@ -161,32 +162,36 @@ public final class AccuracyOverrideDebug {
         if (speed < 1.0e-5) {
             return;
         }
-        Optional<BlockPos> mountPos = CbcCompat.findNearestMount(level, entity.blockPosition(), (int) searchRadius);
-        if (mountPos.isEmpty()) {
-            VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] No cannon mount found near projectile {} at {}", entity.getType(), entity.blockPosition());
+        
+        Vec3 velocityDir = velocity.normalize();
+        Vec3 projectileWorldPos = entity.position();
+        VSAnalogWarfare.LOGGER.info("[AccuracyOverride] projectile {} at pos {} velocity=({}, {}, {}) dir=({}, {}, {})",
+                entity.getType(), entity.blockPosition(),
+                String.format(Locale.ROOT, "%.4f", velocity.x), String.format(Locale.ROOT, "%.4f", velocity.y), String.format(Locale.ROOT, "%.4f", velocity.z),
+                String.format(Locale.ROOT, "%.4f", velocityDir.x), String.format(Locale.ROOT, "%.4f", velocityDir.y), String.format(Locale.ROOT, "%.4f", velocityDir.z));
+        
+        Optional<MountMatchResult> matchResult = CbcCompat.findMountByAimDirectionGlobal(level, velocityDir, projectileWorldPos);
+        if (matchResult.isEmpty()) {
+            VSAnalogWarfare.LOGGER.info("[AccuracyOverride] No cannon mount found matching projectile velocity direction");
             return;
         }
-        Optional<Long> shipId = VsCompat.findShipId(level, mountPos.get());
+        
+        MountMatchResult result = matchResult.get();
+        BlockPos mountPos = result.mountPos();
+        Vec3 aim = result.aimDirection().normalize();
+        
+        Optional<Long> shipId = VsCompat.findShipId(level, mountPos);
         boolean isOnShip = shipId.isPresent();
-        BlockState mountState = level.getBlockState(mountPos.get());
-        Direction fallbackFacing = mountState.hasProperty(BlockStateProperties.HORIZONTAL_FACING) 
-                ? mountState.getValue(BlockStateProperties.HORIZONTAL_FACING) 
-                : Direction.NORTH;
-        Optional<Vec3> aimDirection = CbcCompat.getAimDirection(level, mountPos.get(), fallbackFacing, 1.0f, !isOnShip);
-        if (aimDirection.isEmpty()) {
-            VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] Could not get aim direction from mount at {}", mountPos.get());
-            return;
-        }
-        Vec3 aim = aimDirection.get().normalize();
+        
         if (aim.lengthSqr() < 1.0e-8) {
             return;
         }
         entity.setDeltaMovement(aim.scale(speed));
         entity.hasImpulse = true;
-        VSAnalogWarfare.LOGGER.info("[AccuracyOverride] corrected {} speed={} aim=({}, {}, {}) mountPos={} onShip={}",
+        VSAnalogWarfare.LOGGER.info("[AccuracyOverride] corrected {} speed={} aim=({}, {}, {}) mountPos={} onShip={} matchScore={}",
                 entity.getType(), String.format(Locale.ROOT, "%.4f", speed),
                 String.format(Locale.ROOT, "%.4f", aim.x), String.format(Locale.ROOT, "%.4f", aim.y), String.format(Locale.ROOT, "%.4f", aim.z),
-                mountPos.get(), isOnShip);
+                mountPos, isOnShip, String.format(Locale.ROOT, "%.4f", result.matchScore()));
     }
 
     private static Component statusComponent() {
