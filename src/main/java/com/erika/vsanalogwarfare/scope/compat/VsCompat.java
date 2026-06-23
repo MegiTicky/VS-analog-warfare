@@ -1,11 +1,12 @@
 package com.erika.vsanalogwarfare.scope.compat;
 
 import com.mojang.logging.LogUtils;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import org.joml.Vector3d;
 import org.slf4j.Logger;
 
@@ -16,53 +17,85 @@ import java.util.Optional;
 
 public final class VsCompat {
     private static final Logger LOGGER = LogUtils.getLogger();
+    
     private static Class<?> vsGameUtilsClass;
     private static Method getShipManagingPos;
     private static Method getShipMountedToMethod;
     private static Method getAllShipsMethod;
     private static Method getShipObjectWorldMethod;
     private static Method getLoadedShipsMethod;
-    private static boolean getShipMountedToInitialized = false;
-    private static boolean getAllShipsInitialized = false;
+    private static Method getYRangeMethod;
+    
+    private static boolean initialized = false;
+    private static boolean isClientSide = false;
+    
     private static long lastShipDirectionLogMs = 0;
 
     private VsCompat() {
     }
 
-    private static Method findMethodByName(Class<?> clazz, String name, int paramCount) {
-        for (Method m : clazz.getDeclaredMethods()) {
-            if (m.getName().equals(name) && m.getParameterCount() == paramCount) {
-                m.setAccessible(true);
-                return m;
-            }
+    static {
+        initialize();
+    }
+    
+    private static void initialize() {
+        if (initialized) return;
+        initialized = true;
+        
+        try {
+            vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
+        } catch (ClassNotFoundException e) {
+            LOGGER.warn("[VSAW] VSGameUtilsKt not found, VS integration disabled");
+            return;
         }
-        return null;
+        
+        isClientSide = safeCheckClientSide();
+        
+        getShipManagingPos = tryGetMethod("getShipManagingPos", Level.class, BlockPos.class);
+        getAllShipsMethod = tryGetMethod("getAllShips", Level.class);
+        getShipObjectWorldMethod = tryGetMethod("getShipObjectWorld", Level.class);
+        getYRangeMethod = tryGetMethod("getYRange", Level.class);
+        
+        if (isClientSide) {
+            getShipMountedToMethod = tryGetMethod("getShipMountedTo", net.minecraft.world.entity.Entity.class);
+        }
+        
+        LOGGER.info("[VSAW] VS compat initialized: managingPos={} allShips={} shipWorld={} yRange={}",
+            getShipManagingPos != null, getAllShipsMethod != null, 
+            getShipObjectWorldMethod != null, getYRangeMethod != null);
+    }
+    
+    private static boolean safeCheckClientSide() {
+        return FMLEnvironment.dist == Dist.CLIENT;
+    }
+    
+    private static Method tryGetMethod(String name, Class<?>... paramTypes) {
+        try {
+            Method m = vsGameUtilsClass.getDeclaredMethod(name, paramTypes);
+            m.setAccessible(true);
+            LOGGER.debug("[VSAW] Found method {}({})", name, java.util.Arrays.toString(paramTypes));
+            return m;
+        } catch (NoSuchMethodException e) {
+            LOGGER.debug("[VSAW] Method {}({}) not found in VS version", name, java.util.Arrays.toString(paramTypes));
+            return null;
+        } catch (RuntimeException e) {
+            if (e.getMessage() != null && e.getMessage().contains("invalid dist")) {
+                LOGGER.debug("[VSAW] Method {} has client-only parameters, skipping", name);
+                return null;
+            }
+            LOGGER.warn("[VSAW] Unexpected error getting method {}: {}", name, e.getMessage());
+            return null;
+        } catch (Exception e) {
+            LOGGER.warn("[VSAW] Error getting method {}: {}", name, e.getClass().getSimpleName());
+            return null;
+        }
     }
 
     public static boolean isPlayerMountedToShip() {
-        LocalPlayer player = Minecraft.getInstance().player;
-        if (player == null) {
-            return false;
-        }
-        if (player.getVehicle() == null) {
-            return false;
-        }
-        try {
-            if (vsGameUtilsClass == null) {
-                vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-            }
-            if (!getShipMountedToInitialized) {
-                getShipMountedToInitialized = true;
-                getShipMountedToMethod = findMethodByName(vsGameUtilsClass, "getShipMountedTo", 1);
-            }
-            if (getShipMountedToMethod == null) {
-                return false;
-            }
-            Object result = getShipMountedToMethod.invoke(null, player);
-            return result != null;
-        } catch (ReflectiveOperationException | LinkageError ignored) {
-            return false;
-        }
+        if (!isClientSide) return false;
+        if (getShipMountedToMethod == null) return false;
+        return DistExecutor.unsafeCallWhenOn(Dist.CLIENT, 
+            () -> () -> VsCompatClient.isPlayerMountedToShip(getShipMountedToMethod));
     }
 
     public static Optional<Long> findShipId(Level level, BlockPos pos) {
@@ -126,32 +159,25 @@ public final class VsCompat {
         return new Vec3(transformed.x, transformed.y, transformed.z).normalize();
     }
 
-    private static Object findShipInternal(Level level, BlockPos pos) {
+    public static Object findShip(Level level, BlockPos pos) {
+        if (getShipManagingPos == null) return null;
+        
         try {
-            if (vsGameUtilsClass == null) {
-                vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
+            Object ship = getShipManagingPos.invoke(null, level, pos);
+            long now = System.currentTimeMillis();
+            if (now - lastShipDirectionLogMs >= 1000L) {
+                lastShipDirectionLogMs = now;
+                LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
             }
-
-            if (getShipManagingPos == null) {
-                getShipManagingPos = findMethodByName(vsGameUtilsClass, "getShipManagingPos", 2);
-            }
-            if (getShipManagingPos == null) {
-                return null;
-            }
-            return getShipManagingPos.invoke(null, level, pos);
+            return ship;
         } catch (ReflectiveOperationException | LinkageError e) {
+            long now = System.currentTimeMillis();
+            if (now - lastShipDirectionLogMs >= 1000L) {
+                lastShipDirectionLogMs = now;
+                LOGGER.info("[VSAW_SCOPE] findShip(pos={}): exception {}", pos, e.getClass().getSimpleName());
+            }
             return null;
         }
-    }
-
-    public static Object findShip(Level level, BlockPos pos) {
-        Object ship = findShipInternal(level, pos);
-        long now = System.currentTimeMillis();
-        if (now - lastShipDirectionLogMs >= 1000L) {
-            lastShipDirectionLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
-        }
-        return ship;
     }
 
     private static Vector3d invokeMatrixTransform(Object ship, Vec3 vector, boolean position) {
@@ -234,30 +260,27 @@ public final class VsCompat {
 
     public static List<Object> getAllShips(Level level) {
         List<Object> ships = new ArrayList<>();
-        try {
-            if (vsGameUtilsClass == null) {
-                vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-            }
-            
-            if (!getAllShipsInitialized) {
-                getAllShipsInitialized = true;
-                getAllShipsMethod = findMethodByName(vsGameUtilsClass, "getAllShips", 1);
-                getShipObjectWorldMethod = findMethodByName(vsGameUtilsClass, "getShipObjectWorld", 1);
-            }
-            
-            if (getAllShipsMethod != null) {
+        
+        if (getAllShipsMethod != null) {
+            try {
                 Object allShips = getAllShipsMethod.invoke(null, level);
                 if (allShips instanceof Iterable<?> iterable) {
                     for (Object ship : iterable) {
                         ships.add(ship);
                     }
                 }
-            } else if (getShipObjectWorldMethod != null && getLoadedShipsMethod != null) {
+            } catch (ReflectiveOperationException | LinkageError e) {
+                LOGGER.info("[VSAW_SCOPE] getAllShips: exception {}", e.getClass().getSimpleName());
+            }
+        }
+        
+        if (ships.isEmpty() && getShipObjectWorldMethod != null) {
+            try {
                 Object shipWorld = getShipObjectWorldMethod.invoke(null, level);
-                if (shipWorld != null && getLoadedShipsMethod == null) {
-                    getLoadedShipsMethod = shipWorld.getClass().getMethod("getLoadedShips");
-                }
-                if (shipWorld != null && getLoadedShipsMethod != null) {
+                if (shipWorld != null) {
+                    if (getLoadedShipsMethod == null) {
+                        getLoadedShipsMethod = shipWorld.getClass().getMethod("getLoadedShips");
+                    }
                     Object loadedShips = getLoadedShipsMethod.invoke(shipWorld);
                     if (loadedShips instanceof Iterable<?> iterable) {
                         for (Object ship : iterable) {
@@ -265,10 +288,11 @@ public final class VsCompat {
                         }
                     }
                 }
+            } catch (ReflectiveOperationException | LinkageError e) {
+                LOGGER.info("[VSAW_SCOPE] getAllShips fallback: exception {}", e.getClass().getSimpleName());
             }
-        } catch (ReflectiveOperationException | LinkageError e) {
-            LOGGER.info("[VSAW_SCOPE] getAllShips: exception {}", e.getClass().getSimpleName());
         }
+        
         return ships;
     }
 
@@ -361,19 +385,10 @@ public final class VsCompat {
         return java.util.Collections.emptyList();
     }
 
-    private static Method getYRangeMethod;
-
     public static int[] getChunkClaimCenter(Object chunkClaim, Level level) {
+        if (getYRangeMethod == null) return null;
+        
         try {
-            if (vsGameUtilsClass == null) {
-                vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-            }
-            if (getYRangeMethod == null) {
-                getYRangeMethod = findMethodByName(vsGameUtilsClass, "getYRange", 1);
-            }
-            if (getYRangeMethod == null) {
-                return null;
-            }
             org.joml.Vector3i center = new org.joml.Vector3i();
             Object yRange = getYRangeMethod.invoke(null, level);
             Method getCenterMethod = chunkClaim.getClass().getMethod("getCenterBlockCoordinates", Object.class, org.joml.Vector3i.class);
