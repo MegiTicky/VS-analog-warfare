@@ -129,8 +129,8 @@ public final class VsCompat {
 
             // On the client, prefer the ClientShip return type. It exposes getRenderTransform(),
             // which is what VS uses for camera/render interpolation (partial ticks).
-            try {
-                if (level instanceof net.minecraft.client.multiplayer.ClientLevel) {
+            if (level.isClientSide()) {
+                try {
                     if (getShipObjectManagingPosClient == null) {
                         getShipObjectManagingPosClient = vsGameUtilsClass.getMethod(
                                 "getShipObjectManagingPos",
@@ -144,9 +144,9 @@ public final class VsCompat {
                         LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
                     }
                     return ship;
+                } catch (ReflectiveOperationException | LinkageError ignored) {
+                    // Fall back to the generic ship lookup below.
                 }
-            } catch (ReflectiveOperationException | LinkageError ignored) {
-                // Fall back to the generic ship lookup below.
             }
 
             if (getShipManagingPos == null) {
