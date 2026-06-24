@@ -517,7 +517,8 @@ public final class ClientForgeEvents {
                 double scrollDelta = event.getScrollDelta();
                 if (scrollDelta != 0) {
                     int currentZero = ClientScopeState.sightZeroDistance();
-                    int change = scrollDelta > 0 ? 50 : -50;
+                    int step = ClientConfig.zeroingStep();
+                    int change = scrollDelta > 0 ? step : -step;
                     int newZero = currentZero + change;
 
                     double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
