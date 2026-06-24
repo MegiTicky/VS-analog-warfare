@@ -30,6 +30,7 @@ import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
@@ -508,7 +509,7 @@ public final class ClientForgeEvents {
         graphics.drawString(font, zeroText, textX, textY, 0xFF22FF22, false);
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onMouseScroll(net.minecraftforge.client.event.InputEvent.MouseScrollingEvent event) {
         Minecraft mc = Minecraft.getInstance();
         if (ClientScopeState.active() && mc.player != null) {
