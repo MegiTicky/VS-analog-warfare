@@ -147,6 +147,18 @@ public final class VsCompat {
         return result;
     }
 
+    public static Vec3 shipToWorldDirectionForRaycast(Level level, BlockPos anchorPos, Vec3 localDirection) {
+        Object ship = findShip(level, anchorPos);
+        if (ship == null) {
+            return localDirection.normalize();
+        }
+        Vector3d transformed = invokeMatrixTransform(ship, localDirection, false);
+        if (transformed == null) {
+            return localDirection.normalize();
+        }
+        return new Vec3(transformed.x, transformed.y, transformed.z).normalize();
+    }
+
     public static Vec3 worldToShipDirection(Level level, BlockPos anchorPos, Vec3 worldDirection) {
         Object ship = findShip(level, anchorPos);
         if (ship == null) {

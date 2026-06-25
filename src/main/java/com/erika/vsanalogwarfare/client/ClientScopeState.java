@@ -405,7 +405,16 @@ public final class ClientScopeState {
 
         CameraPose pose = cameraPose(1.0f);
         Vec3 cameraPos = pose.position();
-        Vec3 direction = pose.direction();
+        
+        // Get the local aim direction and transform it for raycast, bypassing the seated player check
+        // that causes incorrect direction when player is seated on a ship
+        net.minecraft.core.Direction fallbackFacing = net.minecraft.core.Direction.NORTH;
+        Vec3 localDirection = com.erika.vsanalogwarfare.scope.compat.CbcCompat
+                .getAimDirection(mc.level, mountPos, fallbackFacing, 1.0f, false)
+                .orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
+        Vec3 direction = com.erika.vsanalogwarfare.scope.compat.VsCompat
+                .shipToWorldDirectionForRaycast(mc.level, mountPos, localDirection);
+        
         double maxRange = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
 
         double offset = 1.5;
