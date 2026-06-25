@@ -20,6 +20,7 @@ public final class CbcCompat {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final String CANNON_MOUNT = "rbasamoyai.createbigcannons.cannon_control.cannon_mount.CannonMountBlockEntity";
     private static final String FIXED_CANNON_MOUNT = "rbasamoyai.createbigcannons.cannon_control.fixed_cannon_mount.FixedCannonMountBlockEntity";
+    private static final String COMPACT_CANNON_MOUNT = "riftyboi.cbcmodernwarfare.cannon_control.compact_mount.CompactCannonMountBlockEntity";
     private static long lastAimDirectionLogMs = 0;
     private static final double MATCH_THRESHOLD = 0.95;
 
@@ -324,12 +325,12 @@ public final class CbcCompat {
             return false;
         }
         String name = be.getClass().getName();
-        if (name.equals(CANNON_MOUNT) || name.equals(FIXED_CANNON_MOUNT)) {
+        if (name.equals(CANNON_MOUNT) || name.equals(FIXED_CANNON_MOUNT) || name.equals(COMPACT_CANNON_MOUNT)) {
             return true;
         }
         for (Class<?> c = be.getClass(); c != null; c = c.getSuperclass()) {
             String className = c.getName();
-            if (className.equals(CANNON_MOUNT) || className.equals(FIXED_CANNON_MOUNT)) {
+            if (className.equals(CANNON_MOUNT) || className.equals(FIXED_CANNON_MOUNT) || className.equals(COMPACT_CANNON_MOUNT)) {
                 return true;
             }
         }
