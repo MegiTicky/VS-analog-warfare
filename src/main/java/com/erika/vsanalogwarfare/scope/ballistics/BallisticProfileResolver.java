@@ -25,7 +25,7 @@ import java.util.Optional;
 
 public final class BallisticProfileResolver {
     /** Temporary verbose resolver diagnostics for in-game testing. */
-    private static final boolean DEBUG_RESOLVER = true;
+    private static final boolean DEBUG_RESOLVER = false;
 
     private BallisticProfileResolver() {}
 
