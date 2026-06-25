@@ -156,7 +156,7 @@ public final class ClientScopeState {
         if (freeLookEnabled) {
             CameraPose pose = currentPose(1.0f);
             freeLookYaw = pose.yaw();
-            freeLookPitch = (float)(pose.pitch() - getZeroPitch());
+            freeLookPitch = (float)(pose.pitch() + getZeroPitch());
         }
     }
 
@@ -264,14 +264,17 @@ public final class ClientScopeState {
 
     public static void set(boolean active, float fov, int zoomMagnification, @Nullable BlockPos scopePos, @Nullable BlockPos mountPos,
                            double x, double y, double z, float yaw, float pitch,
-                           float qx, float qy, float qz, float qw, BallisticProfile profile) {
+                           float qx, float qy, float qz, float qw, BallisticProfile profile, int zeroDistance) {
         boolean wasActive = ClientScopeState.active;
         ClientScopeState.active = active;
         int newZoom = active ? zoomMagnification : 3;
 
         if (!active) {
             freeLookEnabled = false;
-            sightZeroDistance = 0;
+        }
+        if (active) {
+            sightZeroDistance = zeroDistance;
+            zeroPitchDirty = true;
         }
         if (!wasActive || !active) {
             ClientScopeState.targetFov = fov;
@@ -382,7 +385,7 @@ public final class ClientScopeState {
                 cachedCameraPose = CameraPose.looking(
                         cachedSightPose.position(),
                         directionFromYawPitch(cachedSightPose.yaw(), (float)(cachedSightPose.pitch() + zeroPitch)),
-                        new Vec3(0.0, 1.0, 0.0)
+                        cachedSightPose.up()
                 );
             } else {
                 cachedCameraPose = cachedSightPose;

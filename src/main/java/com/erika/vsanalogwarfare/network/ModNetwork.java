@@ -72,6 +72,12 @@ public final class ModNetwork {
                 .decoder(RangefinderResultPacket::decode)
                 .consumerMainThread(RangefinderResultPacket::handle)
                 .add();
+
+        CHANNEL.messageBuilder(SetZeroDistancePacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(SetZeroDistancePacket::encode)
+                .decoder(SetZeroDistancePacket::decode)
+                .consumerMainThread(SetZeroDistancePacket::handle)
+                .add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object packet) {

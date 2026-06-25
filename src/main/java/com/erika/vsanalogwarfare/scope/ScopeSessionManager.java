@@ -34,7 +34,7 @@ public final class ScopeSessionManager {
             session.update(level);
         }
         SESSIONS.put(player.getUUID(), session);
-        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile()));
+        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), scope.getZeroDistance()));
     }
 
     public static void stop(ServerPlayer player) {
@@ -54,7 +54,7 @@ public final class ScopeSessionManager {
         if (player.level() instanceof net.minecraft.server.level.ServerLevel level) {
             session.update(level);
         }
-        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile()));
+        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), session.zeroDistance()));
     }
 
     public static Optional<ScopeSession> activeSession(ServerPlayer player) {
@@ -108,7 +108,7 @@ public final class ScopeSessionManager {
             }
             if (player.level() instanceof net.minecraft.server.level.ServerLevel level && level.getGameTime() % 5L == 0L) {
                 session.update(level);
-                ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile()));
+                ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), session.zeroDistance()));
             }
         }
     }

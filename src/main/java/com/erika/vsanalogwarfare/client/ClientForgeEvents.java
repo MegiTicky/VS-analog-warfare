@@ -46,7 +46,7 @@ public final class ClientForgeEvents {
     public static void onClientDisconnect(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientScopeState.set(false, 70.0f, 3, null, null,
                 0.0, 0.0, 0.0, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY);
+                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0);
     }
 
     @SubscribeEvent
@@ -532,11 +532,19 @@ public final class ClientForgeEvents {
 
                         float deltaPitch = (float) (newPitch - oldPitch);
                         BlockPos mountPos = ClientScopeState.mountPos();
+                        BlockPos scopePos = ClientScopeState.scopePos();
 
                         // Tell the server to physically turn the elevation handwheel by that amount!
                         if (mountPos != null && deltaPitch != 0) {
                             com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
                                     new com.erika.vsanalogwarfare.network.AdjustMountPitchPacket(mountPos, deltaPitch)
+                            );
+                        }
+
+                        // Sync zero distance to server for persistence
+                        if (scopePos != null) {
+                            com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
+                                    new com.erika.vsanalogwarfare.network.SetZeroDistancePacket(scopePos, newZero)
                             );
                         }
 

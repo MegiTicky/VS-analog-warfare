@@ -21,6 +21,7 @@ public class ScopeSession {
     private int zoomMagnification = 3;
     private CameraPose currentPose;
     private BallisticProfile displayProfile;
+    private int zeroDistance;
 
     public ScopeSession(ServerPlayer player, ScopeBlockEntity scope, BlockPos mountPos) {
         this.playerId = player.getUUID();
@@ -30,6 +31,7 @@ public class ScopeSession {
         this.rig = new FixedCoaxScopeRig(scope, mountPos);
         this.currentPose = this.rig.getCameraPose(1.0f);
         this.displayProfile = scope.getDisplayProfile();
+        this.zeroDistance = scope.getZeroDistance();
     }
 
     public UUID playerId() { return playerId; }
@@ -41,6 +43,7 @@ public class ScopeSession {
     public BallisticProfile displayProfile() { return displayProfile == null ? BallisticProfile.EMPTY : displayProfile; }
     public BlockPos scopePos() { return scopePos; }
     public BlockPos mountPos() { return mountPos; }
+    public int zeroDistance() { return zeroDistance; }
 
     public boolean isValid(ServerPlayer player) {
         if (!player.isAlive() || player.isRemoved()) return false;
@@ -54,6 +57,7 @@ public class ScopeSession {
         if (level.getBlockEntity(scopePos) instanceof ScopeBlockEntity scope) {
             scope.refreshBallisticProfile();
             displayProfile = scope.getDisplayProfile();
+            zeroDistance = scope.getZeroDistance();
         }
     }
 }

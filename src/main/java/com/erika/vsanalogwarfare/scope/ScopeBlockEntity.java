@@ -30,6 +30,7 @@ public class ScopeBlockEntity extends BlockEntity {
     private boolean mouseControlEnabled = false;
     private BallisticProfile currentProfile = BallisticProfile.EMPTY;
     private BallisticProfile lastValidProfile = BallisticProfile.EMPTY;
+    private int zeroDistance = 0;
 
     public ScopeBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.SCOPE.get(), pos, state);
@@ -131,6 +132,15 @@ public class ScopeBlockEntity extends BlockEntity {
         return mouseControlEnabled;
     }
 
+    public int getZeroDistance() {
+        return zeroDistance;
+    }
+
+    public void setZeroDistance(int zeroDistance) {
+        this.zeroDistance = zeroDistance;
+        setChanged();
+    }
+
     @Override
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
@@ -151,6 +161,7 @@ public class ScopeBlockEntity extends BlockEntity {
         tag.putBoolean("MouseControlEnabled", this.mouseControlEnabled);
         tag.put("CurrentBallisticProfile", this.currentProfile.save());
         tag.put("LastValidBallisticProfile", this.lastValidProfile.save());
+        tag.putInt("ZeroDistance", this.zeroDistance);
     }
 
     @Override
@@ -167,6 +178,7 @@ public class ScopeBlockEntity extends BlockEntity {
         this.mouseControlEnabled = tag.getBoolean("MouseControlEnabled");
         this.currentProfile = tag.contains("CurrentBallisticProfile") ? BallisticProfile.load(tag.getCompound("CurrentBallisticProfile")) : BallisticProfile.EMPTY;
         this.lastValidProfile = tag.contains("LastValidBallisticProfile") ? BallisticProfile.load(tag.getCompound("LastValidBallisticProfile")) : BallisticProfile.EMPTY;
+        this.zeroDistance = tag.contains("ZeroDistance") ? tag.getInt("ZeroDistance") : 0;
     }
 
     private static ControlMode parseControlMode(String name) {
