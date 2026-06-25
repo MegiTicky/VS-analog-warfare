@@ -154,9 +154,9 @@ public final class ClientScopeState {
         }
         freeLookEnabled = !freeLookEnabled;
         if (freeLookEnabled) {
-            CameraPose pose = cameraPose(1.0f);
+            CameraPose pose = currentPose(1.0f);
             freeLookYaw = pose.yaw();
-            freeLookPitch = pose.pitch();
+            freeLookPitch = (float)(pose.pitch() - getZeroPitch());
         }
     }
 
