@@ -408,14 +408,31 @@ public final class ClientScopeState {
         
         Vec3 direction;
         if (freeLookEnabled()) {
-            direction = freeLookDirection();
+            Vec3 freelookDir = freeLookDirection();
+            if (com.erika.vsanalogwarfare.scope.compat.VsCompat.isPlayerMountedToShip()) {
+                direction = com.erika.vsanalogwarfare.scope.compat.VsCompat
+                        .shipToWorldDirectionForRaycast(mc.level, mountPos, freelookDir);
+            } else {
+                direction = freelookDir;
+            }
         } else {
-            net.minecraft.core.Direction fallbackFacing = net.minecraft.core.Direction.NORTH;
-            Vec3 localDirection = com.erika.vsanalogwarfare.scope.compat.CbcCompat
-                    .getAimDirection(mc.level, mountPos, fallbackFacing, 1.0f, false)
-                    .orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
-            direction = com.erika.vsanalogwarfare.scope.compat.VsCompat
-                    .shipToWorldDirectionForRaycast(mc.level, mountPos, localDirection);
+            double zeroPitch = getZeroPitch();
+            if (zeroPitch > 0) {
+                Vec3 zeroedDir = directionFromYawPitch(cachedSightPose.yaw(), (float)(cachedSightPose.pitch() + zeroPitch));
+                if (com.erika.vsanalogwarfare.scope.compat.VsCompat.isPlayerMountedToShip()) {
+                    direction = com.erika.vsanalogwarfare.scope.compat.VsCompat
+                            .shipToWorldDirectionForRaycast(mc.level, mountPos, zeroedDir);
+                } else {
+                    direction = zeroedDir;
+                }
+            } else {
+                net.minecraft.core.Direction fallbackFacing = net.minecraft.core.Direction.NORTH;
+                Vec3 localDirection = com.erika.vsanalogwarfare.scope.compat.CbcCompat
+                        .getAimDirection(mc.level, mountPos, fallbackFacing, 1.0f, false)
+                        .orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
+                direction = com.erika.vsanalogwarfare.scope.compat.VsCompat
+                        .shipToWorldDirectionForRaycast(mc.level, mountPos, localDirection);
+            }
         }
         
         double maxRange = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
