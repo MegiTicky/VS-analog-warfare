@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
+import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupRecorderItem;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -21,6 +22,12 @@ public final class ModItems {
     public static final RegistryObject<Item> MOUSE_AIM_BLOCK = ITEMS.register("mouse_aim_block",
             () -> new BlockItem(ModBlocks.MOUSE_AIM_BLOCK.get(), new Item.Properties()));
 
+    public static final RegistryObject<Item> VEHICLE_SETUP = ITEMS.register("vehicle_setup",
+            () -> new BlockItem(ModBlocks.VEHICLE_SETUP.get(), new Item.Properties()));
+
+    public static final RegistryObject<Item> VEHICLE_SETUP_RECORDER = ITEMS.register("vehicle_setup_recorder",
+            () -> new VehicleSetupRecorderItem(new Item.Properties().stacksTo(1)));
+
     private ModItems() {
     }
 
@@ -31,6 +38,8 @@ public final class ModItems {
             if (event.getTabKey() == CreativeModeTabs.FUNCTIONAL_BLOCKS) {
                 event.accept(SCOPE_BLOCK);
                 event.accept(MOUSE_AIM_BLOCK);
+                event.accept(VEHICLE_SETUP);
+                event.accept(VEHICLE_SETUP_RECORDER);
             }
         }
     }

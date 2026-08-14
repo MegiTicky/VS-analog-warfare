@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.registry;
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimBlock;
 import com.erika.vsanalogwarfare.scope.ScopeBlock;
+import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -25,6 +26,11 @@ public final class ModBlocks {
                     .mapColor(MapColor.METAL)
                     .strength(1.5f, 6.0f)
                     .noOcclusion()));
+
+    public static final RegistryObject<Block> VEHICLE_SETUP = BLOCKS.register("vehicle_setup",
+            () -> new VehicleSetupBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(2.0f, 6.0f)));
 
     private ModBlocks() {
     }
