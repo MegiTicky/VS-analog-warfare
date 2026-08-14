@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
+import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -22,6 +23,7 @@ public class VehicleSetupRecorderItem extends Item {
         ItemStack recorder = context.getItemInHand();
         BlockPos clicked = context.getClickedPos();
         if (level.getBlockEntity(clicked) instanceof VehicleSetupBlockEntity setupBlock) {
+            OptionalModCompatibility.warnIfIssues(player);
             recorder.getOrCreateTag().putLong(ANCHOR, clicked.asLong());
             if (player.isShiftKeyDown()) VehicleSetupRecordingManager.inspect(player, setupBlock);
             else VehicleSetupRecordingManager.toggle(player, setupBlock);

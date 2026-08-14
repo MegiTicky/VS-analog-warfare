@@ -31,12 +31,22 @@ public final class VehicleSetupExecutor {
     public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
                              @Nullable Map<Long, Object> ships) {
         return switch (action.type()) {
-            case PLACE_BLOCK -> place(level, anchor.offset(action.targetOffset()), action.blockState());
-            case REMOVE_BLOCK -> remove(level, anchor.offset(action.targetOffset()));
+            case PLACE_BLOCK -> place(level, target(level, anchor, action, ships), action.blockState());
+            case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships));
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
             case CREATE_TWEAKED_CONTROLLER -> controller(player, action, ships);
             case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level, anchor, action.stiffness());
         };
+    }
+
+    private static BlockPos target(Level level, BlockPos anchor, VehicleSetupAction action,
+                                   @Nullable Map<Long, Object> ships) {
+        if (ships != null && action.targetShipId() >= 0L && action.shipOffset() != null) {
+            Object ship = ships.get(action.targetShipId());
+            BlockPos resolved = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, action.shipOffset());
+            if (resolved != null) return resolved;
+        }
+        return anchor.offset(action.targetOffset());
     }
 
     @Nullable private static String remove(Level level, BlockPos pos) {

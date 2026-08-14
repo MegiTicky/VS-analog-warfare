@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.registry.ModBlocks;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupShipPosition;
 import net.minecraft.core.BlockPos;
@@ -33,6 +34,7 @@ public final class VehicleSetupRecordingManager {
             return;
         }
         setup.clearActions();
+        OptionalModCompatibility.warnIfIssues(player);
         ACTIVE_RECORDINGS.put(playerId, setup.getBlockPos());
         player.displayClientMessage(Component.literal("Vehicle setup recording started. Place or break blocks normally, then use the recorder on this block again to stop."), true);
     }
@@ -98,14 +100,20 @@ public final class VehicleSetupRecordingManager {
     private static void recordPlace(ServerPlayer player, BlockPos pos, BlockState state) {
         VehicleSetupBlockEntity setup = activeSetup(player);
         if (setup == null || state.is(ModBlocks.VEHICLE_SETUP.get())) return;
-        setup.addAction(VehicleSetupAction.placeBlock(pos.subtract(setup.getBlockPos()), state));
+        BlockPos anchorOffset = pos.subtract(setup.getBlockPos());
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
+        setup.addAction(VehicleSetupAction.placeBlock(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), anchorOffset, state));
         player.displayClientMessage(Component.literal("Recorded placement: " + setup.actionSummary() + "."), true);
     }
 
     private static void recordRemove(ServerPlayer player, BlockPos pos) {
         VehicleSetupBlockEntity setup = activeSetup(player);
         if (setup == null || pos.equals(setup.getBlockPos())) return;
-        setup.addAction(VehicleSetupAction.removeBlock(pos.subtract(setup.getBlockPos())));
+        BlockPos anchorOffset = pos.subtract(setup.getBlockPos());
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
+        setup.addAction(VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), anchorOffset));
         player.displayClientMessage(Component.literal("Recorded removal: " + setup.actionSummary() + "."), true);
     }
 
