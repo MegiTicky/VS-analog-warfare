@@ -6,7 +6,9 @@
   "plugin": "com.erika.vsanalogwarfare.mixin.VsawMixinConfigPlugin",
   "refmap": "vs_analog_warfare.mixins.refmap.json",
   "mixins": [
-    "MountedDualCannonContraptionMixin"
+    "MountedDualCannonContraptionMixin",
+    "compat.DbwWireLinkNetworksMixin",
+    "compat.TrackworkTrackToolkitMixin"
   ],
   "client": [
     "client.CameraMixin",

@@ -25,6 +25,12 @@ public class VsawMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.contains(".mixin.compat.Vmod")) {
             return LoadingModList.get().getModFileById("valkyrien_mod") != null;
         }
+        if (mixinClassName.contains(".mixin.compat.Dbw")) {
+            return LoadingModList.get().getModFileById("drivebywire") != null;
+        }
+        if (mixinClassName.contains(".mixin.compat.Trackwork")) {
+            return LoadingModList.get().getModFileById("trackwork") != null;
+        }
         return true;
     }
 

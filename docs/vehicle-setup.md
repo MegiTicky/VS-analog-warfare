@@ -25,9 +25,14 @@ player are saved relative to the setup block. A placement followed by a break
 is therefore replayed in that same order. Stop recording before removing a
 temporary activation shaft when that removal must not be saved.
 
-Sneak-right-click the setup block with the recorder to inspect its saved action
-count without changing the recording state.
+Sneak-right-click the setup block with the recorder to inspect its typed saved
+action summary without changing the recording state.
 
-The optional DBW and Trackwork recorder actions remain available. Select the
-setup block with the recorder first, then use the appropriate compatible block
-or sneak-right-click in air for Trackwork stiffness.
+While recording, use the normal DBW cable interaction to relink the two backup
+blocks. The successful server-side DBW relink is captured automatically. Use
+the normal Trackwork Toolkit stiffness mode on a suspension track block; the
+resulting stiffness is captured automatically after Trackwork applies it.
+
+The recorder does not replace either mod's normal tool interaction. The action
+bar confirms DBW and Trackwork captures, and inspecting the setup block shows
+the typed action summary before saving the schematic.
