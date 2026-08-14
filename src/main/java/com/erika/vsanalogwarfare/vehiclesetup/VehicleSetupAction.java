@@ -47,8 +47,8 @@ public final class VehicleSetupAction {
                 sourceShipId, targetShipId, null, null, 0.0f);
     }
 
-    public static VehicleSetupAction createTweakedController(BlockPos hubOffset, ItemStack controller) {
-        return new VehicleSetupAction(VehicleSetupActionType.CREATE_TWEAKED_CONTROLLER, hubOffset, null, -1L, -1L,
+    public static VehicleSetupAction createTweakedController(long shipId, BlockPos hubOffset, ItemStack controller) {
+        return new VehicleSetupAction(VehicleSetupActionType.CREATE_TWEAKED_CONTROLLER, hubOffset, null, shipId, -1L,
                 null, controller.save(new CompoundTag()), 0.0f);
     }
 

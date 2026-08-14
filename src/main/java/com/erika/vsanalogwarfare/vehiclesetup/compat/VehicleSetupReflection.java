@@ -6,7 +6,7 @@ import net.minecraft.world.level.Level;
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
 
-final class VehicleSetupReflection {
+public final class VehicleSetupReflection {
     private VehicleSetupReflection() { }
 
     @Nullable static Object findShip(Level level, BlockPos pos) {
@@ -33,7 +33,7 @@ final class VehicleSetupReflection {
         } catch (ReflectiveOperationException ignored) { return null; }
     }
 
-    @Nullable static BlockPos positionOnShip(Object ship, BlockPos offset) {
+    @Nullable public static BlockPos positionOnShip(Object ship, BlockPos offset) {
         try {
             Object box = invoke(ship, "getShipAABB");
             return box == null ? null : new BlockPos(coordinate(box, "minX"), coordinate(box, "minY"), coordinate(box, "minZ")).offset(offset);

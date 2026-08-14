@@ -1,6 +1,7 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -13,6 +14,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.fml.ModList;
+import java.util.Map;
 
 import javax.annotation.Nullable;
 
@@ -22,11 +24,17 @@ public final class VehicleSetupExecutor {
 
     @Nullable
     public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action) {
+        return run(level, anchor, player, action, null);
+    }
+
+    @Nullable
+    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
+                             @Nullable Map<Long, Object> ships) {
         return switch (action.type()) {
             case PLACE_BLOCK -> place(level, anchor.offset(action.targetOffset()), action.blockState());
             case REMOVE_BLOCK -> remove(level, anchor.offset(action.targetOffset()));
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
-            case CREATE_TWEAKED_CONTROLLER -> controller(player, anchor.offset(action.targetOffset()), action.controller());
+            case CREATE_TWEAKED_CONTROLLER -> controller(player, action, ships);
             case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level, anchor, action.stiffness());
         };
     }
@@ -42,11 +50,16 @@ public final class VehicleSetupExecutor {
         return level.getBlockState(pos).equals(state) || level.setBlock(pos, state, 3) ? null : "could not place shaft";
     }
 
-    @Nullable private static String controller(@Nullable ServerPlayer player, BlockPos hub, @Nullable CompoundTag savedController) {
+    @Nullable private static String controller(@Nullable ServerPlayer player, VehicleSetupAction action,
+                                                @Nullable Map<Long, Object> ships) {
         if (!ModList.get().isLoaded("create_tweaked_controllers")) return "Create Tweaked Controllers is not installed";
         if (!ModList.get().isLoaded("drivebywire")) return "Drive By Wire is not installed";
         if (player == null) return "the schematic placer is offline";
-        if (savedController == null) return "recorded controller data is missing";
+        CompoundTag savedController = action.controller();
+        if (savedController == null || action.targetOffset() == null || ships == null) return "recorded controller mapping is missing";
+        Object ship = ships.get(action.targetShipId());
+        BlockPos hub = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, action.targetOffset());
+        if (hub == null) return "controller hub ship could not be resolved";
         Item item = BuiltInRegistries.ITEM.get(TWEAKED_CONTROLLER);
         if (item == Items.AIR) return "tweaked controller item is unavailable";
         ItemStack stack = ItemStack.of(savedController);

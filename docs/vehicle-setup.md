@@ -18,7 +18,8 @@ Vehicle Setup Block's block-entity NBT, which is included in the schematic.
    components in the vehicle.
 7. Save and place the VMod schematic while the engine is disabled.
 8. Empty-hand right-click the Vehicle Setup Block after placement to replay the
-   recorded actions and activate the engine.
+   recorded actions, restore DBW links, activate the engine, and receive any
+   linked controller items.
 
 While recording, all normal block placements and breaks by the recording
 player are saved relative to the setup block. A placement followed by a break
@@ -32,6 +33,12 @@ While recording, use the normal DBW cable interaction to relink the two backup
 blocks. The successful server-side DBW relink is captured automatically. Use
 the normal Trackwork Toolkit stiffness mode on a suspension track block; the
 resulting stiffness is captured automatically after Trackwork applies it.
+
+While recording, use each configured controller item on its DBW controller hub
+normally. The controller item is saved after DBW writes its `Hub` tag. VMod
+changes the ship's world position, so the setup block uses the saved ship and
+hub offset to rewrite `Hub` for the newly placed vehicle before giving the
+controller to the player. Multiple controller/hub pairs are supported.
 
 The recorder does not replace either mod's normal tool interaction. The action
 bar confirms DBW and Trackwork captures, and inspecting the setup block shows

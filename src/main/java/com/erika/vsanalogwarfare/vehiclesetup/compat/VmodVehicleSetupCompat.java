@@ -10,6 +10,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.network.chat.Component;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
@@ -21,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class VmodVehicleSetupCompat {
     private static final ConcurrentHashMap<Integer, UUID> PLACERS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<BlockPos, Map<Long, Object>> PLACED_SHIP_MAPPINGS = new ConcurrentHashMap<>();
     private VmodVehicleSetupCompat() { }
 
     public static void rememberPlacement(UUID player, List<?> ships) { PLACERS.put(System.identityHashCode(ships), player); }
@@ -30,23 +32,43 @@ public final class VmodVehicleSetupCompat {
             Object shipsValue = VehicleSetupReflection.invoke(item, "getShips");
             if (!(levelValue instanceof ServerLevel level) || !(shipsValue instanceof List<?> ships)) return;
             UUID player = PLACERS.remove(System.identityHashCode(ships));
-            level.getServer().execute(() -> run(level, player, ships));
+             level.getServer().execute(() -> register(level, ships));
         } catch (ReflectiveOperationException | LinkageError error) {
             VSAnalogWarfare.LOGGER.warn("[VSAW] Could not process VMod placement: {}", error.getClass().getSimpleName());
         }
     }
 
-    private static void run(ServerLevel level, @Nullable UUID playerId, List<?> pairs) {
-        ServerPlayer player = playerId == null ? null : level.getServer().getPlayerList().getPlayer(playerId);
+    private static void register(ServerLevel level, List<?> pairs) {
         Map<Long, Object> ships = new HashMap<>();
         for (Object pair : pairs) {
             Object ship = pairValue(pair, "getFirst"); Object id = pairValue(pair, "getSecond");
             if (ship != null && id instanceof Number number) ships.put(number.longValue(), ship);
         }
-        for (Object ship : ships.values()) scanShip(level, player, ship, ships);
+        for (Object ship : ships.values()) scanShip(level, ship, ships);
     }
 
-    private static void scanShip(ServerLevel level, @Nullable ServerPlayer player, Object ship, Map<Long, Object> ships) {
+    public static void runSetupOrLocal(ServerLevel level, BlockPos setupPos, ServerPlayer player,
+                                       VehicleSetupBlockEntity setup) {
+        Map<Long, Object> ships = PLACED_SHIP_MAPPINGS.get(setupPos);
+        if (ships == null) {
+            setup.run(player);
+            return;
+        }
+        int succeeded = 0;
+        String firstError = null;
+        for (VehicleSetupAction action : setup.actions()) {
+            String error = action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS
+                    ? runDbw(level, setupPos, action, ships)
+                    : VehicleSetupExecutor.run(level, setupPos, player, action, ships);
+            if (error == null) succeeded++; else if (firstError == null) firstError = error;
+        }
+        player.displayClientMessage(Component.literal(firstError == null
+                ? "Vehicle setup complete: " + succeeded + " actions."
+                : "Vehicle setup: " + succeeded + " complete. " + firstError), true);
+        PLACED_SHIP_MAPPINGS.remove(setupPos);
+    }
+
+    private static void scanShip(ServerLevel level, Object ship, Map<Long, Object> ships) {
         try {
             Object box = VehicleSetupReflection.invoke(ship, "getShipAABB"); if (box == null) return;
             int minX = coordinate(box, "minX"), minY = coordinate(box, "minY"), minZ = coordinate(box, "minZ");
@@ -57,30 +79,22 @@ public final class VmodVehicleSetupCompat {
                 pos.set(x, y, z);
                 if (!level.getBlockState(pos).is(ModBlocks.VEHICLE_SETUP.get())) continue;
                 BlockEntity entity = level.getBlockEntity(pos);
-                if (entity instanceof VehicleSetupBlockEntity setup) runSetup(level, player, setup, ships);
+                if (entity instanceof VehicleSetupBlockEntity) PLACED_SHIP_MAPPINGS.put(pos.immutable(), ships);
             }
         } catch (ReflectiveOperationException ignored) { }
     }
 
-    private static void runSetup(ServerLevel level, @Nullable ServerPlayer player, VehicleSetupBlockEntity setup, Map<Long, Object> ships) {
-        for (VehicleSetupAction action : setup.actions()) {
-            if (action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS) { runDbw(level, setup.getBlockPos(), action, ships); continue; }
-            String error = VehicleSetupExecutor.run(level, setup.getBlockPos(), player, action);
-            if (error != null) VSAnalogWarfare.LOGGER.warn("[VSAW] Vehicle setup at {} failed: {}", setup.getBlockPos(), error);
-        }
-    }
-
-    private static void runDbw(ServerLevel level, BlockPos setupPos, VehicleSetupAction action, Map<Long, Object> ships) {
+    @Nullable private static String runDbw(ServerLevel level, BlockPos setupPos, VehicleSetupAction action, Map<Long, Object> ships) {
         Object sourceShip = ships.get(action.targetShipId()), targetShip = ships.get(action.secondaryShipId());
         if (sourceShip == null || targetShip == null || action.targetOffset() == null || action.secondaryOffset() == null) {
             VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} could not resolve both placed ships", setupPos);
-            return;
+            return "DBW link could not resolve both placed ships";
         }
         BlockPos source = VehicleSetupReflection.positionOnShip(sourceShip, action.targetOffset());
         BlockPos target = VehicleSetupReflection.positionOnShip(targetShip, action.secondaryOffset());
         if (source == null || target == null) {
             VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} could not resolve backup positions", setupPos);
-            return;
+            return "DBW link could not resolve backup positions";
         }
         String error = DbwCompat.linkBackups(level, source, target);
         if (error != null) {
@@ -88,6 +102,7 @@ public final class VmodVehicleSetupCompat {
         } else {
             VSAnalogWarfare.LOGGER.info("[VSAW] Restored DBW link at {}", setupPos);
         }
+        return error;
     }
 
     @Nullable private static Object pairValue(Object pair, String method) {

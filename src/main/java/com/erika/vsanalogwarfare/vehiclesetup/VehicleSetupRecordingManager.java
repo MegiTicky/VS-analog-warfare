@@ -56,6 +56,20 @@ public final class VehicleSetupRecordingManager {
         player.displayClientMessage(Component.literal("Vehicle setup recorded DBW relink: " + setup.actionSummary() + "."), true);
     }
 
+    public static void recordControllerLink(net.minecraft.world.entity.player.Player player, BlockPos hub,
+                                            ItemStack controller) {
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+        VehicleSetupBlockEntity setup = activeSetup(serverPlayer);
+        if (setup == null) return;
+        VehicleSetupShipPosition hubPosition = VehicleSetupShipPosition.at(serverPlayer.level(), hub);
+        if (hubPosition == null) {
+            serverPlayer.displayClientMessage(Component.literal("Vehicle setup could not record controller link: hub is not on a loaded ship."), true);
+            return;
+        }
+        setup.addAction(VehicleSetupAction.createTweakedController(hubPosition.shipId(), hubPosition.offset(), controller));
+        serverPlayer.displayClientMessage(Component.literal("Vehicle setup recorded controller link: " + setup.actionSummary() + "."), true);
+    }
+
     public static void recordTrackworkStiffness(net.minecraft.world.entity.player.Player player,
                                                 BlockPos clicked, ItemStack stack) {
         if (!(player instanceof ServerPlayer serverPlayer) || !TrackworkCompat.isStiffnessTool(stack)

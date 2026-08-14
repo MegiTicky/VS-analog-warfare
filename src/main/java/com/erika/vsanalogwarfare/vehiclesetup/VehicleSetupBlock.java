@@ -11,6 +11,8 @@ import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.VmodVehicleSetupCompat;
+import net.minecraft.server.level.ServerLevel;
 
 import javax.annotation.Nullable;
 
@@ -23,7 +25,7 @@ public class VehicleSetupBlock extends BaseEntityBlock {
         if (hand != InteractionHand.MAIN_HAND || !player.getItemInHand(hand).isEmpty()) return InteractionResult.PASS;
         if (level.isClientSide) return InteractionResult.SUCCESS;
         if (player instanceof ServerPlayer serverPlayer && level.getBlockEntity(pos) instanceof VehicleSetupBlockEntity setup) {
-            setup.run(serverPlayer);
+            VmodVehicleSetupCompat.runSetupOrLocal((ServerLevel) level, pos, serverPlayer, setup);
             return InteractionResult.CONSUME;
         }
         return InteractionResult.PASS;

@@ -30,6 +30,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
                 case REMOVE_BLOCK -> removals++;
                 case LINK_DBW_BACKUPS -> dbw++;
                 case SET_TRACKWORK_STIFFNESS -> stiffness++;
+                case CREATE_TWEAKED_CONTROLLER -> other++;
                 default -> other++;
             }
         }
@@ -38,7 +39,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         appendCount(summary, removals, "removal");
         appendCount(summary, dbw, "DBW link");
         appendCount(summary, stiffness, "suspension setting");
-        appendCount(summary, other, "other action");
+        appendCount(summary, other, "controller/action");
         return summary.length() == 0 ? "0 saved actions" : summary.toString();
     }
 
