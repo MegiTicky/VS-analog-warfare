@@ -8,7 +8,9 @@
   "mixins": [
     "MountedDualCannonContraptionMixin",
     "compat.DbwWireLinkNetworksMixin",
-    "compat.TrackworkTrackToolkitMixin"
+    "compat.TrackworkTrackToolkitMixin",
+    "compat.VmodSchematicActionsQueueMixin",
+    "compat.VmodSchemPlacementItemMixin"
   ],
   "client": [
     "client.CameraMixin",

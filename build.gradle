@@ -151,6 +151,7 @@ tasks.named('processResources', ProcessResources).configure {
 
 tasks.named('jar', Jar).configure {
     exclude 'org/valkyrienskies/**'
+    exclude 'net/spaceeye/valkyrien_ship_schematics/**'
 
     manifest {
         attributes([

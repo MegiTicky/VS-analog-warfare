@@ -72,12 +72,22 @@ public final class VmodVehicleSetupCompat {
 
     private static void runDbw(ServerLevel level, BlockPos setupPos, VehicleSetupAction action, Map<Long, Object> ships) {
         Object sourceShip = ships.get(action.targetShipId()), targetShip = ships.get(action.secondaryShipId());
-        if (sourceShip == null || targetShip == null || action.targetOffset() == null || action.secondaryOffset() == null) return;
+        if (sourceShip == null || targetShip == null || action.targetOffset() == null || action.secondaryOffset() == null) {
+            VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} could not resolve both placed ships", setupPos);
+            return;
+        }
         BlockPos source = VehicleSetupReflection.positionOnShip(sourceShip, action.targetOffset());
         BlockPos target = VehicleSetupReflection.positionOnShip(targetShip, action.secondaryOffset());
-        if (source == null || target == null) return;
+        if (source == null || target == null) {
+            VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} could not resolve backup positions", setupPos);
+            return;
+        }
         String error = DbwCompat.linkBackups(level, source, target);
-        if (error != null) VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} failed: {}", setupPos, error);
+        if (error != null) {
+            VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} failed: {}", setupPos, error);
+        } else {
+            VSAnalogWarfare.LOGGER.info("[VSAW] Restored DBW link at {}", setupPos);
+        }
     }
 
     @Nullable private static Object pairValue(Object pair, String method) {
