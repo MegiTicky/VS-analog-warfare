@@ -1,23 +1,34 @@
 package com.erika.vsanalogwarfare.vehiclesetup.compat;
 
+import com.mojang.authlib.GameProfile;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.fml.ModList;
+import net.minecraftforge.common.util.FakePlayer;
+import net.minecraftforge.common.util.FakePlayerFactory;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
+import java.util.List;
+import java.util.UUID;
 
 /** Optional reflection bridge for Tallyho's directly placed entities. */
 public final class TallyhoCompat {
     private static final String MOD_ID = "tallyho";
-    private static final String MISSILE_REGISTRY = "edn.stratodonut.tallyho.missile.MissileRegistry";
     private static final ResourceLocation HULL_MG = new ResourceLocation(MOD_ID, "hull_mg");
     private static final ResourceLocation COAX_MG = new ResourceLocation(MOD_ID, "coax_mg");
     private static final ResourceLocation GUN_MOUNT = new ResourceLocation(MOD_ID, "gun_mount");
@@ -28,15 +39,18 @@ public final class TallyhoCompat {
     private static final ResourceLocation MISSILE = new ResourceLocation(MOD_ID, "missile");
     private static final ResourceLocation PERISCOPE_ARC = new ResourceLocation(MOD_ID, "periscope_arc");
     private static final ResourceLocation REMOTE_CAMERA = new ResourceLocation(MOD_ID, "remote_camera");
+    private static final ResourceLocation GUN_MOUNT_ITEM = new ResourceLocation(MOD_ID, "gun_mount");
+    private static final ResourceLocation TRIPOD_ITEM = new ResourceLocation(MOD_ID, "tripod_mount");
+    private static final ResourceLocation PERISCOPE_ARC_ITEM = new ResourceLocation(MOD_ID, "periscope_arc");
+    private static final ResourceLocation PERISCOPE_360_ITEM = new ResourceLocation(MOD_ID, "periscope_360");
+    private static final GameProfile REPLAY_PROFILE = new GameProfile(
+            UUID.fromString("7c7016c1-c84e-45fc-8102-5cb75e272d8f"), "[VSAW Replay]");
 
     private static final String HULL_MG_CLASS = "edn.stratodonut.tallyho.camera.entity.HullMachineGunEntity";
     private static final String COAX_MG_CLASS = "edn.stratodonut.tallyho.camera.entity.CoaxMachineGunEntity";
-    private static final String GUN_MOUNT_CLASS = "edn.stratodonut.tallyho.entity.GunMountEntity";
-    private static final String TRIPOD_CLASS = "edn.stratodonut.tallyho.entity.TripodEntity";
     private static final String CHIN_TURRET_CLASS = "edn.stratodonut.tallyho.camera.entity.HeliChinTurretEntity";
     private static final String CROWS_CLASS = "edn.stratodonut.tallyho.camera.entity.RemoteStationEntity";
     private static final String TARGETING_POD_CLASS = "edn.stratodonut.tallyho.camera.entity.TargetingPodEntity";
-    private static final String PERISCOPE_CLASS = "edn.stratodonut.tallyho.camera.entity.PeriscopeEntity";
     private static final String REMOTE_CAMERA_CLASS = "edn.stratodonut.tallyho.camera.entity.RemoteCameraEntity";
 
     private static final String BASE_YAW_FIELD = "BASE_YAW";
@@ -108,21 +122,16 @@ public final class TallyhoCompat {
                         serverLevel, supportPosition, yaw, variant);
                 case "coax_mg" -> VehicleSetupReflection.invokeStatic(Class.forName(COAX_MG_CLASS), "spawn",
                         serverLevel, supportPosition, yaw, variant);
-                case "gun_mount" -> VehicleSetupReflection.invokeStatic(Class.forName(GUN_MOUNT_CLASS), "spawn",
-                        serverLevel, position, yaw);
-                case "tripod_mount" -> VehicleSetupReflection.invokeStatic(Class.forName(TRIPOD_CLASS), "spawn",
-                        serverLevel, supportPosition, yaw);
+                case "gun_mount", "tripod_mount", "periscope_arc", "missile" -> placeWithItem(serverLevel,
+                        supportPosition, position, key, yaw, variant, state);
                 case "chin_turret" -> VehicleSetupReflection.invokeStatic(Class.forName(CHIN_TURRET_CLASS), "spawn",
                         serverLevel, position, yaw);
                 case "crows_turret" -> VehicleSetupReflection.invokeStatic(Class.forName(CROWS_CLASS), "spawn",
                         serverLevel, position, yaw);
                 case "targeting_pod" -> VehicleSetupReflection.invokeStatic(Class.forName(TARGETING_POD_CLASS), "spawn",
                         serverLevel, supportPosition, yaw);
-                case "periscope_arc" -> VehicleSetupReflection.invokeStatic(Class.forName(PERISCOPE_CLASS),
-                        variant == 360 ? "spawn360" : "spawnArc", serverLevel, position, yaw);
                 case "remote_camera" -> VehicleSetupReflection.invokeStatic(Class.forName(REMOTE_CAMERA_CLASS), "spawn",
                         serverLevel, supportPosition, yaw);
-                case "missile" -> spawnMissile(serverLevel, position, yaw, state.getString("MissileId"));
                 default -> null;
             };
             if (!(spawned instanceof Entity entity)) return "unsupported Tallyho entity: " + entityId;
@@ -140,12 +149,55 @@ public final class TallyhoCompat {
         }
     }
 
-    private static Object spawnMissile(ServerLevel level, Vec3 position, float yaw, String missileId)
-            throws ReflectiveOperationException {
-        Class<?> registry = Class.forName(MISSILE_REGISTRY);
-        Object entry = VehicleSetupReflection.invokeStatic(registry, "getEntry", missileId);
-        if (entry == null) return null;
-        return VehicleSetupReflection.invoke(entry, "spawn", level, position, yaw);
+    @Nullable
+    private static Entity placeWithItem(ServerLevel level, BlockPos supportPosition, Vec3 position,
+                                        ResourceLocation entityType, float yaw, int variant, CompoundTag state) {
+        ResourceLocation itemId = itemFor(entityType, variant, state);
+        if (itemId == null) return null;
+        Item item = BuiltInRegistries.ITEM.get(itemId);
+        if (item == Items.AIR) return null;
+
+        BlockPos clickedPos = supportPosition;
+        Direction clickedFace = Direction.UP;
+        Vec3 hitPosition = position;
+        if (TRIPOD_MOUNT.equals(entityType)) {
+            clickedPos = supportPosition.below();
+            hitPosition = Vec3.atCenterOf(clickedPos).add(0.0, 0.5, 0.0);
+        }
+
+        Direction facing = Direction.fromYRot(yaw);
+        Vec3 playerPosition = new Vec3(facing.getStepX() * 32.0, supportPosition.getY() + 1.0,
+                facing.getStepZ() * 32.0);
+        if (PERISCOPE_ARC.equals(entityType)) playerPosition = Vec3.atCenterOf(supportPosition)
+                .add(facing.getStepX() * 32.0, 1.0, facing.getStepZ() * 32.0);
+        FakePlayer player = FakePlayerFactory.get(level, REPLAY_PROFILE);
+        player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z, yaw, 0.0f);
+        ItemStack stack = new ItemStack(item);
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        List<Entity> before = nearbyEntities(level, position);
+        InteractionResult result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player,
+                InteractionHand.MAIN_HAND, new BlockHitResult(hitPosition, clickedFace, clickedPos, false)));
+        player.setItemInHand(InteractionHand.MAIN_HAND, ItemStack.EMPTY);
+        if (!result.consumesAction()) return null;
+        return nearbyEntities(level, position).stream()
+                .filter(entity -> BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).equals(entityType))
+                .filter(entity -> !before.contains(entity))
+                .findFirst().orElse(null);
+    }
+
+    @Nullable
+    private static ResourceLocation itemFor(ResourceLocation entityType, int variant, CompoundTag state) {
+        if (GUN_MOUNT.equals(entityType)) return GUN_MOUNT_ITEM;
+        if (TRIPOD_MOUNT.equals(entityType)) return TRIPOD_ITEM;
+        if (PERISCOPE_ARC.equals(entityType)) return variant == 360 ? PERISCOPE_360_ITEM : PERISCOPE_ARC_ITEM;
+        if (MISSILE.equals(entityType) && state.contains("MissileId")) {
+            return new ResourceLocation(MOD_ID, state.getString("MissileId"));
+        }
+        return null;
+    }
+
+    private static List<Entity> nearbyEntities(ServerLevel level, Vec3 position) {
+        return level.getEntities(null, new AABB(position, position).inflate(3.0));
     }
 
     private static void restoreSupportedState(Entity entity, CompoundTag state, ResourceLocation key)
