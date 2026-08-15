@@ -10,7 +10,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
-import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupRecorderItem;
+import com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem;
 
 public final class ModItems {
     public static final DeferredRegister<Item> ITEMS =
@@ -25,8 +25,8 @@ public final class ModItems {
     public static final RegistryObject<Item> VEHICLE_SETUP = ITEMS.register("vehicle_setup",
             () -> new BlockItem(ModBlocks.VEHICLE_SETUP.get(), new Item.Properties()));
 
-    public static final RegistryObject<Item> VEHICLE_SETUP_RECORDER = ITEMS.register("vehicle_setup_recorder",
-            () -> new VehicleSetupRecorderItem(new Item.Properties().stacksTo(1)));
+    public static final RegistryObject<Item> ANALOG_SCREWDRIVER = ITEMS.register("analog_screwdriver",
+            () -> new AnalogScrewdriverItem(new Item.Properties().stacksTo(1)));
 
     private ModItems() {
     }
@@ -39,7 +39,7 @@ public final class ModItems {
                 event.accept(SCOPE_BLOCK);
                 event.accept(MOUSE_AIM_BLOCK);
                 event.accept(VEHICLE_SETUP);
-                event.accept(VEHICLE_SETUP_RECORDER);
+                event.accept(ANALOG_SCREWDRIVER);
             }
         }
     }
