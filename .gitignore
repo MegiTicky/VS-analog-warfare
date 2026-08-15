@@ -13,6 +13,7 @@ gradle/vs23-reference-aliases/
 *.log
 
 Thumbs.db
+AGENTS.md
 
 # Commit the Gradle wrapper jar (everything else *.jar stays ignored).
 !gradle/wrapper/gradle-wrapper.jar
