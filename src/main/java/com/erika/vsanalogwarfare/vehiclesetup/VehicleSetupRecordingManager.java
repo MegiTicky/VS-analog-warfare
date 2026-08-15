@@ -105,12 +105,13 @@ public final class VehicleSetupRecordingManager {
         if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)
                 || !(event.getItemStack().getItem() instanceof VehicleSetupRecorderItem)) return;
         VehicleSetupBlockEntity setup = activeSetup(player);
-        if (setup == null || !TallyhoCompat.isHullMachineGun(event.getTarget())) return;
-        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), event.getTarget().blockPosition());
-        int muzzleOffset = TallyhoCompat.muzzleOffset(event.getTarget());
+        if (setup == null) return;
+        TallyhoCompat.CapturedHullMg captured = TallyhoCompat.capture(event.getTarget());
+        if (captured == null) return;
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), captured.supportPosition());
         setup.addAction(VehicleSetupAction.spawnTallyhoHullMg(ship == null ? -1L : ship.shipId(),
-                ship == null ? null : ship.offset(), event.getTarget().blockPosition().subtract(setup.getBlockPos()),
-                event.getTarget().getYRot(), muzzleOffset));
+                ship == null ? null : ship.offset(), captured.supportPosition().subtract(setup.getBlockPos()),
+                captured.baseYaw(), captured.muzzleOffset()));
         player.displayClientMessage(Component.literal("Vehicle setup recorded Tallyho weapon: hull_mg. "
                 + setup.actionSummary() + "."), true);
         event.setCanceled(true);
