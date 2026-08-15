@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.registry;
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimBlockEntity;
 import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
+import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -19,6 +20,10 @@ public final class ModBlockEntities {
     public static final RegistryObject<BlockEntityType<MouseAimBlockEntity>> MOUSE_AIM =
             BLOCK_ENTITIES.register("mouse_aim",
                     () -> BlockEntityType.Builder.of(MouseAimBlockEntity::new, ModBlocks.MOUSE_AIM_BLOCK.get()).build(null));
+
+    public static final RegistryObject<BlockEntityType<VehicleSetupBlockEntity>> VEHICLE_SETUP =
+            BLOCK_ENTITIES.register("vehicle_setup", () -> BlockEntityType.Builder.of(
+                    VehicleSetupBlockEntity::new, ModBlocks.VEHICLE_SETUP.get()).build(null));
 
     private ModBlockEntities() {
     }

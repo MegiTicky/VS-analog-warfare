@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.mixin;
 import com.llamalad7.mixinextras.MixinExtrasBootstrap;
 import java.util.List;
 import java.util.Set;
+import net.minecraftforge.fml.loading.LoadingModList;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
@@ -21,6 +22,15 @@ public class VsawMixinConfigPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (mixinClassName.contains(".mixin.compat.Vmod")) {
+            return LoadingModList.get().getModFileById("valkyrien_mod") != null;
+        }
+        if (mixinClassName.contains(".mixin.compat.Dbw")) {
+            return LoadingModList.get().getModFileById("drivebywire") != null;
+        }
+        if (mixinClassName.contains(".mixin.compat.Trackwork")) {
+            return LoadingModList.get().getModFileById("trackwork") != null;
+        }
         return true;
     }
 
