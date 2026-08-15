@@ -6,6 +6,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.fml.ModList;
@@ -125,7 +126,7 @@ public final class TallyhoCompat {
                 default -> null;
             };
             if (!(spawned instanceof Entity entity)) return "unsupported Tallyho entity: " + entityId;
-            restoreState(entity, state, position);
+            restoreSupportedState(entity, state, key);
             if (!entity.isAlive()) return "Tallyho entity was removed during replay: " + entityId;
             if ((HULL_MG.toString().equals(entityId) || COAX_MG.toString().equals(entityId)
                     || CHIN_TURRET.toString().equals(entityId) || CROWS_TURRET.toString().equals(entityId)
@@ -147,20 +148,17 @@ public final class TallyhoCompat {
         return VehicleSetupReflection.invoke(entry, "spawn", level, position, yaw);
     }
 
-    private static void restoreState(Entity entity, CompoundTag state, Vec3 position) {
-        entity.load(state.copy());
-        entity.setPos(position.x, position.y, position.z);
+    private static void restoreSupportedState(Entity entity, CompoundTag state, ResourceLocation key)
+            throws ReflectiveOperationException {
+        if (GUN_MOUNT.equals(key) || TRIPOD_MOUNT.equals(key)) {
+            if (!state.contains("gunItem")) return;
+            ItemStack gun = ItemStack.of(state.getCompound("gunItem"));
+            if (!gun.isEmpty()) VehicleSetupReflection.invoke(entity, "setMountedGun", gun);
+        }
     }
 
     private static void stripRuntimeState(CompoundTag state) {
         state.remove("UUID");
-        state.remove("Pos");
-        state.remove("Motion");
-        state.remove("Rotation");
-        state.remove("Passengers");
-        state.remove("Vehicle");
-        state.remove("Dimension");
-        state.remove("PortalCooldown");
     }
 
     private static boolean isSupported(ResourceLocation key) {
