@@ -23,7 +23,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     public void clearActions() { actions.clear(); markAndSync(); }
     public int actionCount() { return actions.size(); }
     public String actionSummary() {
-        int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, other = 0;
+        int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, tallyho = 0, other = 0;
         for (VehicleSetupAction action : actions) {
             switch (action.type()) {
                 case PLACE_BLOCK -> placements++;
@@ -31,6 +31,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
                 case LINK_DBW_BACKUPS -> dbw++;
                 case SET_TRACKWORK_STIFFNESS -> stiffness++;
                 case SPAWN_TALLYHO_HULL_MG -> hullMgs++;
+                case SPAWN_TALLYHO_ENTITY -> tallyho++;
                 case CREATE_TWEAKED_CONTROLLER -> other++;
                 default -> other++;
             }
@@ -41,6 +42,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         appendCount(summary, dbw, "DBW link");
         appendCount(summary, stiffness, "suspension setting");
         appendCount(summary, hullMgs, "hull MG");
+        appendCount(summary, tallyho, "Tallyho entity");
         appendCount(summary, other, "controller/action");
         return summary.length() == 0 ? "0 saved actions" : summary.toString();
     }

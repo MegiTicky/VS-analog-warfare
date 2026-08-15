@@ -39,6 +39,9 @@ public final class VehicleSetupExecutor {
             case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level, anchor, action.stiffness());
             case SPAWN_TALLYHO_HULL_MG -> TallyhoCompat.spawnHullMg(level, target(level, anchor, action, ships),
                     action.yaw(), action.muzzleOffset());
+            case SPAWN_TALLYHO_ENTITY -> TallyhoCompat.spawnEntity(level, target(level, anchor, action, ships),
+                    action.positionOffset(), action.tallyhoEntity(), action.yaw(), action.tallyhoVariant(),
+                    action.tallyhoState());
         };
     }
 

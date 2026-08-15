@@ -5,12 +5,13 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
 
 public final class VehicleSetupAction {
-    public static final int FORMAT_VERSION = 3;
+    public static final int FORMAT_VERSION = 5;
 
     private final VehicleSetupActionType type;
     @Nullable private final BlockPos targetOffset;
@@ -23,12 +24,20 @@ public final class VehicleSetupAction {
     private final float stiffness;
     private final float yaw;
     private final int muzzleOffset;
+    @Nullable private final String tallyhoEntity;
+    @Nullable private final CompoundTag tallyhoState;
+    private final int tallyhoVariant;
+    private final double positionOffsetX;
+    private final double positionOffsetY;
+    private final double positionOffsetZ;
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
                                long targetShipId, long secondaryShipId,
-                                @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
-                                float yaw, int muzzleOffset) {
+                                 @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
+                                 float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
+                                 @Nullable CompoundTag tallyhoState, int tallyhoVariant,
+                                 double positionOffsetX, double positionOffsetY, double positionOffsetZ) {
         this.type = type;
         this.targetOffset = targetOffset;
         this.secondaryOffset = secondaryOffset;
@@ -40,39 +49,53 @@ public final class VehicleSetupAction {
         this.stiffness = stiffness;
         this.yaw = yaw;
         this.muzzleOffset = muzzleOffset;
+        this.tallyhoEntity = tallyhoEntity;
+        this.tallyhoState = tallyhoState;
+        this.tallyhoVariant = tallyhoVariant;
+        this.positionOffsetX = positionOffsetX;
+        this.positionOffsetY = positionOffsetY;
+        this.positionOffsetZ = positionOffsetZ;
     }
 
     public static VehicleSetupAction placeBlock(long shipId, @Nullable BlockPos shipOffset,
                                                 BlockPos anchorOffset, BlockState state) {
         return new VehicleSetupAction(VehicleSetupActionType.PLACE_BLOCK, anchorOffset, null, shipOffset,
-                shipId, -1L, NbtUtils.writeBlockState(state), null, 0.0f, 0.0f, 0);
+                shipId, -1L, NbtUtils.writeBlockState(state), null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
     }
 
     public static VehicleSetupAction removeBlock(long shipId, @Nullable BlockPos shipOffset, BlockPos anchorOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.REMOVE_BLOCK, anchorOffset, null, shipOffset,
-                shipId, -1L, null, null, 0.0f, 0.0f, 0);
+                shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
     }
 
     public static VehicleSetupAction linkDbwBackups(long sourceShipId, BlockPos sourceOffset,
                                                      long targetShipId, BlockPos targetOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.LINK_DBW_BACKUPS, sourceOffset, targetOffset, null,
-                sourceShipId, targetShipId, null, null, 0.0f, 0.0f, 0);
+                sourceShipId, targetShipId, null, null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
     }
 
     public static VehicleSetupAction createTweakedController(long shipId, BlockPos hubOffset, ItemStack controller) {
         return new VehicleSetupAction(VehicleSetupActionType.CREATE_TWEAKED_CONTROLLER, hubOffset, null, null,
-                shipId, -1L, null, controller.save(new CompoundTag()), 0.0f, 0.0f, 0);
+                shipId, -1L, null, controller.save(new CompoundTag()), 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
     }
 
     public static VehicleSetupAction setTrackworkStiffness(float stiffness) {
         return new VehicleSetupAction(VehicleSetupActionType.SET_TRACKWORK_STIFFNESS, null, null, null, -1L, -1L,
-                null, null, stiffness, 0.0f, 0);
+                null, null, stiffness, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
     }
 
     public static VehicleSetupAction spawnTallyhoHullMg(long shipId, @Nullable BlockPos shipOffset,
                                                           BlockPos anchorOffset, float yaw, int muzzleOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.SPAWN_TALLYHO_HULL_MG, anchorOffset, null, shipOffset,
-                shipId, -1L, null, null, 0.0f, yaw, muzzleOffset);
+                shipId, -1L, null, null, 0.0f, yaw, muzzleOffset, null, null, 0, 0.0, 0.0, 0.0);
+    }
+
+    public static VehicleSetupAction spawnTallyhoEntity(long shipId, @Nullable BlockPos shipOffset,
+                                                         BlockPos anchorOffset, Vec3 positionOffset, String entityId,
+                                                         float yaw, int variant, CompoundTag state) {
+        return new VehicleSetupAction(VehicleSetupActionType.SPAWN_TALLYHO_ENTITY, anchorOffset, null, shipOffset,
+                shipId, -1L, null, null, 0.0f, yaw, 0, entityId, state, variant,
+                positionOffset.x, positionOffset.y, positionOffset.z);
     }
 
     public VehicleSetupActionType type() { return type; }
@@ -86,6 +109,10 @@ public final class VehicleSetupAction {
     public float stiffness() { return stiffness; }
     public float yaw() { return yaw; }
     public int muzzleOffset() { return muzzleOffset; }
+    @Nullable public String tallyhoEntity() { return tallyhoEntity; }
+    @Nullable public CompoundTag tallyhoState() { return tallyhoState == null ? null : tallyhoState.copy(); }
+    public int tallyhoVariant() { return tallyhoVariant; }
+    public Vec3 positionOffset() { return new Vec3(positionOffsetX, positionOffsetY, positionOffsetZ); }
 
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
@@ -101,6 +128,12 @@ public final class VehicleSetupAction {
         tag.putFloat("Stiffness", stiffness);
         tag.putFloat("Yaw", yaw);
         tag.putInt("MuzzleOffset", muzzleOffset);
+        if (tallyhoEntity != null) tag.putString("TallyhoEntity", tallyhoEntity);
+        if (tallyhoState != null) tag.put("TallyhoState", tallyhoState.copy());
+        tag.putInt("TallyhoVariant", tallyhoVariant);
+        tag.putDouble("PositionOffsetX", positionOffsetX);
+        tag.putDouble("PositionOffsetY", positionOffsetY);
+        tag.putDouble("PositionOffsetZ", positionOffsetZ);
         return tag;
     }
 
@@ -121,7 +154,11 @@ public final class VehicleSetupAction {
                     tag.contains("SecondaryShipId") ? tag.getLong("SecondaryShipId") : -1L,
                     tag.contains("BlockState") ? tag.getCompound("BlockState").copy() : null,
                     tag.contains("Controller") ? tag.getCompound("Controller").copy() : null,
-                    tag.getFloat("Stiffness"), tag.getFloat("Yaw"), tag.getInt("MuzzleOffset"));
+                    tag.getFloat("Stiffness"), tag.getFloat("Yaw"), tag.getInt("MuzzleOffset"),
+                    tag.contains("TallyhoEntity") ? tag.getString("TallyhoEntity") : null,
+                    tag.contains("TallyhoState") ? tag.getCompound("TallyhoState").copy() : null,
+                    tag.getInt("TallyhoVariant"), tag.getDouble("PositionOffsetX"),
+                    tag.getDouble("PositionOffsetY"), tag.getDouble("PositionOffsetZ"));
         } catch (IllegalArgumentException ignored) {
             return null;
         }
