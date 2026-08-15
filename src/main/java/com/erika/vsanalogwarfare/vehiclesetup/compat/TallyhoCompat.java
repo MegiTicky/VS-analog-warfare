@@ -53,6 +53,10 @@ public final class TallyhoCompat {
     private static final ResourceLocation REMOTE_CAMERA_ITEM = new ResourceLocation(MOD_ID, "remote_camera");
 
     private static final String MISSILE_REGISTRY_CLASS = "edn.stratodonut.tallyho.missile.MissileRegistry";
+    private static final String GUN_MOUNT_CLASS = "edn.stratodonut.tallyho.entity.GunMountEntity";
+    private static final String PERISCOPE_CLASS = "edn.stratodonut.tallyho.camera.entity.PeriscopeEntity";
+    private static final String ANGLE_LIMITS_CLASS = "edn.stratodonut.tallyho.camera.AngleLimits";
+    private static final String CAMERA_ENTITY_CLASS = "edn.stratodonut.tallyho.camera.entity.CameraEntity2";
     private static final String MISSILE_CLASS = "edn.stratodonut.tallyho.entity.MountedMissileEntity";
     private static final String CAMERA_SEAT_CLASS = "edn.stratodonut.tallyho.camera.entity.FlexibleSeatEntity";
     private static final String MISSILE_ID_TAG = "MissileId";
@@ -115,6 +119,11 @@ public final class TallyhoCompat {
             positionOffset = support.position().subtract(origin);
             if (!isValidSlotOffset(positionOffset)) return null;
         }
+        if ((GUN_MOUNT.equals(key) || PERISCOPE_ARC.equals(key)) && support != null
+                && CAMERA_SEAT.equals(BuiltInRegistries.ENTITY_TYPE.getKey(support.getType()))) {
+            positionOffset = support.position().subtract(origin);
+            if (!isValidSlotOffset(positionOffset)) return null;
+        }
         if ("periscope_arc".equals(key.getPath()) && state.getFloat("ANGLE_LIMIT_Y") >= 180.0f) variant = 360;
         Float baseYaw = readFloatField(entity, BASE_YAW_FIELD);
         return new CapturedEntity(supportPosition, positionOffset, key.toString(),
@@ -139,8 +148,9 @@ public final class TallyhoCompat {
                         serverLevel, supportPosition, yaw, variant);
                 case "coax_mg" -> VehicleSetupReflection.invokeStatic(Class.forName(COAX_MG_CLASS), "spawn",
                         serverLevel, supportPosition, yaw, variant);
-                case "gun_mount", "tripod_mount", "chin_turret", "crows_turret", "targeting_pod",
-                        "periscope_arc", "remote_camera" -> placeWithItem(serverLevel,
+                case "gun_mount" -> spawnGunMount(serverLevel, supportPosition, position, yaw, state);
+                case "periscope_arc" -> spawnPeriscope(serverLevel, supportPosition, position, yaw, variant);
+                case "tripod_mount", "chin_turret", "crows_turret", "targeting_pod", "remote_camera" -> placeWithItem(serverLevel,
                         supportPosition, position, key, yaw, variant);
                 case "missile" -> spawnMissile(serverLevel, supportPosition, position, yaw, state);
                 default -> null;
@@ -151,7 +161,8 @@ public final class TallyhoCompat {
             restoreSupportedState(entity, state, key);
             if (!entity.isAlive()) return "Tallyho entity was removed during replay: " + entityId;
             if ((HULL_MG.toString().equals(entityId) || COAX_MG.toString().equals(entityId)
-                    || CHIN_TURRET.toString().equals(entityId) || CROWS_TURRET.toString().equals(entityId)
+                    || GUN_MOUNT.toString().equals(entityId) || CHIN_TURRET.toString().equals(entityId)
+                    || CROWS_TURRET.toString().equals(entityId)
                     || TARGETING_POD.toString().equals(entityId) || PERISCOPE_ARC.toString().equals(entityId)
                     ) && entity.getVehicle() == null) {
                 return "Tallyho entity was not mounted during replay: " + entityId;
@@ -186,14 +197,20 @@ public final class TallyhoCompat {
 
         Direction facing = Direction.fromYRot(yaw);
         double directionSign = PERISCOPE_ARC.equals(entityType) ? -1.0 : 1.0;
-        Vec3 playerPosition = Vec3.atCenterOf(supportPosition)
+        Vec3 shipPlayerPosition = Vec3.atCenterOf(supportPosition)
                 .add(facing.getStepX() * 32.0 * directionSign, 1.0,
                         facing.getStepZ() * 32.0 * directionSign);
+        Object ship = VehicleSetupReflection.findShip(level, supportPosition);
+        Vec3 playerPosition = ship == null ? shipPlayerPosition
+                : VehicleSetupReflection.shipToWorldPosition(ship, shipPlayerPosition);
+        if (playerPosition == null) playerPosition = shipPlayerPosition;
         FakePlayer player = FakePlayerFactory.get(level, REPLAY_PROFILE);
         player.moveTo(playerPosition.x, playerPosition.y, playerPosition.z, yaw, 0.0f);
         ItemStack stack = new ItemStack(item);
         player.setItemInHand(InteractionHand.MAIN_HAND, stack);
-        List<UUID> before = nearbyEntities(level, position).stream().map(Entity::getUUID).toList();
+        Vec3 worldPosition = ship == null ? null : VehicleSetupReflection.shipToWorldPosition(ship, position);
+        List<UUID> before = nearbyEntities(level, position, worldPosition).stream()
+                .map(Entity::getUUID).toList();
         InteractionResult result;
         try {
             result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player,
@@ -204,7 +221,7 @@ public final class TallyhoCompat {
         if (!result.consumesAction()) {
             throw new IllegalArgumentException("Tallyho item placement returned " + result + " for " + entityType);
         }
-        Entity created = nearbyEntities(level, position).stream()
+        Entity created = nearbyEntities(level, position, worldPosition).stream()
                 .filter(entity -> BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).equals(entityType))
                 .filter(entity -> !before.contains(entity.getUUID()))
                 .filter(Entity::isAddedToWorld)
@@ -216,6 +233,89 @@ public final class TallyhoCompat {
         }
         return created;
     }
+
+    private static Entity spawnGunMount(ServerLevel level, BlockPos supportPosition, Vec3 seatPosition,
+                                        float yaw, CompoundTag state) throws ReflectiveOperationException {
+        return spawnMountedCamera(level, supportPosition, seatPosition, yaw, GUN_MOUNT_CLASS,
+                state, null);
+    }
+
+    private static Entity spawnPeriscope(ServerLevel level, BlockPos supportPosition, Vec3 seatPosition,
+                                         float yaw, int variant) throws ReflectiveOperationException {
+        Class<?> entityClass = Class.forName(PERISCOPE_CLASS);
+        Class<?> limitsClass = Class.forName(ANGLE_LIMITS_CLASS);
+        Class<?> postFxClass = Class.forName(CAMERA_ENTITY_CLASS + "$PostFXType");
+        Constructor<?> limitsConstructor = limitsClass.getConstructor(float.class, float.class, float.class);
+        Object limits = limitsConstructor.newInstance(0.0f, 0.0f, variant == 360 ? 360.0f : 67.0f);
+        Object postFx = Enum.valueOf(postFxClass.asSubclass(Enum.class), "PERISCOPE");
+        return spawnMountedCamera(level, supportPosition, seatPosition, yaw, PERISCOPE_CLASS, null,
+                new CameraParams(entityClass, limits, postFx));
+    }
+
+    private static Entity spawnMountedCamera(ServerLevel level, BlockPos supportPosition, Vec3 seatPosition,
+                                             float yaw, String entityClassName, @Nullable CompoundTag state,
+                                             @Nullable CameraParams cameraParams) throws ReflectiveOperationException {
+        Object ship = VehicleSetupReflection.findShip(level, supportPosition);
+        if (ship == null) {
+            throw new IllegalArgumentException("Tallyho entity support " + supportPosition
+                    + " is not on a Valkyrien Skies ship");
+        }
+        Vec3 factoryPosition = seatPosition.subtract(0.0, SEAT_Y_OFFSET, 0.0);
+        Vec3 worldPosition = VehicleSetupReflection.shipToWorldPosition(ship, factoryPosition);
+        if (worldPosition == null) {
+            throw new IllegalArgumentException("could not transform Tallyho entity slot to world coordinates");
+        }
+
+        Entity seat = null;
+        Entity entity = null;
+        try {
+            Class<?> seatClass = Class.forName(CAMERA_SEAT_CLASS);
+            Constructor<?> seatConstructor = seatClass.getConstructor(Level.class, BlockPos.class);
+            Object seatObject = seatConstructor.newInstance(level,
+                    BlockPos.containing(factoryPosition));
+            if (!(seatObject instanceof Entity createdSeat)) {
+                throw new IllegalArgumentException("Tallyho camera seat factory returned the wrong type");
+            }
+            seat = createdSeat;
+            seat.setPos(seatPosition);
+            if (!level.addFreshEntity(seat)) {
+                throw new IllegalArgumentException("Tallyho camera seat registration was rejected");
+            }
+
+            Class<?> entityClass = cameraParams == null ? Class.forName(entityClassName)
+                    : cameraParams.entityClass();
+            EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.get(
+                    cameraParams == null ? GUN_MOUNT : PERISCOPE_ARC);
+            Constructor<?> entityConstructor = entityClass.getConstructor(EntityType.class, Level.class);
+            Object createdEntity = entityConstructor.newInstance(type, level);
+            if (!(createdEntity instanceof Entity created)) {
+                throw new IllegalArgumentException("Tallyho camera factory returned the wrong entity type");
+            }
+            entity = created;
+            if (cameraParams != null) {
+                VehicleSetupReflection.invokeDeclared(entity, "setParams", yaw,
+                        cameraParams.postFx(), cameraParams.limits(), 70);
+            }
+            entity.moveTo(worldPosition.x, worldPosition.y, worldPosition.z, yaw, 0.0f);
+            if (!level.addFreshEntity(entity)) {
+                throw new IllegalArgumentException("Tallyho camera entity registration was rejected");
+            }
+            if (!entity.startRiding(seat, true)) {
+                throw new IllegalArgumentException("Tallyho camera entity could not mount its camera seat");
+            }
+            if (GUN_MOUNT_CLASS.equals(entityClassName)) {
+                writeFloatField(entity, BASE_YAW_FIELD, state != null && state.contains("BASE_YAW")
+                        ? state.getFloat("BASE_YAW") : yaw);
+            }
+            return entity;
+        } catch (ReflectiveOperationException | IllegalArgumentException | LinkageError error) {
+            if (entity != null) entity.discard();
+            if (seat != null) seat.discard();
+            throw error;
+        }
+    }
+
+    private record CameraParams(Class<?> entityClass, Object limits, Object postFx) { }
 
     private static Entity spawnMissile(ServerLevel level, BlockPos supportPosition, Vec3 desiredPosition,
                                        float yaw, CompoundTag state) throws ReflectiveOperationException {
@@ -381,8 +481,15 @@ public final class TallyhoCompat {
         return BuiltInRegistries.ITEM.get(id);
     }
 
-    private static List<Entity> nearbyEntities(ServerLevel level, Vec3 position) {
-        return level.getEntities(null, new AABB(position, position).inflate(3.0));
+    private static List<Entity> nearbyEntities(ServerLevel level, Vec3 position, @Nullable Vec3 alternatePosition) {
+        List<Entity> entities = level.getEntities(null, new AABB(position, position).inflate(3.0));
+        if (alternatePosition != null && alternatePosition.distanceToSqr(position) > 0.01) {
+            for (Entity entity : level.getEntities(null,
+                    new AABB(alternatePosition, alternatePosition).inflate(3.0))) {
+                if (!entities.contains(entity)) entities.add(entity);
+            }
+        }
+        return entities;
     }
 
     private static void restoreSupportedState(Entity entity, CompoundTag state, ResourceLocation key)
@@ -419,6 +526,13 @@ public final class TallyhoCompat {
             field.setAccessible(true);
             return field.getFloat(entity);
         } catch (ReflectiveOperationException | LinkageError ignored) { return null; }
+    }
+
+    private static void writeFloatField(Entity entity, String name, float value)
+            throws ReflectiveOperationException {
+        Field field = findField(entity.getClass(), name);
+        field.setAccessible(true);
+        field.setFloat(entity, value);
     }
 
     private static Field findField(Class<?> type, String name) throws NoSuchFieldException {

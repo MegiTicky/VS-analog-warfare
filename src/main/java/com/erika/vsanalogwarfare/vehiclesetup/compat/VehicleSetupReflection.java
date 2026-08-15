@@ -69,6 +69,27 @@ public final class VehicleSetupReflection {
         return method.invoke(target, arguments);
     }
 
+    @Nullable static Object invokeDeclared(Object target, String name, Object... arguments)
+            throws ReflectiveOperationException {
+        for (Class<?> current = target.getClass(); current != null; current = current.getSuperclass()) {
+            for (Method method : current.getDeclaredMethods()) {
+                if (!method.getName().equals(name) || method.getParameterCount() != arguments.length) continue;
+                Class<?>[] parameters = method.getParameterTypes();
+                boolean matches = true;
+                for (int i = 0; i < parameters.length; i++) {
+                    if (arguments[i] != null && !wrap(parameters[i]).isInstance(arguments[i])) {
+                        matches = false;
+                        break;
+                    }
+                }
+                if (!matches) continue;
+                method.setAccessible(true);
+                return method.invoke(target, arguments);
+            }
+        }
+        throw new NoSuchMethodException(target.getClass().getName() + "." + name);
+    }
+
     @Nullable static Method findMethod(Class<?> type, String name, Object... arguments) {
         for (Method method : type.getMethods()) {
             if (!method.getName().equals(name) || method.getParameterCount() != arguments.length) continue;

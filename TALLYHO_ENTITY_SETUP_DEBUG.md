@@ -144,3 +144,44 @@ shipyard position.
 5. Confirm one missile appears in the recorded slot, mounted to a
    `tallyho:camera_seat`, without `setPosDistance too high` warnings.
 6. Run replay again and confirm no duplicate missile or seat is created.
+
+## Follow-up Item Placement Issues
+
+The deployed missile coordinate fix made missile replay reliable. Two separate
+item-placement issues were then observed:
+
+- Periscope yaw was wrong after replay. Tallyho's periscope items derive the
+  ship-relative facing from the fake server player's block position, then
+  apply VS's world-to-ship transform. The replay fake player had been placed
+  directly in shipyard coordinates, so that position was transformed twice.
+- Gun mounts reported successful item use but were not detected by replay.
+  GunMountItem passes a shipyard-space hit position to its factory, while the
+  world-handled gun mount is registered in world coordinates. Replay searched
+  only around the shipyard-space position and could miss the created entity.
+
+The follow-up correction places the fake player at the world transform of its
+intended shipyard-space direction and searches for newly created item entities
+around both coordinate representations. Hull MG, coax MG, and missile replay
+paths remain unchanged.
+
+## Direct Gun And Periscope Attempt
+
+The alternate-space search did not fix gun mounts because VS/Create rejected
+the Tallyho item factory's world-handled mount before the created entity could
+be found. The item factory registers the mount before its shipyard-handled
+camera seat, matching the earlier missile failure.
+
+The next attempt therefore uses direct reflection for `GunMountEntity` and
+`PeriscopeEntity`:
+
+1. Capture the camera seat's shipyard-space slot for these entities.
+2. Create and register the `camera_seat` first.
+3. Transform the mount or periscope factory position to world coordinates.
+4. Construct and register the world-handled entity at that world position.
+5. Mount it to the existing seat.
+6. Restore the gun item and Tallyho camera parameters without loading runtime
+   entity NBT.
+
+Periscope `BASE_YAW` is passed directly into Tallyho's `setParams(...)`, and
+gun-mount `BASE_YAW` is restored reflectively before the first normal tick.
+Generic placement items retain their original hit-position contract.
