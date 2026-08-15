@@ -2,6 +2,8 @@ package com.erika.vsanalogwarfare.vehiclesetup.compat;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import org.joml.Vector3d;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
@@ -31,6 +33,21 @@ public final class VehicleSetupReflection {
             if (!(id instanceof Number number) || box == null) return null;
             return new ShipPosition(number.longValue(), pos.offset(-coordinate(box, "minX"), -coordinate(box, "minY"), -coordinate(box, "minZ")));
         } catch (ReflectiveOperationException ignored) { return null; }
+    }
+
+    @Nullable static Vec3 shipToWorldPosition(Object ship, Vec3 position) {
+        try {
+            Object matrix = invoke(ship, "getShipToWorld");
+            if (matrix == null) return null;
+            Vector3d destination = new Vector3d();
+            Method transform = matrix.getClass().getMethod("transformPosition",
+                    double.class, double.class, double.class, Vector3d.class);
+            Object result = transform.invoke(matrix, position.x, position.y, position.z, destination);
+            Vector3d transformed = result instanceof Vector3d vector ? vector : destination;
+            return new Vec3(transformed.x, transformed.y, transformed.z);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
+        }
     }
 
     @Nullable public static BlockPos positionOnShip(Object ship, BlockPos offset) {
