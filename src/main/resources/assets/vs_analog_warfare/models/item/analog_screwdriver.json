@@ -1,0 +1,4 @@
+{
+  "parent": "minecraft:item/handheld",
+  "textures": { "layer0": "vs_analog_warfare:item/analog_screwdriver" }
+}

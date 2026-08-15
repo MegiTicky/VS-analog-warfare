@@ -1,4 +1,4 @@
 {
-  "parent": "minecraft:block/cube_all",
-  "textures": { "all": "minecraft:block/iron_block" }
+  "parent": "create:block/toolbox/item",
+  "textures": { "0": "create:block/toolbox/black" }
 }

@@ -103,7 +103,7 @@ public final class VehicleSetupRecordingManager {
     @SubscribeEvent
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
         if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)
-                || !(event.getItemStack().getItem() instanceof VehicleSetupRecorderItem)) return;
+                || !(event.getItemStack().getItem() instanceof AnalogScrewdriverItem)) return;
         VehicleSetupBlockEntity setup = activeSetup(player);
         if (setup == null) return;
         TallyhoCompat.CapturedEntity captured = TallyhoCompat.capture(event.getTarget());

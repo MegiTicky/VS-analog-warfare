@@ -30,7 +30,8 @@ public final class ModBlocks {
     public static final RegistryObject<Block> VEHICLE_SETUP = BLOCKS.register("vehicle_setup",
             () -> new VehicleSetupBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
-                    .strength(2.0f, 6.0f)));
+                    .strength(2.0f, 6.0f)
+                    .noOcclusion()));
 
     private ModBlocks() {
     }

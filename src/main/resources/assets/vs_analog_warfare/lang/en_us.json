@@ -1,6 +1,6 @@
 {
   "block.vs_analog_warfare.vehicle_setup": "Vehicle Setup Block",
-  "item.vs_analog_warfare.vehicle_setup_recorder": "Vehicle Setup Recorder",
+  "item.vs_analog_warfare.analog_screwdriver": "Analog Screwdriver",
     "block.vs_analog_warfare.scope_block": "Analog Cannon Scope",
     "block.vs_analog_warfare.mouse_aim_block": "Mouse Aim Controller",
     "entity.vs_analog_warfare.scope_camera": "Scope Camera",

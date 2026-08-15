@@ -13,9 +13,9 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 
 import javax.annotation.Nullable;
 
-public class VehicleSetupRecorderItem extends Item {
+public class AnalogScrewdriverItem extends Item {
     private static final String ANCHOR = "VehicleSetupAnchor";
-    public VehicleSetupRecorderItem(Properties properties) { super(properties); }
+    public AnalogScrewdriverItem(Properties properties) { super(properties); }
 
     @Override public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
