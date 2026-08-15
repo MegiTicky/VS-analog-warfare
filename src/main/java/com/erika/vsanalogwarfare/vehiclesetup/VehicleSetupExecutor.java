@@ -1,6 +1,7 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.TallyhoCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -36,6 +37,8 @@ public final class VehicleSetupExecutor {
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
             case CREATE_TWEAKED_CONTROLLER -> controller(player, action, ships);
             case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level, anchor, action.stiffness());
+            case SPAWN_TALLYHO_HULL_MG -> TallyhoCompat.spawnHullMg(level, target(level, anchor, action, ships),
+                    action.yaw(), action.muzzleOffset());
         };
     }
 

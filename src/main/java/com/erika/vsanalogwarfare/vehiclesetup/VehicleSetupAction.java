@@ -10,7 +10,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 
 public final class VehicleSetupAction {
-    public static final int FORMAT_VERSION = 2;
+    public static final int FORMAT_VERSION = 3;
 
     private final VehicleSetupActionType type;
     @Nullable private final BlockPos targetOffset;
@@ -21,11 +21,14 @@ public final class VehicleSetupAction {
     @Nullable private final CompoundTag blockState;
     @Nullable private final CompoundTag controller;
     private final float stiffness;
+    private final float yaw;
+    private final int muzzleOffset;
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
                                long targetShipId, long secondaryShipId,
-                               @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness) {
+                                @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
+                                float yaw, int muzzleOffset) {
         this.type = type;
         this.targetOffset = targetOffset;
         this.secondaryOffset = secondaryOffset;
@@ -35,33 +38,41 @@ public final class VehicleSetupAction {
         this.blockState = blockState;
         this.controller = controller;
         this.stiffness = stiffness;
+        this.yaw = yaw;
+        this.muzzleOffset = muzzleOffset;
     }
 
     public static VehicleSetupAction placeBlock(long shipId, @Nullable BlockPos shipOffset,
                                                 BlockPos anchorOffset, BlockState state) {
         return new VehicleSetupAction(VehicleSetupActionType.PLACE_BLOCK, anchorOffset, null, shipOffset,
-                shipId, -1L, NbtUtils.writeBlockState(state), null, 0.0f);
+                shipId, -1L, NbtUtils.writeBlockState(state), null, 0.0f, 0.0f, 0);
     }
 
     public static VehicleSetupAction removeBlock(long shipId, @Nullable BlockPos shipOffset, BlockPos anchorOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.REMOVE_BLOCK, anchorOffset, null, shipOffset,
-                shipId, -1L, null, null, 0.0f);
+                shipId, -1L, null, null, 0.0f, 0.0f, 0);
     }
 
     public static VehicleSetupAction linkDbwBackups(long sourceShipId, BlockPos sourceOffset,
                                                      long targetShipId, BlockPos targetOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.LINK_DBW_BACKUPS, sourceOffset, targetOffset, null,
-                sourceShipId, targetShipId, null, null, 0.0f);
+                sourceShipId, targetShipId, null, null, 0.0f, 0.0f, 0);
     }
 
     public static VehicleSetupAction createTweakedController(long shipId, BlockPos hubOffset, ItemStack controller) {
         return new VehicleSetupAction(VehicleSetupActionType.CREATE_TWEAKED_CONTROLLER, hubOffset, null, null,
-                shipId, -1L, null, controller.save(new CompoundTag()), 0.0f);
+                shipId, -1L, null, controller.save(new CompoundTag()), 0.0f, 0.0f, 0);
     }
 
     public static VehicleSetupAction setTrackworkStiffness(float stiffness) {
         return new VehicleSetupAction(VehicleSetupActionType.SET_TRACKWORK_STIFFNESS, null, null, null, -1L, -1L,
-                null, null, stiffness);
+                null, null, stiffness, 0.0f, 0);
+    }
+
+    public static VehicleSetupAction spawnTallyhoHullMg(long shipId, @Nullable BlockPos shipOffset,
+                                                          BlockPos anchorOffset, float yaw, int muzzleOffset) {
+        return new VehicleSetupAction(VehicleSetupActionType.SPAWN_TALLYHO_HULL_MG, anchorOffset, null, shipOffset,
+                shipId, -1L, null, null, 0.0f, yaw, muzzleOffset);
     }
 
     public VehicleSetupActionType type() { return type; }
@@ -73,6 +84,8 @@ public final class VehicleSetupAction {
     @Nullable public CompoundTag blockState() { return blockState == null ? null : blockState.copy(); }
     @Nullable public CompoundTag controller() { return controller == null ? null : controller.copy(); }
     public float stiffness() { return stiffness; }
+    public float yaw() { return yaw; }
+    public int muzzleOffset() { return muzzleOffset; }
 
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
@@ -86,6 +99,8 @@ public final class VehicleSetupAction {
         if (blockState != null) tag.put("BlockState", blockState.copy());
         if (controller != null) tag.put("Controller", controller.copy());
         tag.putFloat("Stiffness", stiffness);
+        tag.putFloat("Yaw", yaw);
+        tag.putInt("MuzzleOffset", muzzleOffset);
         return tag;
     }
 
@@ -106,7 +121,7 @@ public final class VehicleSetupAction {
                     tag.contains("SecondaryShipId") ? tag.getLong("SecondaryShipId") : -1L,
                     tag.contains("BlockState") ? tag.getCompound("BlockState").copy() : null,
                     tag.contains("Controller") ? tag.getCompound("Controller").copy() : null,
-                    tag.getFloat("Stiffness"));
+                    tag.getFloat("Stiffness"), tag.getFloat("Yaw"), tag.getInt("MuzzleOffset"));
         } catch (IllegalArgumentException ignored) {
             return null;
         }

@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.registry.ModBlocks;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.TallyhoCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupShipPosition;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -11,6 +12,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.InteractionResult;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -95,6 +98,23 @@ public final class VehicleSetupRecordingManager {
     public static void onBreak(BlockEvent.BreakEvent event) {
         if (!(event.getPlayer() instanceof ServerPlayer player) || event.getState().isAir()) return;
         recordRemove(player, event.getPos());
+    }
+
+    @SubscribeEvent
+    public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
+        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)
+                || !(event.getItemStack().getItem() instanceof VehicleSetupRecorderItem)) return;
+        VehicleSetupBlockEntity setup = activeSetup(player);
+        if (setup == null || !TallyhoCompat.isHullMachineGun(event.getTarget())) return;
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), event.getTarget().blockPosition());
+        int muzzleOffset = TallyhoCompat.muzzleOffset(event.getTarget());
+        setup.addAction(VehicleSetupAction.spawnTallyhoHullMg(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), event.getTarget().blockPosition().subtract(setup.getBlockPos()),
+                event.getTarget().getYRot(), muzzleOffset));
+        player.displayClientMessage(Component.literal("Vehicle setup recorded Tallyho weapon: hull_mg. "
+                + setup.actionSummary() + "."), true);
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.CONSUME);
     }
 
     private static void recordPlace(ServerPlayer player, BlockPos pos, BlockState state) {
