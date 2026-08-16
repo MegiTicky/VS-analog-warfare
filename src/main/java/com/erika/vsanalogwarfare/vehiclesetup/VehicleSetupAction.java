@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 
 public final class VehicleSetupAction {
-    public static final int FORMAT_VERSION = 6;
+    public static final int FORMAT_VERSION = 7;
 
     private final VehicleSetupActionType type;
     @Nullable private final BlockPos targetOffset;
@@ -35,6 +35,7 @@ public final class VehicleSetupAction {
     @Nullable private final CompoundTag interactionItem;
     private final int interactionHand;
     private final int interactionFace;
+    private final boolean interactionSneaking;
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
@@ -43,7 +44,8 @@ public final class VehicleSetupAction {
                                  float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
                                  @Nullable CompoundTag tallyhoState, int tallyhoVariant,
                                  double positionOffsetX, double positionOffsetY, double positionOffsetZ,
-                                 @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace) {
+                                  @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
+                                  boolean interactionSneaking) {
         this.type = type;
         this.targetOffset = targetOffset;
         this.secondaryOffset = secondaryOffset;
@@ -64,6 +66,20 @@ public final class VehicleSetupAction {
         this.interactionItem = interactionItem;
         this.interactionHand = interactionHand;
         this.interactionFace = interactionFace;
+        this.interactionSneaking = interactionSneaking;
+    }
+
+    private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
+                               @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
+                               long targetShipId, long secondaryShipId,
+                               @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
+                               float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
+                               @Nullable CompoundTag tallyhoState, int tallyhoVariant,
+                               double positionOffsetX, double positionOffsetY, double positionOffsetZ,
+                               @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace) {
+        this(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId, blockState, controller,
+                stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant, positionOffsetX,
+                positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace, false);
     }
 
     public static VehicleSetupAction placeBlock(long shipId, @Nullable BlockPos shipOffset,
@@ -108,11 +124,26 @@ public final class VehicleSetupAction {
     }
 
     public static VehicleSetupAction interactWithBlock(long shipId, @Nullable BlockPos shipOffset,
-                                                        BlockPos anchorOffset, ItemStack item,
-                                                        InteractionHand hand, Direction face, Vec3 hitOffset) {
+                                                         BlockPos anchorOffset, ItemStack item,
+                                                         InteractionHand hand, Direction face, Vec3 hitOffset,
+                                                         boolean sneaking) {
         return new VehicleSetupAction(VehicleSetupActionType.GENERIC_BLOCK_INTERACTION, anchorOffset, null, shipOffset,
                 shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0,
-                hitOffset.x, hitOffset.y, hitOffset.z, item.save(new CompoundTag()), hand.ordinal(), face.ordinal());
+                hitOffset.x, hitOffset.y, hitOffset.z, item.save(new CompoundTag()), hand.ordinal(), face.ordinal(), sneaking);
+    }
+
+    public static VehicleSetupAction interactWithBlock(long shipId, @Nullable BlockPos shipOffset,
+                                                         BlockPos anchorOffset, ItemStack item,
+                                                         InteractionHand hand, Direction face, Vec3 hitOffset) {
+        return interactWithBlock(shipId, shipOffset, anchorOffset, item, hand, face, hitOffset, false);
+    }
+
+    public static VehicleSetupAction leftClickBlock(long shipId, @Nullable BlockPos shipOffset,
+                                                     BlockPos anchorOffset, ItemStack item,
+                                                     Direction face, boolean sneaking) {
+        return new VehicleSetupAction(VehicleSetupActionType.GENERIC_BLOCK_LEFT_CLICK, anchorOffset, null, shipOffset,
+                shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0,
+                0.5, 0.5, 0.5, item.save(new CompoundTag()), InteractionHand.MAIN_HAND.ordinal(), face.ordinal(), sneaking);
     }
 
     public VehicleSetupActionType type() { return type; }
@@ -135,6 +166,7 @@ public final class VehicleSetupAction {
         return interactionHand == InteractionHand.OFF_HAND.ordinal() ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
     }
     public Direction interactionFace() { return Direction.from3DDataValue(interactionFace); }
+    public boolean interactionSneaking() { return interactionSneaking; }
 
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
@@ -159,6 +191,7 @@ public final class VehicleSetupAction {
         if (interactionItem != null) tag.put("InteractionItem", interactionItem.copy());
         tag.putInt("InteractionHand", interactionHand);
         tag.putInt("InteractionFace", interactionFace);
+        tag.putBoolean("InteractionSneaking", interactionSneaking);
         return tag;
     }
 
@@ -185,7 +218,7 @@ public final class VehicleSetupAction {
                     tag.getInt("TallyhoVariant"), tag.getDouble("PositionOffsetX"),
                     tag.getDouble("PositionOffsetY"), tag.getDouble("PositionOffsetZ"),
                     tag.contains("InteractionItem") ? tag.getCompound("InteractionItem").copy() : null,
-                    tag.getInt("InteractionHand"), tag.getInt("InteractionFace"));
+                     tag.getInt("InteractionHand"), tag.getInt("InteractionFace"), tag.getBoolean("InteractionSneaking"));
         } catch (IllegalArgumentException ignored) {
             return null;
         }

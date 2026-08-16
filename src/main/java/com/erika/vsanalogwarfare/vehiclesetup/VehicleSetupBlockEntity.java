@@ -19,11 +19,15 @@ public class VehicleSetupBlockEntity extends BlockEntity {
 
     public VehicleSetupBlockEntity(BlockPos pos, BlockState state) { super(ModBlockEntities.VEHICLE_SETUP.get(), pos, state); }
     public void addAction(VehicleSetupAction action) { actions.add(action); markAndSync(); }
+    public void removeAction(VehicleSetupAction action) {
+        if (actions.remove(action)) markAndSync();
+    }
     public List<VehicleSetupAction> actions() { return List.copyOf(actions); }
     public void clearActions() { actions.clear(); markAndSync(); }
     public int actionCount() { return actions.size(); }
     public String actionSummary() {
-        int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, tallyho = 0, interactions = 0, other = 0;
+        int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, tallyho = 0,
+                interactions = 0, leftClicks = 0, other = 0;
         for (VehicleSetupAction action : actions) {
             switch (action.type()) {
                 case PLACE_BLOCK -> placements++;
@@ -33,6 +37,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
                 case SPAWN_TALLYHO_HULL_MG -> hullMgs++;
                 case SPAWN_TALLYHO_ENTITY -> tallyho++;
                 case GENERIC_BLOCK_INTERACTION -> interactions++;
+                case GENERIC_BLOCK_LEFT_CLICK -> leftClicks++;
                 case CREATE_TWEAKED_CONTROLLER -> other++;
                 default -> other++;
             }
@@ -45,6 +50,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         appendCount(summary, hullMgs, "hull MG");
         appendCount(summary, tallyho, "Tallyho entity");
         appendCount(summary, interactions, "block interaction");
+        appendCount(summary, leftClicks, "left-click interaction");
         appendCount(summary, other, "controller/action");
         return summary.length() == 0 ? "0 saved actions" : summary.toString();
     }

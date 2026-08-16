@@ -49,6 +49,7 @@ public final class VehicleSetupExecutor {
                     action.positionOffset(), action.tallyhoEntity(), action.yaw(), action.tallyhoVariant(),
                     action.tallyhoState());
             case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
+            case GENERIC_BLOCK_LEFT_CLICK -> leftClick(level, anchor, player, action, ships);
         };
     }
 
@@ -85,7 +86,9 @@ public final class VehicleSetupExecutor {
         BlockHitResult hit = new BlockHitResult(hitLocation, action.interactionFace(), pos, false);
         InteractionHand hand = action.interactionHand();
         ItemStack original = player.getItemInHand(hand);
+        boolean originalSneaking = player.isShiftKeyDown();
         player.setItemInHand(hand, stack);
+        player.setShiftKeyDown(action.interactionSneaking());
         VehicleSetupRecordingManager.beginInteractionReplay(player);
         try {
             PlayerInteractEvent.RightClickBlock interaction = new PlayerInteractEvent.RightClickBlock(
@@ -100,6 +103,42 @@ public final class VehicleSetupExecutor {
         } finally {
             VehicleSetupRecordingManager.endInteractionReplay(player);
             player.setItemInHand(hand, original);
+            player.setShiftKeyDown(originalSneaking);
+        }
+    }
+
+    @Nullable private static String leftClick(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                              VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
+        if (player == null) return "block left-click requires the schematic placer to be online";
+        CompoundTag savedItem = action.interactionItem();
+        if (savedItem == null || action.targetOffset() == null) return "recorded block left-click is missing data";
+        ItemStack stack = ItemStack.of(savedItem);
+        BlockPos pos = target(level, anchor, action, ships);
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) return "left-click target block is missing";
+        ItemStack original = player.getMainHandItem();
+        boolean originalSneaking = player.isShiftKeyDown();
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        player.setShiftKeyDown(action.interactionSneaking());
+        VehicleSetupRecordingManager.beginInteractionReplay(player);
+        try {
+            PlayerInteractEvent.LeftClickBlock interaction = new PlayerInteractEvent.LeftClickBlock(
+                    player, pos, action.interactionFace(), PlayerInteractEvent.LeftClickBlock.Action.START);
+            boolean canceled = MinecraftForge.EVENT_BUS.post(interaction);
+            if (canceled) return null;
+            if (interaction.getUseBlock() != net.minecraftforge.eventbus.api.Event.Result.DENY) {
+                state.attack(level, pos, player);
+            }
+            if (interaction.getUseItem() != net.minecraftforge.eventbus.api.Event.Result.DENY) {
+                stack.onBlockStartBreak(pos, player);
+            }
+            return level.getBlockState(pos).equals(state) ? null : "left-click changed or removed the target block";
+        } catch (Throwable throwable) {
+            return "recorded block left-click failed: " + throwable.getClass().getSimpleName();
+        } finally {
+            VehicleSetupRecordingManager.endInteractionReplay(player);
+            player.setItemInHand(InteractionHand.MAIN_HAND, original);
+            player.setShiftKeyDown(originalSneaking);
         }
     }
 
