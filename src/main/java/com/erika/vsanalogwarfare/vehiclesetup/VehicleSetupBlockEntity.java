@@ -26,6 +26,10 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         markAndSync();
     }
 
+    public void removeAction(VehicleSetupAction action) {
+        if (actions.remove(action)) markAndSync();
+    }
+
     public void clearActions() {
         actions.clear();
         markAndSync();
@@ -35,7 +39,8 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     public int actionCount() { return actions.size(); }
 
     public String actionSummary() {
-        int placements = 0, removals = 0, dbw = 0, controllers = 0, stiffness = 0;
+        int placements = 0, removals = 0, dbw = 0, controllers = 0, stiffness = 0,
+                interactions = 0, leftClicks = 0;
         for (VehicleSetupAction action : actions) {
             switch (action.type()) {
                 case PLACE_BLOCK -> placements++;
@@ -43,6 +48,8 @@ public class VehicleSetupBlockEntity extends BlockEntity {
                 case LINK_DBW_BACKUPS -> dbw++;
                 case CREATE_TWEAKED_CONTROLLER -> controllers++;
                 case SET_TRACKWORK_STIFFNESS -> stiffness++;
+                case GENERIC_BLOCK_INTERACTION -> interactions++;
+                case GENERIC_BLOCK_LEFT_CLICK -> leftClicks++;
             }
         }
         StringBuilder summary = new StringBuilder();
@@ -51,6 +58,8 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         appendCount(summary, dbw, "DBW link");
         appendCount(summary, controllers, "controller");
         appendCount(summary, stiffness, "suspension setting");
+        appendCount(summary, interactions, "block interaction");
+        appendCount(summary, leftClicks, "left-click interaction");
         return summary.length() == 0 ? "0 saved actions" : summary.toString();
     }
 

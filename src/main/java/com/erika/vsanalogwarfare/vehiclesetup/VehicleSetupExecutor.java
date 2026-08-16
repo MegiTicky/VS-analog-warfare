@@ -8,11 +8,17 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.fml.ModList;
 
 import javax.annotation.Nullable;
@@ -39,7 +45,73 @@ public final class VehicleSetupExecutor {
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
             case CREATE_TWEAKED_CONTROLLER -> controller(level, anchor, player, action, ships);
             case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level, anchor, action.stiffness());
+            case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
+            case GENERIC_BLOCK_LEFT_CLICK -> leftClick(level, anchor, player, action, ships);
         };
+    }
+
+    @Nullable
+    private static String interact(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                   VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
+        if (player == null) return "block interaction requires the schematic placer to be online";
+        CompoundTag savedItem = action.interactionItem();
+        if (savedItem == null || action.targetOffset() == null) return "recorded block interaction is missing data";
+        ItemStack stack = ItemStack.of(savedItem);
+        BlockPos pos = target(anchor, action, ships);
+        if (level.getBlockState(pos).isAir()) return "interaction target block is missing";
+        Vec3 hitLocation = Vec3.atLowerCornerOf(pos).add(action.positionOffset());
+        BlockHitResult hit = new BlockHitResult(hitLocation, action.interactionFace(), pos, false);
+        InteractionHand hand = action.interactionHand();
+        ItemStack original = player.getItemInHand(hand);
+        boolean originalSneaking = player.isShiftKeyDown();
+        player.setItemInHand(hand, stack);
+        player.setShiftKeyDown(action.interactionSneaking());
+        VehicleSetupRecordingManager.beginInteractionReplay(player);
+        try {
+            PlayerInteractEvent.RightClickBlock interaction = new PlayerInteractEvent.RightClickBlock(player, hand, pos, hit);
+            boolean canceled = MinecraftForge.EVENT_BUS.post(interaction);
+            InteractionResult result = canceled ? interaction.getCancellationResult() : InteractionResult.PASS;
+            if (!result.consumesAction()) result = level.getBlockState(pos).use(level, player, hand, hit);
+            if (!result.consumesAction()) result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, hand, hit));
+            return result.consumesAction() ? null : "recorded block interaction was not accepted";
+        } catch (Throwable throwable) {
+            return "recorded block interaction failed: " + throwable.getClass().getSimpleName();
+        } finally {
+            VehicleSetupRecordingManager.endInteractionReplay(player);
+            player.setItemInHand(hand, original);
+            player.setShiftKeyDown(originalSneaking);
+        }
+    }
+
+    @Nullable
+    private static String leftClick(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                    VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
+        if (player == null) return "block left-click requires the schematic placer to be online";
+        CompoundTag savedItem = action.interactionItem();
+        if (savedItem == null || action.targetOffset() == null) return "recorded block left-click is missing data";
+        ItemStack stack = ItemStack.of(savedItem);
+        BlockPos pos = target(anchor, action, ships);
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) return "left-click target block is missing";
+        ItemStack original = player.getMainHandItem();
+        boolean originalSneaking = player.isShiftKeyDown();
+        player.setItemInHand(InteractionHand.MAIN_HAND, stack);
+        player.setShiftKeyDown(action.interactionSneaking());
+        VehicleSetupRecordingManager.beginInteractionReplay(player);
+        try {
+            PlayerInteractEvent.LeftClickBlock interaction = new PlayerInteractEvent.LeftClickBlock(
+                    player, pos, action.interactionFace(), PlayerInteractEvent.LeftClickBlock.Action.START);
+            if (MinecraftForge.EVENT_BUS.post(interaction)) return null;
+            if (interaction.getUseBlock() != net.minecraftforge.eventbus.api.Event.Result.DENY) state.attack(level, pos, player);
+            if (interaction.getUseItem() != net.minecraftforge.eventbus.api.Event.Result.DENY) stack.onBlockStartBreak(pos, player);
+            return level.getBlockState(pos).equals(state) ? null : "left-click changed or removed the target block";
+        } catch (Throwable throwable) {
+            return "recorded block left-click failed: " + throwable.getClass().getSimpleName();
+        } finally {
+            VehicleSetupRecordingManager.endInteractionReplay(player);
+            player.setItemInHand(InteractionHand.MAIN_HAND, original);
+            player.setShiftKeyDown(originalSneaking);
+        }
     }
 
     private static BlockPos target(BlockPos anchor, VehicleSetupAction action,
