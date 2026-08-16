@@ -5,13 +5,15 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.core.Direction;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
 
 public final class VehicleSetupAction {
-    public static final int FORMAT_VERSION = 5;
+    public static final int FORMAT_VERSION = 6;
 
     private final VehicleSetupActionType type;
     @Nullable private final BlockPos targetOffset;
@@ -30,6 +32,9 @@ public final class VehicleSetupAction {
     private final double positionOffsetX;
     private final double positionOffsetY;
     private final double positionOffsetZ;
+    @Nullable private final CompoundTag interactionItem;
+    private final int interactionHand;
+    private final int interactionFace;
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
@@ -37,7 +42,8 @@ public final class VehicleSetupAction {
                                  @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
                                  float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
                                  @Nullable CompoundTag tallyhoState, int tallyhoVariant,
-                                 double positionOffsetX, double positionOffsetY, double positionOffsetZ) {
+                                 double positionOffsetX, double positionOffsetY, double positionOffsetZ,
+                                 @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace) {
         this.type = type;
         this.targetOffset = targetOffset;
         this.secondaryOffset = secondaryOffset;
@@ -55,39 +61,42 @@ public final class VehicleSetupAction {
         this.positionOffsetX = positionOffsetX;
         this.positionOffsetY = positionOffsetY;
         this.positionOffsetZ = positionOffsetZ;
+        this.interactionItem = interactionItem;
+        this.interactionHand = interactionHand;
+        this.interactionFace = interactionFace;
     }
 
     public static VehicleSetupAction placeBlock(long shipId, @Nullable BlockPos shipOffset,
                                                 BlockPos anchorOffset, BlockState state) {
         return new VehicleSetupAction(VehicleSetupActionType.PLACE_BLOCK, anchorOffset, null, shipOffset,
-                shipId, -1L, NbtUtils.writeBlockState(state), null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
+                shipId, -1L, NbtUtils.writeBlockState(state), null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public static VehicleSetupAction removeBlock(long shipId, @Nullable BlockPos shipOffset, BlockPos anchorOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.REMOVE_BLOCK, anchorOffset, null, shipOffset,
-                shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
+                shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public static VehicleSetupAction linkDbwBackups(long sourceShipId, BlockPos sourceOffset,
                                                      long targetShipId, BlockPos targetOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.LINK_DBW_BACKUPS, sourceOffset, targetOffset, null,
-                sourceShipId, targetShipId, null, null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
+                sourceShipId, targetShipId, null, null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public static VehicleSetupAction createTweakedController(long shipId, BlockPos hubOffset, ItemStack controller) {
         return new VehicleSetupAction(VehicleSetupActionType.CREATE_TWEAKED_CONTROLLER, hubOffset, null, null,
-                shipId, -1L, null, controller.save(new CompoundTag()), 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
+                shipId, -1L, null, controller.save(new CompoundTag()), 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public static VehicleSetupAction setTrackworkStiffness(float stiffness) {
         return new VehicleSetupAction(VehicleSetupActionType.SET_TRACKWORK_STIFFNESS, null, null, null, -1L, -1L,
-                null, null, stiffness, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0);
+                null, null, stiffness, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public static VehicleSetupAction spawnTallyhoHullMg(long shipId, @Nullable BlockPos shipOffset,
                                                           BlockPos anchorOffset, float yaw, int muzzleOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.SPAWN_TALLYHO_HULL_MG, anchorOffset, null, shipOffset,
-                shipId, -1L, null, null, 0.0f, yaw, muzzleOffset, null, null, 0, 0.0, 0.0, 0.0);
+                shipId, -1L, null, null, 0.0f, yaw, muzzleOffset, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public static VehicleSetupAction spawnTallyhoEntity(long shipId, @Nullable BlockPos shipOffset,
@@ -95,7 +104,15 @@ public final class VehicleSetupAction {
                                                          float yaw, int variant, CompoundTag state) {
         return new VehicleSetupAction(VehicleSetupActionType.SPAWN_TALLYHO_ENTITY, anchorOffset, null, shipOffset,
                 shipId, -1L, null, null, 0.0f, yaw, 0, entityId, state, variant,
-                positionOffset.x, positionOffset.y, positionOffset.z);
+                positionOffset.x, positionOffset.y, positionOffset.z, null, 0, 0);
+    }
+
+    public static VehicleSetupAction interactWithBlock(long shipId, @Nullable BlockPos shipOffset,
+                                                        BlockPos anchorOffset, ItemStack item,
+                                                        InteractionHand hand, Direction face, Vec3 hitOffset) {
+        return new VehicleSetupAction(VehicleSetupActionType.GENERIC_BLOCK_INTERACTION, anchorOffset, null, shipOffset,
+                shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0,
+                hitOffset.x, hitOffset.y, hitOffset.z, item.save(new CompoundTag()), hand.ordinal(), face.ordinal());
     }
 
     public VehicleSetupActionType type() { return type; }
@@ -113,6 +130,11 @@ public final class VehicleSetupAction {
     @Nullable public CompoundTag tallyhoState() { return tallyhoState == null ? null : tallyhoState.copy(); }
     public int tallyhoVariant() { return tallyhoVariant; }
     public Vec3 positionOffset() { return new Vec3(positionOffsetX, positionOffsetY, positionOffsetZ); }
+    @Nullable public CompoundTag interactionItem() { return interactionItem == null ? null : interactionItem.copy(); }
+    public InteractionHand interactionHand() {
+        return interactionHand == InteractionHand.OFF_HAND.ordinal() ? InteractionHand.OFF_HAND : InteractionHand.MAIN_HAND;
+    }
+    public Direction interactionFace() { return Direction.from3DDataValue(interactionFace); }
 
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
@@ -134,6 +156,9 @@ public final class VehicleSetupAction {
         tag.putDouble("PositionOffsetX", positionOffsetX);
         tag.putDouble("PositionOffsetY", positionOffsetY);
         tag.putDouble("PositionOffsetZ", positionOffsetZ);
+        if (interactionItem != null) tag.put("InteractionItem", interactionItem.copy());
+        tag.putInt("InteractionHand", interactionHand);
+        tag.putInt("InteractionFace", interactionFace);
         return tag;
     }
 
@@ -158,7 +183,9 @@ public final class VehicleSetupAction {
                     tag.contains("TallyhoEntity") ? tag.getString("TallyhoEntity") : null,
                     tag.contains("TallyhoState") ? tag.getCompound("TallyhoState").copy() : null,
                     tag.getInt("TallyhoVariant"), tag.getDouble("PositionOffsetX"),
-                    tag.getDouble("PositionOffsetY"), tag.getDouble("PositionOffsetZ"));
+                    tag.getDouble("PositionOffsetY"), tag.getDouble("PositionOffsetZ"),
+                    tag.contains("InteractionItem") ? tag.getCompound("InteractionItem").copy() : null,
+                    tag.getInt("InteractionHand"), tag.getInt("InteractionFace"));
         } catch (IllegalArgumentException ignored) {
             return null;
         }

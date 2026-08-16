@@ -9,11 +9,17 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.fml.ModList;
 import java.util.Map;
 
@@ -42,6 +48,7 @@ public final class VehicleSetupExecutor {
             case SPAWN_TALLYHO_ENTITY -> TallyhoCompat.spawnEntity(level, target(level, anchor, action, ships),
                     action.positionOffset(), action.tallyhoEntity(), action.yaw(), action.tallyhoVariant(),
                     action.tallyhoState());
+            case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
         };
     }
 
@@ -64,6 +71,36 @@ public final class VehicleSetupExecutor {
         BlockState state = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), savedState);
         if (state.isAir()) return "recorded block state is invalid";
         return level.getBlockState(pos).equals(state) || level.setBlock(pos, state, 3) ? null : "could not place shaft";
+    }
+
+    @Nullable private static String interact(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                             VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
+        if (player == null) return "block interaction requires the schematic placer to be online";
+        CompoundTag savedItem = action.interactionItem();
+        if (savedItem == null || action.targetOffset() == null) return "recorded block interaction is missing data";
+        ItemStack stack = ItemStack.of(savedItem);
+        BlockPos pos = target(level, anchor, action, ships);
+        if (level.getBlockState(pos).isAir()) return "interaction target block is missing";
+        Vec3 hitLocation = Vec3.atLowerCornerOf(pos).add(action.positionOffset());
+        BlockHitResult hit = new BlockHitResult(hitLocation, action.interactionFace(), pos, false);
+        InteractionHand hand = action.interactionHand();
+        ItemStack original = player.getItemInHand(hand);
+        player.setItemInHand(hand, stack);
+        VehicleSetupRecordingManager.beginInteractionReplay(player);
+        try {
+            PlayerInteractEvent.RightClickBlock interaction = new PlayerInteractEvent.RightClickBlock(
+                    player, hand, pos, hit);
+            boolean canceled = MinecraftForge.EVENT_BUS.post(interaction);
+            InteractionResult result = canceled ? interaction.getCancellationResult() : InteractionResult.PASS;
+            if (!result.consumesAction()) result = level.getBlockState(pos).use(level, player, hand, hit);
+            if (!result.consumesAction()) result = stack.useOn(new net.minecraft.world.item.context.UseOnContext(player, hand, hit));
+            return result.consumesAction() ? null : "recorded block interaction was not accepted";
+        } catch (Throwable throwable) {
+            return "recorded block interaction failed: " + throwable.getClass().getSimpleName();
+        } finally {
+            VehicleSetupRecordingManager.endInteractionReplay(player);
+            player.setItemInHand(hand, original);
+        }
     }
 
     @Nullable private static String controller(@Nullable ServerPlayer player, VehicleSetupAction action,
