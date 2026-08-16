@@ -27,7 +27,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     public int actionCount() { return actions.size(); }
     public String actionSummary() {
         int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, tallyho = 0,
-                interactions = 0, leftClicks = 0, other = 0;
+                interactions = 0, leftClicks = 0, transmitters = 0, other = 0;
         for (VehicleSetupAction action : actions) {
             switch (action.type()) {
                 case PLACE_BLOCK -> placements++;
@@ -38,6 +38,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
                 case SPAWN_TALLYHO_ENTITY -> tallyho++;
                 case GENERIC_BLOCK_INTERACTION -> interactions++;
                 case GENERIC_BLOCK_LEFT_CLICK -> leftClicks++;
+                case CONFIGURE_ENDER_TRANSMITTER -> transmitters++;
                 case CREATE_TWEAKED_CONTROLLER -> other++;
                 default -> other++;
             }
@@ -51,6 +52,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         appendCount(summary, tallyho, "Tallyho entity");
         appendCount(summary, interactions, "block interaction");
         appendCount(summary, leftClicks, "left-click interaction");
+        appendCount(summary, transmitters, "Ender transmitter");
         appendCount(summary, other, "controller/action");
         return summary.length() == 0 ? "0 saved actions" : summary.toString();
     }
@@ -60,6 +62,14 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         if (summary.length() > 0) summary.append(", ");
         summary.append(count).append(' ').append(name);
         if (count != 1) summary.append('s');
+    }
+
+    public void upsertEnderTransmitter(VehicleSetupAction action) {
+        actions.removeIf(existing -> existing.type() == VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER
+                && existing.targetShipId() == action.targetShipId()
+                && action.shipOffset() != null && action.shipOffset().equals(existing.shipOffset()));
+        actions.add(action);
+        markAndSync();
     }
 
     public void markAndSync() {

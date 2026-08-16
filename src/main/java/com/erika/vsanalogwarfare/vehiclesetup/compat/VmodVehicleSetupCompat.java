@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class VmodVehicleSetupCompat {
     private static final ConcurrentHashMap<Integer, UUID> PLACERS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, Map<Long, Object>> PLACED_SHIP_MAPPINGS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<BlockPos, String> PLACEMENT_IDS = new ConcurrentHashMap<>();
     private VmodVehicleSetupCompat() { }
 
     public static void rememberPlacement(UUID player, List<?> ships) { PLACERS.put(System.identityHashCode(ships), player); }
@@ -32,7 +33,8 @@ public final class VmodVehicleSetupCompat {
             Object shipsValue = VehicleSetupReflection.invoke(item, "getShips");
             if (!(levelValue instanceof ServerLevel level) || !(shipsValue instanceof List<?> ships)) return;
             UUID player = PLACERS.remove(System.identityHashCode(ships));
-             level.getServer().execute(() -> register(level, ships));
+             // VMod may load schematic block-entity tags in a delayed task.
+             level.getServer().execute(() -> level.getServer().execute(() -> register(level, ships)));
         } catch (ReflectiveOperationException | LinkageError error) {
             VSAnalogWarfare.LOGGER.warn("[VSAW] Could not process VMod placement: {}", error.getClass().getSimpleName());
         }
@@ -44,7 +46,8 @@ public final class VmodVehicleSetupCompat {
             Object ship = pairValue(pair, "getFirst"); Object id = pairValue(pair, "getSecond");
             if (ship != null && id instanceof Number number) ships.put(number.longValue(), ship);
         }
-        for (Object ship : ships.values()) scanShip(level, ship, ships);
+        String placementId = EnderTransmissionCompat.newPlacementId();
+        for (Object ship : ships.values()) scanShip(level, ship, ships, placementId);
     }
 
     public static void runSetupOrLocal(ServerLevel level, BlockPos setupPos, ServerPlayer player,
@@ -59,16 +62,17 @@ public final class VmodVehicleSetupCompat {
         for (VehicleSetupAction action : setup.actions()) {
             String error = action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS
                     ? runDbw(level, setupPos, action, ships)
-                    : VehicleSetupExecutor.run(level, setupPos, player, action, ships);
+                    : VehicleSetupExecutor.run(level, setupPos, player, action, ships, PLACEMENT_IDS.get(setupPos));
             if (error == null) succeeded++; else if (firstError == null) firstError = error;
         }
         player.displayClientMessage(Component.literal(firstError == null
                 ? "Vehicle setup complete: " + succeeded + " actions."
                 : "Vehicle setup: " + succeeded + " complete. " + firstError), true);
         PLACED_SHIP_MAPPINGS.remove(setupPos);
+        PLACEMENT_IDS.remove(setupPos);
     }
 
-    private static void scanShip(ServerLevel level, Object ship, Map<Long, Object> ships) {
+    private static void scanShip(ServerLevel level, Object ship, Map<Long, Object> ships, String placementId) {
         try {
             Object box = VehicleSetupReflection.invoke(ship, "getShipAABB"); if (box == null) return;
             int minX = coordinate(box, "minX"), minY = coordinate(box, "minY"), minZ = coordinate(box, "minZ");
@@ -79,9 +83,31 @@ public final class VmodVehicleSetupCompat {
                 pos.set(x, y, z);
                 if (!level.getBlockState(pos).is(ModBlocks.VEHICLE_SETUP.get())) continue;
                 BlockEntity entity = level.getBlockEntity(pos);
-                if (entity instanceof VehicleSetupBlockEntity) PLACED_SHIP_MAPPINGS.put(pos.immutable(), ships);
+                if (entity instanceof VehicleSetupBlockEntity) {
+                    BlockPos setupPos = pos.immutable();
+                    PLACED_SHIP_MAPPINGS.put(setupPos, ships);
+                    PLACEMENT_IDS.put(setupPos, placementId);
+                    runEnderTransmitterActions(level, setupPos, (VehicleSetupBlockEntity) entity, ships, placementId);
+                }
             }
         } catch (ReflectiveOperationException ignored) { }
+    }
+
+    private static void runEnderTransmitterActions(ServerLevel level, BlockPos setupPos,
+                                                   VehicleSetupBlockEntity setup, Map<Long, Object> ships,
+                                                   String placementId) {
+        for (VehicleSetupAction action : setup.actions()) {
+            if (action.type() != VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) continue;
+            Object ship = ships.get(action.targetShipId());
+            BlockPos target = ship == null || action.shipOffset() == null ? null
+                    : VehicleSetupReflection.positionOnShip(ship, action.shipOffset());
+            if (target == null) {
+                VSAnalogWarfare.LOGGER.warn("[VSAW] Ender transmitter at {} could not resolve after paste", setupPos);
+                continue;
+            }
+            String error = EnderTransmissionCompat.configure(level, target, action, placementId);
+            if (error != null) VSAnalogWarfare.LOGGER.warn("[VSAW] Ender transmitter at {}: {}", target, error);
+        }
     }
 
     @Nullable private static String runDbw(ServerLevel level, BlockPos setupPos, VehicleSetupAction action, Map<Long, Object> ships) {

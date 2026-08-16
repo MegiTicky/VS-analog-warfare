@@ -64,6 +64,16 @@ public final class OptionalModCompatibility {
                             Class.forName("edn.stratodonut.trackwork.tracks.blocks.TrackBaseBlock");
                             Class.forName("edn.stratodonut.trackwork.tracks.forces.PhysicsTrackController");
                             return true;
+                     } catch (Throwable ignored) { return false; }
+                     }),
+            new Integration("createendertransmission", "Create Ender Transmission", "2.0.7-1.20.1",
+                    "recorded energy transmitters cannot be isolated when vehicle schematics are pasted.",
+                    () -> {
+                        try {
+                            Class<?> transmitter = Class.forName(
+                                    "com.forsteri.createendertransmission.blocks.energyTransmitter.EnergyTransmitterBlockEntity");
+                            return hasMethod(transmitter, "reloadSettings", 0)
+                                    && hasMethod(transmitter, "afterReload", 0);
                         } catch (Throwable ignored) { return false; }
                     }),
             new Integration("valkyrien_mod", "Valkyrien Mod (schematics)", "0.1.3",

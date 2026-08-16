@@ -5,11 +5,14 @@ import com.erika.vsanalogwarfare.registry.ModBlocks;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TallyhoCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
+import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupShipPosition;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
@@ -102,6 +105,28 @@ public final class VehicleSetupRecordingManager {
         setup.addAction(VehicleSetupAction.setTrackworkStiffness(stiffness));
         serverPlayer.displayClientMessage(Component.literal(
                 "Vehicle setup recorded suspension stiffness " + stiffness + "x: " + setup.actionSummary() + "."), true);
+    }
+
+    public static void recordEnderTransmitter(ServerPlayer player, BlockPos pos, int channel, String password) {
+        VehicleSetupBlockEntity setup = activeSetup(player);
+        if (setup == null || !EnderTransmissionCompat.isEnergyTransmitter(player.level().getBlockState(pos))) return;
+        claimGenericInteraction(player, pos);
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
+        if (ship == null) {
+            player.displayClientMessage(Component.literal(
+                    "Vehicle setup could not record the Ender transmitter: it must be on a loaded ship."), true);
+            return;
+        }
+        setup.upsertEnderTransmitter(VehicleSetupAction.configureEnderTransmitter(
+                ship.shipId(), ship.offset(), pos.subtract(setup.getBlockPos()), channel, password));
+        player.displayClientMessage(Component.literal("Vehicle setup recorded Ender transmitter: "
+                + setup.actionSummary() + "."), true);
+    }
+
+    public static void recordEnderTransmitterConfiguration(ServerPlayer player, KineticBlockEntity transmitter) {
+        CompoundTag data = transmitter.getPersistentData();
+        recordEnderTransmitter(player, transmitter.getBlockPos(), data.getInt("channel"),
+                data.getString("password"));
     }
 
     @SubscribeEvent

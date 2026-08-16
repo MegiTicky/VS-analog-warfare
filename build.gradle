@@ -37,6 +37,7 @@ def vs23RuntimeModCoordinates = [
         'vs23.local:copycats:2.2.2+mc.1.20.1-forge',
         'vs23.local:create-1.20.1:0.5.1.j',
         'vs23.local:createbigcannons:5.8.2tt3-dev+mc.1.20.1-forge',
+        'vs23.local:createendertransmission:2.0.7-1.20.1',
         'vs23.local:rha:1.1.4-1.20.1',
         'vs23.local:s_a_b:1.4.3',
         // The uploaded VS jar has a " 2" suffix in its file name. Split that

@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TallyhoCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -31,12 +32,18 @@ public final class VehicleSetupExecutor {
 
     @Nullable
     public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action) {
-        return run(level, anchor, player, action, null);
+        return run(level, anchor, player, action, null, null);
     }
 
     @Nullable
     public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
                              @Nullable Map<Long, Object> ships) {
+        return run(level, anchor, player, action, ships, null);
+    }
+
+    @Nullable
+    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
+                             @Nullable Map<Long, Object> ships, @Nullable String placementId) {
         return switch (action.type()) {
             case PLACE_BLOCK -> place(level, target(level, anchor, action, ships), action.blockState());
             case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships));
@@ -50,6 +57,8 @@ public final class VehicleSetupExecutor {
                     action.tallyhoState());
             case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
             case GENERIC_BLOCK_LEFT_CLICK -> leftClick(level, anchor, player, action, ships);
+            case CONFIGURE_ENDER_TRANSMITTER -> EnderTransmissionCompat.configure(
+                    level, target(level, anchor, action, ships), action, placementId);
         };
     }
 

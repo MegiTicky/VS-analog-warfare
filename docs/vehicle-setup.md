@@ -50,6 +50,22 @@ The recorder does not replace either mod's normal tool interaction. The action
 bar confirms DBW and Trackwork captures, and inspecting the setup block shows
 the typed action summary before saving the schematic.
 
+## Create Ender Transmission
+
+While recording, configure each vehicle-mounted Create Ender Transmission energy
+transmitter through its normal GUI. Closing the GUI records that transmitter as
+part of the vehicle setup. When VMod pastes the schematic, VSAW assigns recorded
+transmitters a per-placement suffix while preserving the first 16 characters of
+the configured password. Transmitters with the same original channel and password
+remain connected inside one pasted vehicle; copied vehicles receive different
+network identities.
+
+Unrecorded transmitters are unchanged, so intentional shared/base networks remain
+possible. To connect an external engine to a pasted vehicle, sneak-right-click the
+vehicle transmitter with the analog screwdriver, then right-click the external
+transmitter. This copies the vehicle's generated channel and password to the
+external transmitter.
+
 ## Validated dependency versions
 
 Vehicle Setup integrates with the following mods by their exact runtime API.
@@ -59,6 +75,7 @@ The version listed was the one validated against this build of the mod:
 | --- | --- | --- |
 | Drive By Wire | `drivebywire` | `0.0.6b` |
 | Trackwork Plus | `trackwork` | `1.0.2c` |
+| Create Ender Transmission | `createendertransmission` | `2.0.7-1.20.1` |
 | Valkyrien Mod (schematics) | `valkyrien_mod` | `0.1.3` |
 | Create Tweaked Controllers | `create_tweaked_controllers` | `1.20.1-1.2.4` |
 
