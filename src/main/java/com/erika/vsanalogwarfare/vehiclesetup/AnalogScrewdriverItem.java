@@ -25,6 +25,10 @@ public class AnalogScrewdriverItem extends Item {
         if (level.isClientSide || !(context.getPlayer() instanceof ServerPlayer player)) return InteractionResult.SUCCESS;
         ItemStack recorder = context.getItemInHand();
         BlockPos clicked = context.getClickedPos();
+        if (level.getBlockEntity(clicked) instanceof GroundCollisionDisablerBlockEntity collisionDisabler) {
+            return collisionDisabler.enableGroundCollision((net.minecraft.server.level.ServerLevel) level, player)
+                    ? InteractionResult.CONSUME : InteractionResult.FAIL;
+        }
         if (level.getBlockEntity(clicked) instanceof VehicleSetupBlockEntity setupBlock) {
             OptionalModCompatibility.warnIfIssues(player);
             recorder.getOrCreateTag().putLong(ANCHOR, clicked.asLong());

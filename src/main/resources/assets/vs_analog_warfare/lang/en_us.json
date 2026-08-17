@@ -1,5 +1,6 @@
 {
   "block.vs_analog_warfare.vehicle_setup": "Vehicle Setup Block",
+  "block.vs_analog_warfare.ground_collision_disabler": "Ground Collision Disabler",
   "item.vs_analog_warfare.analog_screwdriver": "Analog Screwdriver",
     "block.vs_analog_warfare.scope_block": "Analog Cannon Scope",
     "block.vs_analog_warfare.mouse_aim_block": "Mouse Aim Controller",

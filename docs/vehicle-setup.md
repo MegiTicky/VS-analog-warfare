@@ -79,6 +79,18 @@ The version listed was the one validated against this build of the mod:
 | Valkyrien Mod (schematics) | `valkyrien_mod` | `0.1.3` |
 | Create Tweaked Controllers | `create_tweaked_controllers` | `1.20.1-1.2.4` |
 
+## Ground Collision Disabler
+
+When placed on a ship with VMod installed, the Ground Collision Disabler
+disables collision between that ship and the world ground once. The VMod
+collision setting persists after the block is broken and after a world reload.
+
+Use VMod's collision-enable tool to restore ground collision. Alternatively,
+right-click the placed disabler with an Analog Screwdriver to restore ground
+collision and disarm that block. The disabler does not override either action.
+It is independent of Vehicle Setup actions, so it does not depend on VMod
+saving ground collision constraints in schematics.
+
 ## Fail-soft behavior
 
 Optional integration mixins live in their own mixin config

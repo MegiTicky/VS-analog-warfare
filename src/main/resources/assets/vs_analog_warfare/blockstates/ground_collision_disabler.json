@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "vs_analog_warfare:block/ground_collision_disabler" }
+  }
+}

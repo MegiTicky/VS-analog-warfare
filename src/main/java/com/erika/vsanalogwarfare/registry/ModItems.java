@@ -25,6 +25,9 @@ public final class ModItems {
     public static final RegistryObject<Item> VEHICLE_SETUP = ITEMS.register("vehicle_setup",
             () -> new BlockItem(ModBlocks.VEHICLE_SETUP.get(), new Item.Properties()));
 
+    public static final RegistryObject<Item> GROUND_COLLISION_DISABLER = ITEMS.register("ground_collision_disabler",
+            () -> new BlockItem(ModBlocks.GROUND_COLLISION_DISABLER.get(), new Item.Properties()));
+
     public static final RegistryObject<Item> ANALOG_SCREWDRIVER = ITEMS.register("analog_screwdriver",
             () -> new AnalogScrewdriverItem(new Item.Properties().stacksTo(1)));
 
@@ -39,6 +42,7 @@ public final class ModItems {
                 event.accept(SCOPE_BLOCK);
                 event.accept(MOUSE_AIM_BLOCK);
                 event.accept(VEHICLE_SETUP);
+                event.accept(GROUND_COLLISION_DISABLER);
                 event.accept(ANALOG_SCREWDRIVER);
             }
         }

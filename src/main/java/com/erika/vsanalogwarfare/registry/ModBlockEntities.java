@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimBlockEntity;
 import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlockEntity;
+import com.erika.vsanalogwarfare.vehiclesetup.GroundCollisionDisablerBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -24,6 +25,11 @@ public final class ModBlockEntities {
     public static final RegistryObject<BlockEntityType<VehicleSetupBlockEntity>> VEHICLE_SETUP =
             BLOCK_ENTITIES.register("vehicle_setup",
                     () -> BlockEntityType.Builder.of(VehicleSetupBlockEntity::new, ModBlocks.VEHICLE_SETUP.get()).build(null));
+
+    public static final RegistryObject<BlockEntityType<GroundCollisionDisablerBlockEntity>> GROUND_COLLISION_DISABLER =
+            BLOCK_ENTITIES.register("ground_collision_disabler",
+                    () -> BlockEntityType.Builder.of(GroundCollisionDisablerBlockEntity::new,
+                            ModBlocks.GROUND_COLLISION_DISABLER.get()).build(null));
 
     private ModBlockEntities() {
     }

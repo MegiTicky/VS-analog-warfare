@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimBlock;
 import com.erika.vsanalogwarfare.scope.ScopeBlock;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlock;
+import com.erika.vsanalogwarfare.vehiclesetup.GroundCollisionDisablerBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -31,6 +32,12 @@ public final class ModBlocks {
             () -> new VehicleSetupBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL)
                     .strength(2.0f, 6.0f)
+                    .noOcclusion()));
+
+    public static final RegistryObject<Block> GROUND_COLLISION_DISABLER = BLOCKS.register("ground_collision_disabler",
+            () -> new GroundCollisionDisablerBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL)
+                    .strength(1.5f, 6.0f)
                     .noOcclusion()));
 
     private ModBlocks() {
