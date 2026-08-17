@@ -5,12 +5,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.nbt.Tag;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.level.block.state.BlockState;
 
 import javax.annotation.Nullable;
+import java.util.Map;
 
 public final class VehicleSetupAction {
     public static final int FORMAT_VERSION = 8;
@@ -207,5 +209,16 @@ public final class VehicleSetupAction {
         } catch (IllegalArgumentException ignored) {
             return null;
         }
+    }
+
+    static void remapShipIds(CompoundTag tag, Map<Long, Long> oldShipIdToNewId) {
+        remapShipId(tag, "TargetShipId", oldShipIdToNewId);
+        remapShipId(tag, "SecondaryShipId", oldShipIdToNewId);
+    }
+
+    private static void remapShipId(CompoundTag tag, String key, Map<Long, Long> oldShipIdToNewId) {
+        if (!tag.contains(key, Tag.TAG_LONG)) return;
+        long oldId = tag.getLong(key);
+        tag.putLong(key, oldShipIdToNewId.getOrDefault(oldId, -1L));
     }
 }

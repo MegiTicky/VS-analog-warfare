@@ -14,6 +14,9 @@ base {
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
+def vs24ReferenceModsDir = file(findProperty('vs24_reference_mods_dir') ?: 'C:/Modding/Reference mod VS2.4')
+def vs24ValkyrienSkiesJar = new File(vs24ReferenceModsDir, 'valkyrienskies-120-2.4.9.jar')
+
 minecraft {
     mappings channel: mapping_channel, version: mapping_version
     copyIdeResources = true
@@ -66,6 +69,8 @@ repositories {
 
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+    compileOnly files(vs24ValkyrienSkiesJar)
+    compileOnly 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
     compileOnly fg.deobf("com.simibubi.create:create-${minecraft_version}:${create_version}:slim")
     compileOnly fg.deobf("net.createmod.ponder:Ponder-Forge-${minecraft_version}:${ponder_version}")
     compileOnly fg.deobf("dev.engine-room.flywheel:flywheel-forge-api-${minecraft_version}:${flywheel_version}")

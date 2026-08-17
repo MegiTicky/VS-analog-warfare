@@ -37,6 +37,12 @@ ship-relative position. DBW links record the original ship IDs and both ship
 offsets. During VMod placement, the port resolves those original IDs through
 VMod's old-to-new ship map before replaying the action.
 
+On VS2.4, the Vehicle Setup Block implements Valkyrien Skies' `ICopyableBlock`
+API. Normal schematic copying uses the block entity's existing NBT. During
+schematic paste, `onPaste` remaps the saved primary and secondary ship IDs
+through VS's old-to-new ship map before the block entity is loaded. The saved
+positions are ship-local offsets, so no center-position translation is needed.
+
 Tallyho is intentionally not part of the VS2.4 port because no compatible
 VS2.4 Tallyho build is available.
 
