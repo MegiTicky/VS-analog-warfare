@@ -31,6 +31,9 @@ public class VsawMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.contains(".mixin.compat.Trackwork")) {
             return LoadingModList.get().getModFileById("trackwork") != null;
         }
+        if (mixinClassName.contains("EnderTransmission") || mixinClassName.contains("EnderTransmitter")) {
+            return LoadingModList.get().getModFileById("createendertransmission") != null;
+        }
         return true;
     }
 

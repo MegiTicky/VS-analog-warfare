@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 
 public final class VehicleSetupAction {
-    public static final int FORMAT_VERSION = 7;
+    public static final int FORMAT_VERSION = 8;
 
     private final VehicleSetupActionType type;
     @Nullable private final BlockPos targetOffset;
@@ -31,6 +31,8 @@ public final class VehicleSetupAction {
     private final int interactionHand;
     private final int interactionFace;
     private final boolean interactionSneaking;
+    private final int transmitterChannel;
+    @Nullable private final String transmitterPassword;
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
@@ -39,6 +41,19 @@ public final class VehicleSetupAction {
                                double positionOffsetX, double positionOffsetY, double positionOffsetZ,
                                @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
                                boolean interactionSneaking) {
+        this(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId, blockState,
+                controller, stiffness, positionOffsetX, positionOffsetY, positionOffsetZ, interactionItem,
+                interactionHand, interactionFace, interactionSneaking, 0, null);
+    }
+
+    private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
+                               @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
+                               long targetShipId, long secondaryShipId, @Nullable CompoundTag blockState,
+                               @Nullable CompoundTag controller, float stiffness,
+                               double positionOffsetX, double positionOffsetY, double positionOffsetZ,
+                               @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
+                               boolean interactionSneaking, int transmitterChannel,
+                               @Nullable String transmitterPassword) {
         this.type = type;
         this.targetOffset = targetOffset;
         this.secondaryOffset = secondaryOffset;
@@ -55,6 +70,8 @@ public final class VehicleSetupAction {
         this.interactionHand = interactionHand;
         this.interactionFace = interactionFace;
         this.interactionSneaking = interactionSneaking;
+        this.transmitterChannel = transmitterChannel;
+        this.transmitterPassword = transmitterPassword;
     }
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
@@ -62,7 +79,7 @@ public final class VehicleSetupAction {
                                long targetShipId, long secondaryShipId, @Nullable CompoundTag blockState,
                                @Nullable CompoundTag controller, float stiffness) {
         this(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId, blockState,
-                controller, stiffness, 0.0, 0.0, 0.0, null, 0, 0, false);
+                controller, stiffness, 0.0, 0.0, 0.0, null, 0, 0, false, 0, null);
     }
 
     public static VehicleSetupAction placeBlock(long shipId, @Nullable BlockPos shipOffset,
@@ -111,6 +128,14 @@ public final class VehicleSetupAction {
                 item.save(new CompoundTag()), InteractionHand.MAIN_HAND.ordinal(), face.ordinal(), sneaking);
     }
 
+    public static VehicleSetupAction configureEnderTransmitter(long shipId, BlockPos shipOffset,
+                                                                 BlockPos anchorOffset, int channel,
+                                                                 String password) {
+        return new VehicleSetupAction(VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER, anchorOffset, null,
+                shipOffset, shipId, -1L, null, null, 0.0f, 0.0, 0.0, 0.0, null, 0, 0, false,
+                channel, password);
+    }
+
     public VehicleSetupActionType type() { return type; }
     @Nullable public BlockPos targetOffset() { return targetOffset; }
     @Nullable public BlockPos secondaryOffset() { return secondaryOffset; }
@@ -127,6 +152,8 @@ public final class VehicleSetupAction {
     }
     public Direction interactionFace() { return Direction.from3DDataValue(interactionFace); }
     public boolean interactionSneaking() { return interactionSneaking; }
+    public int transmitterChannel() { return transmitterChannel; }
+    @Nullable public String transmitterPassword() { return transmitterPassword; }
 
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
@@ -147,6 +174,10 @@ public final class VehicleSetupAction {
         tag.putInt("InteractionHand", interactionHand);
         tag.putInt("InteractionFace", interactionFace);
         tag.putBoolean("InteractionSneaking", interactionSneaking);
+        if (type == VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) {
+            tag.putInt("TransmitterChannel", transmitterChannel);
+            if (transmitterPassword != null) tag.putString("TransmitterPassword", transmitterPassword);
+        }
         return tag;
     }
 
@@ -171,7 +202,8 @@ public final class VehicleSetupAction {
                     tag.getDouble("PositionOffsetY"), tag.getDouble("PositionOffsetZ"),
                     tag.contains("InteractionItem") ? tag.getCompound("InteractionItem").copy() : null,
                     tag.getInt("InteractionHand"), tag.getInt("InteractionFace"),
-                    tag.getBoolean("InteractionSneaking"));
+                    tag.getBoolean("InteractionSneaking"), tag.getInt("TransmitterChannel"),
+                    tag.contains("TransmitterPassword") ? tag.getString("TransmitterPassword") : null);
         } catch (IllegalArgumentException ignored) {
             return null;
         }

@@ -31,6 +31,9 @@ public final class OptionalModCompatibility {
         if (!ModList.get().isLoaded("trackwork")) {
             warnings.add("Trackwork is not installed; suspension settings will not work.");
         }
+        if (!ModList.get().isLoaded("createendertransmission")) {
+            warnings.add("Create: Ender Transmission is not installed; transmitter isolation will not work.");
+        }
         if (!ModList.get().isLoaded("valkyrien_mod")) {
             warnings.add("VMod is not installed; automatic setup after schematic placement is unavailable.");
         }

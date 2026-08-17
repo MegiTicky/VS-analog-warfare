@@ -41,7 +41,8 @@ public final class VmodVehicleSetupCompat {
     }
 
     private static void runForPlacedShips(ServerLevel level, ServerPlayer player, List<?> createdShips,
-                                          Map<?, ?> oldToNew) {
+                                           Map<?, ?> oldToNew) {
+        String placementId = EnderTransmissionCompat.newPlacementId();
         Map<Long, Object> createdByNewId = new HashMap<>();
         for (Object pair : createdShips) {
             Object newId = pairValue(pair, "getFirst");
@@ -62,7 +63,7 @@ public final class VmodVehicleSetupCompat {
         Map<BlockPos, VehicleSetupBlockEntity> setups = new HashMap<>();
         for (Object ship : createdByNewId.values()) scanShip(level, ship, setups);
         for (Entry<BlockPos, VehicleSetupBlockEntity> entry : setups.entrySet()) {
-            runSetup(level, entry.getKey(), entry.getValue(), player, shipsByOriginalId);
+            runSetup(level, entry.getKey(), entry.getValue(), player, shipsByOriginalId, placementId);
         }
 
     }
@@ -89,13 +90,13 @@ public final class VmodVehicleSetupCompat {
     }
 
     private static void runSetup(ServerLevel level, BlockPos setupPos, VehicleSetupBlockEntity setup,
-                                 ServerPlayer player, Map<Long, Object> ships) {
+                                 ServerPlayer player, Map<Long, Object> ships, String placementId) {
         int succeeded = 0;
         String firstError = null;
         for (VehicleSetupAction action : setup.actions()) {
             String error = action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS
                     ? runDbw(level, setupPos, action, ships)
-                    : VehicleSetupExecutor.run(level, setupPos, player, action, ships);
+                    : VehicleSetupExecutor.run(level, setupPos, player, action, ships, placementId);
             if (error == null) succeeded++;
             else if (firstError == null) firstError = error;
         }

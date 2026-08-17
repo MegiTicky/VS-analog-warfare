@@ -75,6 +75,11 @@ dependencies {
     runtimeOnly("io.github.llamalad7:mixinextras-forge:0.4.1")
 
     compileOnly "maven.modrinth:DistantHorizonsApi:5.1.0"
+
+    // Optional local runtime reference for testing Ender Transmission mixins.
+    // It is never bundled and does not become a mandatory mod dependency.
+    def enderTransmissionJar = findProperty('ender_transmission_jar')
+    if (enderTransmissionJar) runtimeOnly files(file(enderTransmissionJar))
 }
 
 tasks.named('processResources', ProcessResources).configure {

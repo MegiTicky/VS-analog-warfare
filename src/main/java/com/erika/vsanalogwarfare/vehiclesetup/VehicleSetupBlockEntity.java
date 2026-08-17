@@ -40,7 +40,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
 
     public String actionSummary() {
         int placements = 0, removals = 0, dbw = 0, controllers = 0, stiffness = 0,
-                interactions = 0, leftClicks = 0;
+                interactions = 0, leftClicks = 0, transmitters = 0;
         for (VehicleSetupAction action : actions) {
             switch (action.type()) {
                 case PLACE_BLOCK -> placements++;
@@ -50,6 +50,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
                 case SET_TRACKWORK_STIFFNESS -> stiffness++;
                 case GENERIC_BLOCK_INTERACTION -> interactions++;
                 case GENERIC_BLOCK_LEFT_CLICK -> leftClicks++;
+                case CONFIGURE_ENDER_TRANSMITTER -> transmitters++;
             }
         }
         StringBuilder summary = new StringBuilder();
@@ -60,7 +61,16 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         appendCount(summary, stiffness, "suspension setting");
         appendCount(summary, interactions, "block interaction");
         appendCount(summary, leftClicks, "left-click interaction");
+        appendCount(summary, transmitters, "Ender transmitter");
         return summary.length() == 0 ? "0 saved actions" : summary.toString();
+    }
+
+    public void upsertEnderTransmitter(VehicleSetupAction action) {
+        actions.removeIf(existing -> existing.type() == VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER
+                && existing.targetShipId() == action.targetShipId()
+                && action.shipOffset() != null && action.shipOffset().equals(existing.shipOffset()));
+        actions.add(action);
+        markAndSync();
     }
 
     private static void appendCount(StringBuilder summary, int count, String name) {

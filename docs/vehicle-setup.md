@@ -11,8 +11,9 @@ NBT, so they travel with an ordinary VMod schematic.
 3. Perform the normal interaction that should be restored later:
    - Place or break blocks.
    - Link two DBW backup blocks with the normal DBW interaction.
-   - Use a configured tweaked controller on a DBW controller hub.
-   - Use the Trackwork toolkit's stiffness mode on a track block.
+    - Use a configured tweaked controller on a DBW controller hub.
+    - Use the Trackwork toolkit's stiffness mode on a track block.
+    - Configure an Ender energy transmitter normally.
 4. Use the recorder on the Vehicle Setup Block again to stop recording.
 5. Save the vehicle with VMod as usual.
 6. With VMod installed, the actions run automatically after placement. An
@@ -29,6 +30,7 @@ without changing the recording state.
 | Link DBW backup networks | Drive By Wire |
 | Restore a tweaked controller linked to a hub | Drive By Wire and Create Tweaked Controllers |
 | Restore Trackwork suspension stiffness | Trackwork |
+| Isolate an Ender energy transmitter | Create: Ender Transmission |
 
 Block actions record both the setup-block offset and, when applicable, the
 ship-relative position. DBW links record the original ship IDs and both ship
@@ -37,6 +39,13 @@ VMod's old-to-new ship map before replaying the action.
 
 Tallyho is intentionally not part of the VS2.4 port because no compatible
 VS2.4 Tallyho build is available.
+
+Ender energy transmitters configured during recording are isolated per VMod
+placement. Each pasted vehicle receives a unique password suffix while keeping
+transmitters with the same original channel and password in the same network.
+Transmitters that were not recorded are left unchanged. To pair an isolated
+transmitter with an external one, sneak-right-click the vehicle transmitter
+with the analog screwdriver, then right-click the external transmitter.
 
 ## Optional Compatibility
 

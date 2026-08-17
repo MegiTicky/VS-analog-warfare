@@ -8,7 +8,11 @@
     "compat.DbwWireLinkNetworksMixin",
     "compat.DbwTweakedControllerHubMixin",
     "compat.TrackworkTrackToolkitMixin",
+    "compat.EnderTransmitterPacketMixin",
     "compat.VmodSchemPlacementItemMixin"
+  ],
+  "client": [
+    "client.EnderTransmitterScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 0
