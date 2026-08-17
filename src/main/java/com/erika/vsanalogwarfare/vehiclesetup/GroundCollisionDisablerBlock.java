@@ -1,6 +1,8 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
+import com.simibubi.create.AllShapes;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseEntityBlock;
@@ -8,16 +10,12 @@ import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.shapes.CollisionContext;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import javax.annotation.Nullable;
 
 public class GroundCollisionDisablerBlock extends BaseEntityBlock {
-    private static final VoxelShape SHAPE = Shapes.or(
-            box(1, 0, 1, 15, 2, 15),
-            box(3, 2, 3, 13, 14, 13),
-            box(1, 14, 1, 15, 16, 15));
+    private static final VoxelShape TOOLBOX_SHAPE = AllShapes.TOOLBOX.get(Direction.NORTH);
 
     public GroundCollisionDisablerBlock(Properties properties) {
         super(properties);
@@ -25,13 +23,13 @@ public class GroundCollisionDisablerBlock extends BaseEntityBlock {
 
     @Override
     public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, CollisionContext context) {
-        return SHAPE;
+        return TOOLBOX_SHAPE;
     }
 
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos,
                                         CollisionContext context) {
-        return SHAPE;
+        return TOOLBOX_SHAPE;
     }
 
     @Override
