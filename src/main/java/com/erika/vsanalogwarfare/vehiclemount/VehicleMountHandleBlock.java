@@ -22,13 +22,12 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.server.level.ServerPlayer;
 import javax.annotation.Nullable;
 
 public class VehicleMountHandleBlock extends BaseEntityBlock {
-    private static final VoxelShape SHAPE = Shapes.or(Block.box(4, 0, 4, 12, 3, 12), Block.box(5, 3, 5, 11, 16, 11));
+    private static final VoxelShape SHAPE = Block.box(0, 0, 0, 16, 16, 16);
 
     public VehicleMountHandleBlock(Properties properties) {
         super(properties);
@@ -72,6 +71,6 @@ public class VehicleMountHandleBlock extends BaseEntityBlock {
 
     @Override public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) { return SHAPE; }
     @Override public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) { return SHAPE; }
-    @Override public RenderShape getRenderShape(BlockState state) { return RenderShape.MODEL; }
+    @Override public RenderShape getRenderShape(BlockState state) { return RenderShape.INVISIBLE; }
     @Nullable @Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) { return new VehicleMountHandleBlockEntity(pos, state); }
 }

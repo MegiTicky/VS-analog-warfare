@@ -30,6 +30,14 @@ public final class VehicleMountManager {
     private VehicleMountManager() { }
 
     @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
+    public static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)
+                || !(event.getItemStack().getItem() instanceof AnalogScrewdriverItem)
+                || !(player.level().getBlockEntity(event.getPos()) instanceof VehicleMountHandleBlockEntity)) return;
+        event.setCanceled(true);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
     public static void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
         handleSeatLink(event, event.getTarget());
     }

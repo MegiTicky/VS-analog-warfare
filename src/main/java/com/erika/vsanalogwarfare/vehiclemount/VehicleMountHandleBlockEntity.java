@@ -1,12 +1,14 @@
 package com.erika.vsanalogwarfare.vehiclemount;
 
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupShipPosition;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -20,6 +22,9 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     private long shipId = -1L;
     private BlockPos shipOffset;
     private int revision;
+    private int offsetX;
+    private int offsetY;
+    private int offsetZ;
     private transient Map<Long, Object> placedShips;
 
     public VehicleMountHandleBlockEntity(BlockPos pos, BlockState state) {
@@ -28,6 +33,26 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
 
     public List<VehicleMountSeatLink> seats() { return List.copyOf(seats); }
     public int revision() { return revision; }
+    public int offsetX() { return offsetX; }
+    public int offsetY() { return offsetY; }
+    public int offsetZ() { return offsetZ; }
+
+    public void push(int x, int y, int z) {
+        int nextX = clampOffset(offsetX + x);
+        int nextY = clampOffset(offsetY + y);
+        int nextZ = clampOffset(offsetZ + z);
+        if (nextX == offsetX && nextY == offsetY && nextZ == offsetZ) return;
+        offsetX = nextX;
+        offsetY = nextY;
+        offsetZ = nextZ;
+        VSAnalogWarfare.LOGGER.info("[VSAW_VEHICLE_MOUNT] Push at {} offset=({}, {}, {})", worldPosition, offsetX, offsetY, offsetZ);
+        setChanged();
+        if (level != null && !level.isClientSide) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+    }
+
+    private static int clampOffset(int value) {
+        return Math.max(-8, Math.min(8, value));
+    }
 
     public void captureShipPosition() {
         if (level == null) return;
@@ -125,6 +150,9 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
         tag.putLong("ShipId", shipId);
         if (shipOffset != null) tag.putLong("ShipOffset", shipOffset.asLong());
         tag.putInt("Revision", revision);
+        tag.putInt("OffsetX", offsetX);
+        tag.putInt("OffsetY", offsetY);
+        tag.putInt("OffsetZ", offsetZ);
         ListTag list = new ListTag();
         for (VehicleMountSeatLink seat : seats) list.add(seat.save());
         tag.put("Seats", list);
@@ -136,6 +164,9 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
         shipId = tag.getLong("ShipId");
         shipOffset = tag.contains("ShipOffset") ? BlockPos.of(tag.getLong("ShipOffset")) : null;
         revision = tag.getInt("Revision");
+        offsetX = clampOffset(tag.getInt("OffsetX"));
+        offsetY = clampOffset(tag.getInt("OffsetY"));
+        offsetZ = clampOffset(tag.getInt("OffsetZ"));
         if (!tag.contains("Seats", Tag.TAG_LIST)) return;
         ListTag list = tag.getList("Seats", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {
@@ -145,5 +176,9 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     }
 
     @Override public CompoundTag getUpdateTag() { return saveWithoutMetadata(); }
-    @Override public void handleUpdateTag(CompoundTag tag) { load(tag); }
+    @Override public void handleUpdateTag(CompoundTag tag) {
+        load(tag);
+        VSAnalogWarfare.LOGGER.info("[VSAW_VEHICLE_MOUNT] Client sync at {} offset=({}, {}, {})", worldPosition, offsetX, offsetY, offsetZ);
+    }
+    @Override public ClientboundBlockEntityDataPacket getUpdatePacket() { return ClientboundBlockEntityDataPacket.create(this); }
 }

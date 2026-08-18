@@ -24,6 +24,7 @@ import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
@@ -42,6 +43,7 @@ import org.joml.Matrix4f;
 public final class ClientForgeEvents {
     private static final ResourceLocation SCOPE_BASE = new ResourceLocation(VSAnalogWarfare.MOD_ID, "textures/misc/scope_base.png");
     private static int mouseAimPacketCooldown;
+    private static boolean vehicleHandleAttackHeld;
 
     private ClientForgeEvents() {
     }
@@ -78,6 +80,9 @@ public final class ClientForgeEvents {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
+        if (!mc.options.keyAttack.isDown()) {
+            vehicleHandleAttackHeld = false;
+        }
         while (ClientKeyMappings.VEHICLE_MOUNT.consumeClick()) {
             if (mc.player == null || mc.screen != null) continue;
             if (mc.player.getVehicle() != null) {
@@ -144,6 +149,26 @@ public final class ClientForgeEvents {
     public static void onRenderOverlayPre(RenderGuiOverlayEvent.Pre event) {
         if (ClientScopeState.active() && event.getOverlay().id().equals(VanillaGuiOverlay.CROSSHAIR.id())) {
             event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onVehicleHandleAttack(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isAttack() || event.getHand() != InteractionHand.MAIN_HAND) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.screen != null
+                || !(mc.player.getMainHandItem().getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem)
+                || !(mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit)
+                || !(mc.level.getBlockState(hit.getBlockPos()).getBlock() instanceof VehicleMountHandleBlock)) {
+            vehicleHandleAttackHeld = false;
+            return;
+        }
+
+        event.setCanceled(true);
+        event.setSwingHand(true);
+        if (!vehicleHandleAttackHeld) {
+            ModNetwork.sendToServer(new VehicleMountPacket.Push(hit.getBlockPos(), hit.getDirection()));
+            vehicleHandleAttackHeld = true;
         }
     }
 

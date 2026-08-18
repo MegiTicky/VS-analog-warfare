@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.network.chat.Component;
@@ -68,6 +69,32 @@ public final class VehicleMountPacket {
                     return;
                 }
                 VehicleMountManager.mount(player, packet.handle, packet.index);
+            });
+            context.setPacketHandled(true);
+        }
+    }
+
+    public record Push(BlockPos handle, Direction face) {
+        public static void encode(Push packet, FriendlyByteBuf buf) {
+            buf.writeBlockPos(packet.handle);
+            buf.writeEnum(packet.face);
+        }
+
+        public static Push decode(FriendlyByteBuf buf) {
+            return new Push(buf.readBlockPos(), buf.readEnum(Direction.class));
+        }
+
+        public static void handle(Push packet, Supplier<NetworkEvent.Context> supplier) {
+            NetworkEvent.Context context = supplier.get();
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player == null || !(player.getMainHandItem().getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem)) return;
+                if (!(player.level().getBlockEntity(packet.handle) instanceof VehicleMountHandleBlockEntity handle)) return;
+                if (player.position().distanceToSqr(handle.currentWorldPosition()) > 36.0) return;
+                Direction push = packet.face.getOpposite();
+                com.erika.vsanalogwarfare.VSAnalogWarfare.LOGGER.info("[VSAW_VEHICLE_MOUNT] Push packet player={} handle={} clickedFace={} push={}",
+                        player.getGameProfile().getName(), packet.handle, packet.face, push);
+                handle.push(push.getStepX(), push.getStepY(), push.getStepZ());
             });
             context.setPacketHandled(true);
         }

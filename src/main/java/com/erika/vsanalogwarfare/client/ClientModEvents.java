@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.client;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.registry.ModEntities;
+import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
@@ -16,6 +17,7 @@ public final class ClientModEvents {
     @SubscribeEvent
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.SCOPE_CAMERA.get(), ScopeCameraRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.VEHICLE_MOUNT_HANDLE.get(), VehicleMountHandleRenderer::new);
     }
 
     @SubscribeEvent

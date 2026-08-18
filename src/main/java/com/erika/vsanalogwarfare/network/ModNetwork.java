@@ -91,6 +91,9 @@ public final class ModNetwork {
         CHANNEL.messageBuilder(VehicleMountPacket.Request.class, ++id, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(VehicleMountPacket.Request::encode).decoder(VehicleMountPacket.Request::decode)
                 .consumerMainThread(VehicleMountPacket.Request::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Push.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Push::encode).decoder(VehicleMountPacket.Push::decode)
+                .consumerMainThread(VehicleMountPacket.Push::handle).add();
         CHANNEL.messageBuilder(VehicleMountPacket.Link.class, ++id, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(VehicleMountPacket.Link::encode).decoder(VehicleMountPacket.Link::decode)
                 .consumerMainThread(VehicleMountPacket.Link::handle).add();

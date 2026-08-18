@@ -1,10 +1,14 @@
 {
   "ambientocclusion": true,
-  "textures": { "particle": "minecraft:block/iron_block", "rod": "minecraft:block/iron_block" },
+  "textures": {
+    "bar1": "vs_analog_warfare:block/vehicle_mount_handle/bar1",
+    "bar2": "vs_analog_warfare:block/vehicle_mount_handle/bar2",
+    "bar3": "vs_analog_warfare:block/vehicle_mount_handle/bar3",
+    "particle": "#bar1"
+  },
   "elements": [
-    { "from": [ 3, 0, 7 ], "to": [ 13, 2, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } },
-    { "from": [ 3, 2, 7 ], "to": [ 5, 14, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } },
-    { "from": [ 11, 2, 7 ], "to": [ 13, 14, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } },
-    { "from": [ 3, 12, 7 ], "to": [ 13, 14, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } }
+    { "from": [1, 0, 14], "to": [2, 1, 16], "faces": { "north": {"uv": [1, 2, 2, 3], "texture": "#bar3"}, "east": {"uv": [0, 0, 2, 1], "texture": "#bar3"}, "south": {"uv": [2, 2, 3, 3], "texture": "#bar3"}, "west": {"uv": [0, 1, 2, 2], "texture": "#bar3"}, "up": {"uv": [1, 4, 0, 2], "texture": "#bar3"}, "down": {"uv": [3, 0, 2, 2], "texture": "#bar3"} } },
+    { "from": [14, 0, 14], "to": [15, 1, 16], "faces": { "north": {"uv": [1, 2, 2, 3], "texture": "#bar2"}, "east": {"uv": [0, 0, 2, 1], "texture": "#bar2"}, "south": {"uv": [2, 2, 3, 3], "texture": "#bar2"}, "west": {"uv": [0, 1, 2, 2], "texture": "#bar2"}, "up": {"uv": [1, 4, 0, 2], "texture": "#bar2"}, "down": {"uv": [3, 0, 2, 2], "texture": "#bar2"} } },
+    { "from": [2, 0, 13.5], "to": [14, 1, 14.5], "faces": { "north": {"uv": [0, 0, 12, 1], "texture": "#bar1"}, "east": {"uv": [0, 4, 1, 5], "texture": "#bar1"}, "south": {"uv": [0, 1, 12, 2], "texture": "#bar1"}, "west": {"uv": [1, 4, 2, 5], "texture": "#bar1"}, "up": {"uv": [12, 3, 0, 2], "texture": "#bar1"}, "down": {"uv": [12, 3, 0, 4], "texture": "#bar1"} } }
   ]
 }
