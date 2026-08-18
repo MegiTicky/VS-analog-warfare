@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupAction;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupActionType;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupExecutor;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -81,13 +82,18 @@ public final class VmodVehicleSetupCompat {
             BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
             for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) {
                 pos.set(x, y, z);
-                if (!level.getBlockState(pos).is(ModBlocks.VEHICLE_SETUP.get())) continue;
+                if (!level.getBlockState(pos).is(ModBlocks.VEHICLE_SETUP.get())
+                        && !level.getBlockState(pos).is(ModBlocks.VEHICLE_MOUNT_HANDLE.get())) continue;
                 BlockEntity entity = level.getBlockEntity(pos);
                 if (entity instanceof VehicleSetupBlockEntity) {
                     BlockPos setupPos = pos.immutable();
                     PLACED_SHIP_MAPPINGS.put(setupPos, ships);
                     PLACEMENT_IDS.put(setupPos, placementId);
                     runEnderTransmitterActions(level, setupPos, (VehicleSetupBlockEntity) entity, ships, placementId);
+                }
+                if (entity instanceof VehicleMountHandleBlockEntity handle) {
+                    handle.setPlacedShips(ships);
+                    handle.remapPlacedPosition(pos.immutable());
                 }
             }
         } catch (ReflectiveOperationException ignored) { }

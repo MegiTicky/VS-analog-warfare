@@ -24,5 +24,6 @@ public final class ClientModEvents {
         event.register(ClientKeyMappings.SCOPE_FREE_LOOK);
         event.register(ClientKeyMappings.SCOPE_RANGEFINDER);
         event.register(ClientKeyMappings.SCOPE_ZEROING);
+        event.register(ClientKeyMappings.VEHICLE_MOUNT);
     }
 }

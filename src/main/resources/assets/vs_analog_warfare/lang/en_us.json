@@ -7,5 +7,8 @@
     "entity.vs_analog_warfare.scope_camera": "Scope Camera",
     "key.categories.vs_analog_warfare": "VS Analog Warfare",
     "key.vs_analog_warfare.scope_zoom": "Toggle Scope Zoom",
-    "key.vs_analog_warfare.scope_freelook": "Toggle Scope Free Look"
+  "key.vs_analog_warfare.scope_freelook": "Toggle Scope Free Look",
+  "block.vs_analog_warfare.vehicle_mount_handle": "Vehicle Mount Handle",
+  "item.vs_analog_warfare.vehicle_mount_handle": "Vehicle Mount Handle",
+  "key.vs_analog_warfare.vehicle_mount": "Mount / Dismount Vehicle"
 }

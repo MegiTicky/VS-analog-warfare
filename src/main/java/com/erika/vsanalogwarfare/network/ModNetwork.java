@@ -88,6 +88,21 @@ public final class ModNetwork {
                 .decoder(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::decode)
                 .consumerMainThread(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::handle)
                 .add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Request.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Request::encode).decoder(VehicleMountPacket.Request::decode)
+                .consumerMainThread(VehicleMountPacket.Request::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Link.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Link::encode).decoder(VehicleMountPacket.Link::decode)
+                .consumerMainThread(VehicleMountPacket.Link::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.OpenRoleName.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(VehicleMountPacket.OpenRoleName::encode).decoder(VehicleMountPacket.OpenRoleName::decode)
+                .consumerMainThread(VehicleMountPacket.OpenRoleName::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Dismount.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Dismount::encode).decoder(VehicleMountPacket.Dismount::decode)
+                .consumerMainThread(VehicleMountPacket.Dismount::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.OpenSelection.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(VehicleMountPacket.OpenSelection::encode).decoder(VehicleMountPacket.OpenSelection::decode)
+                .consumerMainThread(VehicleMountPacket.OpenSelection::handle).add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object packet) {

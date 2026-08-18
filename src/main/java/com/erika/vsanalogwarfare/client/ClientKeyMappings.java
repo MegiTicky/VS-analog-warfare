@@ -33,6 +33,10 @@ public final class ClientKeyMappings {
             "key.categories.vs_analog_warfare"
     );
 
+    public static final KeyMapping VEHICLE_MOUNT = new KeyMapping(
+            "key.vs_analog_warfare.vehicle_mount", InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_V, "key.categories.vs_analog_warfare");
+
     private ClientKeyMappings() {
     }
 }

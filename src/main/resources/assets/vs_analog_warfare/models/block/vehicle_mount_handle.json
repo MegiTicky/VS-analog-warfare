@@ -1,0 +1,10 @@
+{
+  "ambientocclusion": true,
+  "textures": { "particle": "minecraft:block/iron_block", "rod": "minecraft:block/iron_block" },
+  "elements": [
+    { "from": [ 3, 0, 7 ], "to": [ 13, 2, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } },
+    { "from": [ 3, 2, 7 ], "to": [ 5, 14, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } },
+    { "from": [ 11, 2, 7 ], "to": [ 13, 14, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } },
+    { "from": [ 3, 12, 7 ], "to": [ 13, 14, 9 ], "faces": { "down": { "texture": "#rod" }, "up": { "texture": "#rod" }, "north": { "texture": "#rod" }, "south": { "texture": "#rod" }, "west": { "texture": "#rod" }, "east": { "texture": "#rod" } } }
+  ]
+}

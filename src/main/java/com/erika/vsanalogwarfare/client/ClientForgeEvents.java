@@ -7,6 +7,8 @@ import com.erika.vsanalogwarfare.network.MouseAimTargetPacket;
 import com.erika.vsanalogwarfare.network.ModNetwork;
 import com.erika.vsanalogwarfare.network.StopScopePacket;
 import com.erika.vsanalogwarfare.network.ToggleScopeZoomPacket;
+import com.erika.vsanalogwarfare.network.VehicleMountPacket;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlock;
 import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfile;
 import com.erika.vsanalogwarfare.scope.ballistics.ReticleMark;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
@@ -76,6 +78,15 @@ public final class ClientForgeEvents {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
+        while (ClientKeyMappings.VEHICLE_MOUNT.consumeClick()) {
+            if (mc.player == null || mc.screen != null) continue;
+            if (mc.player.getVehicle() != null) {
+                ModNetwork.sendToServer(new VehicleMountPacket.Dismount());
+            } else if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit
+                    && mc.level != null && mc.level.getBlockState(hit.getBlockPos()).getBlock() instanceof VehicleMountHandleBlock) {
+                ModNetwork.sendToServer(new VehicleMountPacket.Request(hit.getBlockPos(), -1, -1));
+            }
+        }
         if (ClientScopeState.active() && mc.options.keyShift.isDown()) {
             ModNetwork.sendToServer(new StopScopePacket());
             mc.options.keyShift.setDown(false);

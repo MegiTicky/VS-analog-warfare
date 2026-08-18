@@ -2,6 +2,9 @@ package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountManager;
+import com.simibubi.create.content.contraptions.actors.seat.SeatBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -25,6 +28,10 @@ public class AnalogScrewdriverItem extends Item {
         if (level.isClientSide || !(context.getPlayer() instanceof ServerPlayer player)) return InteractionResult.SUCCESS;
         ItemStack recorder = context.getItemInHand();
         BlockPos clicked = context.getClickedPos();
+        if (player.isShiftKeyDown() && recorder.getOrCreateTag().getLong("VehicleMountHandle") != 0L) {
+            if (level.getBlockState(clicked).getBlock() instanceof SeatBlock
+                    && VehicleMountManager.tryOpenSeatRoleName(player, recorder, clicked)) return InteractionResult.CONSUME;
+        }
         if (level.getBlockEntity(clicked) instanceof GroundCollisionDisablerBlockEntity collisionDisabler) {
             return collisionDisabler.enableGroundCollision((net.minecraft.server.level.ServerLevel) level, player)
                     ? InteractionResult.CONSUME : InteractionResult.FAIL;
@@ -34,6 +41,11 @@ public class AnalogScrewdriverItem extends Item {
             recorder.getOrCreateTag().putLong(ANCHOR, clicked.asLong());
             if (player.isShiftKeyDown()) VehicleSetupRecordingManager.inspect(player, setupBlock);
             else VehicleSetupRecordingManager.toggle(player, setupBlock);
+            return InteractionResult.CONSUME;
+        }
+        if (level.getBlockEntity(clicked) instanceof VehicleMountHandleBlockEntity) {
+            recorder.getOrCreateTag().putLong("VehicleMountHandle", clicked.asLong());
+            player.displayClientMessage(Component.literal("Handle selected. Right-click a Create seat with the screwdriver to link it."), true);
             return InteractionResult.CONSUME;
         }
         if (EnderTransmissionCompat.isEnergyTransmitter(level.getBlockState(clicked))) {
@@ -55,7 +67,7 @@ public class AnalogScrewdriverItem extends Item {
             }
             return fail(player, "Sneak-right-click an Ender transmitter first to select it for pairing.");
         }
-        return fail(player, "Start recording, then use DBW and Trackwork tools normally.");
+        return InteractionResult.PASS;
     }
 
     private static InteractionResult success(ServerPlayer player, String message) { player.displayClientMessage(Component.literal(message), true); return InteractionResult.CONSUME; }
