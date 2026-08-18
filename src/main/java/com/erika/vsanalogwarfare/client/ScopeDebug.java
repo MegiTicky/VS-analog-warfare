@@ -28,7 +28,7 @@ public final class ScopeDebug {
     }
 
     public static void logLoaded() {
-        LOGGER.info("[VSAW_SCOPE] loaded build={}", BUILD_MARKER);
+        LOGGER.debug("[VSAW_SCOPE] loaded build={}", BUILD_MARKER);
     }
 
     public static void cameraHook(String hook, Object shipMountedTo, Camera camera) {
@@ -39,7 +39,7 @@ public final class ScopeDebug {
         long now = System.currentTimeMillis();
         if (now - lastClientLogMs >= 1000L) {
             lastClientLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] client hook={} shipYaw={} scopeYaw={} scopePitch={} roll={} camForwardYaw={} camYRot={} camXRot={} pos={}",
+            LOGGER.debug("[VSAW_SCOPE] client hook={} shipYaw={} scopeYaw={} scopePitch={} roll={} camForwardYaw={} camYRot={} camXRot={} pos={}",
                     lastHook,
                     fmt(lastShipYaw),
                     fmt(ClientScopeState.yaw()),
@@ -74,7 +74,7 @@ public final class ScopeDebug {
         long now = System.currentTimeMillis();
         if (now - lastPoseSkipLogMs >= 1000L) {
             lastPoseSkipLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] skipped VS mounted PoseStack rotation q=({}, {}, {}, {})",
+            LOGGER.debug("[VSAW_SCOPE] skipped VS mounted PoseStack rotation q=({}, {}, {}, {})",
                     fmt(quaternion.x), fmt(quaternion.y), fmt(quaternion.z), fmt(quaternion.w));
         }
     }
@@ -91,7 +91,7 @@ public final class ScopeDebug {
         long now = System.currentTimeMillis();
         if (now - lastReapplyLogMs >= 1000L) {
             lastReapplyLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] re-applied scope pose after VS ship-mounted camera setup");
+            LOGGER.debug("[VSAW_SCOPE] re-applied scope pose after VS ship-mounted camera setup");
         }
     }
 

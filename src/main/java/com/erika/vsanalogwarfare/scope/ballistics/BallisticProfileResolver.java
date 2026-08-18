@@ -487,7 +487,7 @@ public final class BallisticProfileResolver {
     }
 
     private static void debug(Level level, String message, Object... args) {
-        if (shouldDebug(level)) VSAnalogWarfare.LOGGER.info(message, args);
+        if (shouldDebug(level)) VSAnalogWarfare.LOGGER.debug(message, args);
     }
 
     private static String className(Object object) {

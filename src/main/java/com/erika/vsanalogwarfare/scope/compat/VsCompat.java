@@ -61,7 +61,7 @@ public final class VsCompat {
             getShipMountedToMethod = tryGetMethod("getShipMountedTo", net.minecraft.world.entity.Entity.class);
         }
         
-        LOGGER.info("[VSAW] VS compat initialized: managingPos={} allShips={} shipWorld={} yRange={}",
+        LOGGER.debug("[VSAW] VS compat initialized: managingPos={} allShips={} shipWorld={} yRange={}",
             getShipManagingPos != null, getAllShipsMethod != null, 
             getShipObjectWorldMethod != null, getYRangeMethod != null);
     }
@@ -144,7 +144,7 @@ public final class VsCompat {
         long now = System.currentTimeMillis();
         if (now - lastShipDirectionLogMs >= 1000L) {
             lastShipDirectionLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] shipToWorldDirection: local={} -> world={}", 
+            LOGGER.debug("[VSAW_SCOPE] shipToWorldDirection: local={} -> world={}",
                 String.format("%.2f,%.2f,%.2f", localDirection.x, localDirection.y, localDirection.z),
                 String.format("%.2f,%.2f,%.2f", result.x, result.y, result.z));
         }
@@ -184,14 +184,14 @@ public final class VsCompat {
             long now = System.currentTimeMillis();
             if (now - lastShipDirectionLogMs >= 1000L) {
                 lastShipDirectionLogMs = now;
-                LOGGER.info("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
+                LOGGER.debug("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
             }
             return ship;
         } catch (ReflectiveOperationException | LinkageError e) {
             long now = System.currentTimeMillis();
             if (now - lastShipDirectionLogMs >= 1000L) {
                 lastShipDirectionLogMs = now;
-                LOGGER.info("[VSAW_SCOPE] findShip(pos={}): exception {}", pos, e.getClass().getSimpleName());
+                LOGGER.debug("[VSAW_SCOPE] findShip(pos={}): exception {}", pos, e.getClass().getSimpleName());
             }
             return null;
         }
@@ -287,7 +287,7 @@ public final class VsCompat {
                     }
                 }
             } catch (ReflectiveOperationException | LinkageError e) {
-                LOGGER.info("[VSAW_SCOPE] getAllShips: exception {}", e.getClass().getSimpleName());
+                LOGGER.debug("[VSAW_SCOPE] getAllShips: exception {}", e.getClass().getSimpleName());
             }
         }
         
@@ -306,7 +306,7 @@ public final class VsCompat {
                     }
                 }
             } catch (ReflectiveOperationException | LinkageError e) {
-                LOGGER.info("[VSAW_SCOPE] getAllShips fallback: exception {}", e.getClass().getSimpleName());
+                LOGGER.debug("[VSAW_SCOPE] getAllShips fallback: exception {}", e.getClass().getSimpleName());
             }
         }
         

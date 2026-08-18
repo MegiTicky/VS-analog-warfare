@@ -1,3 +1,8 @@
 {
-  "variants": { "": { "model": "vs_analog_warfare:block/vehicle_setup" } }
+  "variants": {
+    "facing=north": { "model": "vs_analog_warfare:block/vehicle_setup", "y": 180 },
+    "facing=east": { "model": "vs_analog_warfare:block/vehicle_setup", "y": 270 },
+    "facing=south": { "model": "vs_analog_warfare:block/vehicle_setup" },
+    "facing=west": { "model": "vs_analog_warfare:block/vehicle_setup", "y": 90 }
+  }
 }

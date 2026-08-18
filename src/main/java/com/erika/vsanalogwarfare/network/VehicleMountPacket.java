@@ -100,8 +100,6 @@ public final class VehicleMountPacket {
                 }
                 if (player.position().distanceToSqr(handle.currentWorldPosition()) > 36.0) return;
                 Direction push = packet.face.getOpposite();
-                com.erika.vsanalogwarfare.VSAnalogWarfare.LOGGER.info("[VSAW_VEHICLE_MOUNT] Push packet player={} handle={} clickedFace={} push={}",
-                        player.getGameProfile().getName(), packet.handle, packet.face, push);
                 handle.push(push.getStepX(), push.getStepY(), push.getStepZ());
             });
             context.setPacketHandled(true);

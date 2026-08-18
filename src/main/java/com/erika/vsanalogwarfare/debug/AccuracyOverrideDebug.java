@@ -165,14 +165,14 @@ public final class AccuracyOverrideDebug {
         
         Vec3 velocityDir = velocity.normalize();
         Vec3 projectileWorldPos = entity.position();
-        VSAnalogWarfare.LOGGER.info("[AccuracyOverride] projectile {} at pos {} velocity=({}, {}, {}) dir=({}, {}, {})",
+        VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] projectile {} at pos {} velocity=({}, {}, {}) dir=({}, {}, {})",
                 entity.getType(), entity.blockPosition(),
                 String.format(Locale.ROOT, "%.4f", velocity.x), String.format(Locale.ROOT, "%.4f", velocity.y), String.format(Locale.ROOT, "%.4f", velocity.z),
                 String.format(Locale.ROOT, "%.4f", velocityDir.x), String.format(Locale.ROOT, "%.4f", velocityDir.y), String.format(Locale.ROOT, "%.4f", velocityDir.z));
         
         Optional<MountMatchResult> matchResult = CbcCompat.findMountByAimDirectionGlobal(level, velocityDir, projectileWorldPos);
         if (matchResult.isEmpty()) {
-            VSAnalogWarfare.LOGGER.info("[AccuracyOverride] No cannon mount found matching projectile velocity direction");
+            VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] No cannon mount found matching projectile velocity direction");
             return;
         }
         
@@ -188,7 +188,7 @@ public final class AccuracyOverrideDebug {
         }
         entity.setDeltaMovement(aim.scale(speed));
         entity.hasImpulse = true;
-        VSAnalogWarfare.LOGGER.info("[AccuracyOverride] corrected {} speed={} aim=({}, {}, {}) mountPos={} onShip={} matchScore={}",
+            VSAnalogWarfare.LOGGER.debug("[AccuracyOverride] corrected {} speed={} aim=({}, {}, {}) mountPos={} onShip={} matchScore={}",
                 entity.getType(), String.format(Locale.ROOT, "%.4f", speed),
                 String.format(Locale.ROOT, "%.4f", aim.x), String.format(Locale.ROOT, "%.4f", aim.y), String.format(Locale.ROOT, "%.4f", aim.z),
                 mountPos, isOnShip, String.format(Locale.ROOT, "%.4f", result.matchScore()));

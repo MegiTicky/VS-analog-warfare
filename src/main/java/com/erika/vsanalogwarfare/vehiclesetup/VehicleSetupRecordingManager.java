@@ -187,7 +187,7 @@ public final class VehicleSetupRecordingManager {
             pending = new PendingLeftClick(setup.getBlockPos(), pos,
                     player.level().getBlockState(pos), item.copy(), event.getFace(), player.isShiftKeyDown(), null);
             PENDING_LEFT_CLICKS.put(player.getUUID(), pending);
-            VSAnalogWarfare.LOGGER.info("[VSAW] Generic left-click queued: block={} pos={} player={} item={} canceled={} useBlock={} useItem={}",
+            VSAnalogWarfare.LOGGER.debug("[VSAW] Generic left-click queued: block={} pos={} player={} item={} canceled={} useBlock={} useItem={}",
                     blockId(player.level().getBlockState(pos)), pos, player.getGameProfile().getName(),
                     BuiltInRegistries.ITEM.getKey(item.getItem()), event.isCanceled(), event.getUseBlock(), event.getUseItem());
             if (event.isCanceled()) {
@@ -241,7 +241,7 @@ public final class VehicleSetupRecordingManager {
         String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
         if (!event.isCanceled() && event.getUseBlock() == Event.Result.DENY
                 && event.getUseItem() == Event.Result.DENY) {
-            VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction discarded: block={} player={} both uses denied.",
+            VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction discarded: block={} player={} both uses denied.",
                     blockId, player.getGameProfile().getName());
             return;
         }
@@ -249,7 +249,7 @@ public final class VehicleSetupRecordingManager {
         Vec3 hitOffset = hit.getLocation().subtract(pos.getX(), pos.getY(), pos.getZ());
         PENDING_INTERACTIONS.put(player.getUUID(), new PendingInteraction(setup.getBlockPos(), pos, state,
                 item.copy(), event.getHand(), hit.getDirection(), hitOffset, event.isCanceled(), player.isShiftKeyDown()));
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction queued: block={} pos={} player={} hand={} item={} "
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction queued: block={} pos={} player={} hand={} item={} "
                         + "canceled={} result={} useBlock={} useItem={}", blockId, pos,
                 player.getGameProfile().getName(), event.getHand(), BuiltInRegistries.ITEM.getKey(item.getItem()),
                 event.isCanceled(), event.getCancellationResult(), event.getUseBlock(), event.getUseItem());
@@ -266,7 +266,7 @@ public final class VehicleSetupRecordingManager {
             PendingInteraction interaction = entry.getValue();
             VehicleSetupBlockEntity setup = activeSetup(player);
             if (setup == null || !setup.getBlockPos().equals(interaction.anchor())) {
-                VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction discarded: recording anchor disappeared for player={}.",
+                VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction discarded: recording anchor disappeared for player={}.",
                         player.getGameProfile().getName());
                 continue;
             }
@@ -332,7 +332,7 @@ public final class VehicleSetupRecordingManager {
                 pending.pos().subtract(setup.getBlockPos()), pending.item(), pending.face(), pending.sneaking());
         recordAction(player, setup, action);
         pending.setRecordedAction(action);
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic left-click recorded: block={} pos={} player={}",
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic left-click recorded: block={} pos={} player={}",
                 blockId(pending.initialState()), pending.pos(), player.getGameProfile().getName());
         player.displayClientMessage(Component.literal("Vehicle setup recorded block left-click: "
                 + setup.actionSummary() + "."), true);
@@ -346,7 +346,7 @@ public final class VehicleSetupRecordingManager {
             if (setup != null && setup.getBlockPos().equals(pending.anchor())) setup.removeAction(pending.recordedAction());
         }
         PENDING_LEFT_CLICKS.remove(player.getUUID());
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic left-click discarded: block={} pos={} player={} reason={}",
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic left-click discarded: block={} pos={} player={} reason={}",
                 blockId(pending.initialState()), pos, player.getGameProfile().getName(),
                 blockWasBroken ? "block broken; recorded as removal" : "click aborted");
     }
@@ -364,7 +364,7 @@ public final class VehicleSetupRecordingManager {
         recordAction(player, setup, VehicleSetupAction.interactWithBlock(ship == null ? -1L : ship.shipId(),
                 ship == null ? null : ship.offset(), interaction.pos().subtract(setup.getBlockPos()),
                 interaction.item(), interaction.hand(), interaction.face(), interaction.hitOffset(), interaction.sneaking()));
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction recorded: block={} pos={} player={} handled={}.",
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction recorded: block={} pos={} player={} handled={}.",
                 blockId, interaction.pos(), player.getGameProfile().getName(), interaction.handled());
         player.displayClientMessage(Component.literal("Vehicle setup recorded block interaction: "
                 + setup.actionSummary() + "."), true);

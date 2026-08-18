@@ -1,7 +1,6 @@
 package com.erika.vsanalogwarfare.vehiclemount;
 
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
-import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupShipPosition;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
 import net.minecraft.core.BlockPos;
@@ -65,7 +64,6 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
         offsetX = nextX;
         offsetY = nextY;
         offsetZ = nextZ;
-        VSAnalogWarfare.LOGGER.info("[VSAW_VEHICLE_MOUNT] Push at {} offset=({}, {}, {})", worldPosition, offsetX, offsetY, offsetZ);
         setChanged();
         if (level != null && !level.isClientSide) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
     }
@@ -202,7 +200,6 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     @Override public CompoundTag getUpdateTag() { return saveWithoutMetadata(); }
     @Override public void handleUpdateTag(CompoundTag tag) {
         load(tag);
-        VSAnalogWarfare.LOGGER.info("[VSAW_VEHICLE_MOUNT] Client sync at {} offset=({}, {}, {})", worldPosition, offsetX, offsetY, offsetZ);
     }
     @Override public ClientboundBlockEntityDataPacket getUpdatePacket() { return ClientboundBlockEntityDataPacket.create(this); }
 }

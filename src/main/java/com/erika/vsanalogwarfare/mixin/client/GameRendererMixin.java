@@ -40,7 +40,7 @@ public abstract class GameRendererMixin {
         if (ClientScopeState.active()) {
             if (!loggedSkip) {
                 loggedSkip = true;
-                LOGGER.info("[VSAW_SCOPE] Scope active - calling prepareCullFrustum directly (bypassing VS ship camera setup)");
+                LOGGER.debug("[VSAW_SCOPE] Scope active - calling prepareCullFrustum directly (bypassing VS ship camera setup)");
             }
             original.call(instance, matrixStack, cameraPos, projectionMatrix);
             return;

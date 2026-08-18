@@ -1,5 +1,8 @@
 {
   "variants": {
-    "": { "model": "vs_analog_warfare:block/ground_collision_disabler" }
+    "facing=north": { "model": "vs_analog_warfare:block/ground_collision_disabler", "y": 180 },
+    "facing=east": { "model": "vs_analog_warfare:block/ground_collision_disabler", "y": 270 },
+    "facing=south": { "model": "vs_analog_warfare:block/ground_collision_disabler" },
+    "facing=west": { "model": "vs_analog_warfare:block/ground_collision_disabler", "y": 90 }
   }
 }
