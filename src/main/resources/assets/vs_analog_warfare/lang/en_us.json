@@ -10,5 +10,6 @@
   "key.vs_analog_warfare.scope_freelook": "Toggle Scope Free Look",
   "block.vs_analog_warfare.vehicle_mount_handle": "Vehicle Mount Handle",
   "item.vs_analog_warfare.vehicle_mount_handle": "Vehicle Mount Handle",
+  "itemGroup.vs_analog_warfare.main": "VS Analog Warfare",
   "key.vs_analog_warfare.vehicle_mount": "Mount / Dismount Vehicle"
 }

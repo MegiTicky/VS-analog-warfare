@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.config.CommonConfig;
 import com.erika.vsanalogwarfare.network.ModNetwork;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.erika.vsanalogwarfare.registry.ModBlocks;
+import com.erika.vsanalogwarfare.registry.ModCreativeModeTabs;
 import com.erika.vsanalogwarfare.registry.ModEntities;
 import com.erika.vsanalogwarfare.registry.ModItems;
 import net.minecraftforge.api.distmarker.Dist;
@@ -27,6 +28,7 @@ public class VSAnalogWarfare {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         ModBlocks.BLOCKS.register(modBus);
         ModItems.ITEMS.register(modBus);
+        ModCreativeModeTabs.CREATIVE_MODE_TABS.register(modBus);
         ModBlockEntities.BLOCK_ENTITIES.register(modBus);
         ModEntities.ENTITIES.register(modBus);
         ModNetwork.register();
