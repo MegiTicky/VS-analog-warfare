@@ -1,6 +1,7 @@
 package com.erika.vsanalogwarfare.scope.compat;
 
 import com.mojang.logging.LogUtils;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.VsGameUtilsBridge;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -20,12 +21,8 @@ public final class VsCompat {
     private static final Logger LOGGER = LogUtils.getLogger();
     
     private static Class<?> vsGameUtilsClass;
-    private static Method getShipManagingPos;
     private static Method getShipMountedToMethod;
-    private static Method getAllShipsMethod;
-    private static Method getShipObjectWorldMethod;
     private static Method getLoadedShipsMethod;
-    private static Method getYRangeMethod;
     
     private static boolean initialized = false;
     private static boolean isClientSide = false;
@@ -42,28 +39,20 @@ public final class VsCompat {
     private static void initialize() {
         if (initialized) return;
         initialized = true;
-        
+
         try {
             vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
         } catch (ClassNotFoundException e) {
             LOGGER.warn("[VSAW] VSGameUtilsKt not found, VS integration disabled");
-            return;
         }
         
         isClientSide = safeCheckClientSide();
-        
-        getShipManagingPos = tryGetMethod("getShipManagingPos", Level.class, BlockPos.class);
-        getAllShipsMethod = tryGetMethod("getAllShips", Level.class);
-        getShipObjectWorldMethod = tryGetMethod("getShipObjectWorld", Level.class);
-        getYRangeMethod = tryGetMethod("getYRange", Level.class);
-        
-        if (isClientSide) {
+
+        if (isClientSide && vsGameUtilsClass != null) {
             getShipMountedToMethod = tryGetMethod("getShipMountedTo", net.minecraft.world.entity.Entity.class);
         }
         
-        LOGGER.debug("[VSAW] VS compat initialized: managingPos={} allShips={} shipWorld={} yRange={}",
-            getShipManagingPos != null, getAllShipsMethod != null, 
-            getShipObjectWorldMethod != null, getYRangeMethod != null);
+        LOGGER.debug("[VSAW] VS compat initialized");
     }
     
     private static boolean safeCheckClientSide() {
@@ -177,17 +166,15 @@ public final class VsCompat {
     }
 
     public static Object findShip(Level level, BlockPos pos) {
-        if (getShipManagingPos == null) return null;
-        
         try {
-            Object ship = getShipManagingPos.invoke(null, level, pos);
+            Object ship = VsGameUtilsBridge.shipManagingPos(level, pos);
             long now = System.currentTimeMillis();
             if (now - lastShipDirectionLogMs >= 1000L) {
                 lastShipDirectionLogMs = now;
                 LOGGER.debug("[VSAW_SCOPE] findShip(pos={}): {}", pos, ship != null ? ship.getClass().getSimpleName() : "null");
             }
             return ship;
-        } catch (ReflectiveOperationException | LinkageError e) {
+        } catch (RuntimeException | LinkageError e) {
             long now = System.currentTimeMillis();
             if (now - lastShipDirectionLogMs >= 1000L) {
                 lastShipDirectionLogMs = now;
@@ -276,24 +263,10 @@ public final class VsCompat {
     }
 
     public static List<Object> getAllShips(Level level) {
-        List<Object> ships = new ArrayList<>();
-        
-        if (getAllShipsMethod != null) {
+        List<Object> ships = new ArrayList<>(VsGameUtilsBridge.allShips(level));
+        if (ships.isEmpty()) {
             try {
-                Object allShips = getAllShipsMethod.invoke(null, level);
-                if (allShips instanceof Iterable<?> iterable) {
-                    for (Object ship : iterable) {
-                        ships.add(ship);
-                    }
-                }
-            } catch (ReflectiveOperationException | LinkageError e) {
-                LOGGER.debug("[VSAW_SCOPE] getAllShips: exception {}", e.getClass().getSimpleName());
-            }
-        }
-        
-        if (ships.isEmpty() && getShipObjectWorldMethod != null) {
-            try {
-                Object shipWorld = getShipObjectWorldMethod.invoke(null, level);
+                Object shipWorld = VsGameUtilsBridge.shipObjectWorld(level);
                 if (shipWorld != null) {
                     if (getLoadedShipsMethod == null) {
                         getLoadedShipsMethod = shipWorld.getClass().getMethod("getLoadedShips");
@@ -413,11 +386,10 @@ public final class VsCompat {
     }
 
     public static int[] getChunkClaimCenter(Object chunkClaim, Level level) {
-        if (getYRangeMethod == null) return null;
-        
         try {
             org.joml.Vector3i center = new org.joml.Vector3i();
-            Object yRange = getYRangeMethod.invoke(null, level);
+            Object yRange = VsGameUtilsBridge.yRange(level);
+            if (yRange == null) return null;
             Method getCenterMethod = chunkClaim.getClass().getMethod("getCenterBlockCoordinates", Object.class, org.joml.Vector3i.class);
             getCenterMethod.invoke(chunkClaim, yRange, center);
             return new int[] { center.x, center.y, center.z };

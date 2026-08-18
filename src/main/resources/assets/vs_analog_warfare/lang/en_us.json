@@ -1,6 +1,6 @@
 {
-  "block.vs_analog_warfare.vehicle_setup": "Vehicle Setup Block",
-  "block.vs_analog_warfare.ground_collision_disabler": "Ground Collision Disabler",
+  "block.vs_analog_warfare.vehicle_setup": "Setup Block",
+  "block.vs_analog_warfare.ground_collision_disabler": "Collision Disabler",
   "item.vs_analog_warfare.analog_screwdriver": "Analog Screwdriver",
     "block.vs_analog_warfare.scope_block": "Analog Cannon Scope",
     "block.vs_analog_warfare.mouse_aim_block": "Mouse Aim Controller",
@@ -8,8 +8,8 @@
     "key.categories.vs_analog_warfare": "VS Analog Warfare",
     "key.vs_analog_warfare.scope_zoom": "Toggle Scope Zoom",
   "key.vs_analog_warfare.scope_freelook": "Toggle Scope Free Look",
-  "block.vs_analog_warfare.vehicle_mount_handle": "Vehicle Mount Handle",
-  "item.vs_analog_warfare.vehicle_mount_handle": "Vehicle Mount Handle",
+  "block.vs_analog_warfare.vehicle_mount_handle": "Mount Handle",
+  "item.vs_analog_warfare.vehicle_mount_handle": "Mount Handle",
   "itemGroup.vs_analog_warfare.main": "VS Analog Warfare",
   "key.vs_analog_warfare.vehicle_mount": "Mount / Dismount Vehicle"
 }

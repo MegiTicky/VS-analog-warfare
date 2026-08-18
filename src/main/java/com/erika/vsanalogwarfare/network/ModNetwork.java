@@ -175,13 +175,7 @@ public final class ModNetwork {
 
         // --- Reflection Helpers for VS2 Compatibility ---
         private static Iterable<?> getAllShips(Level level) {
-            try {
-                Class<?> vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-                Method getAllShips = vsGameUtilsClass.getMethod("getAllShips", Level.class);
-                return (Iterable<?>) getAllShips.invoke(null, level);
-            } catch (Exception e) {
-                return null;
-            }
+            return com.erika.vsanalogwarfare.vehiclesetup.compat.VsGameUtilsBridge.allShips(level);
         }
 
         private static Object getShipAABB(Object ship) {

@@ -88,4 +88,14 @@ public class VehicleMountHandleBlock extends BaseEntityBlock {
     @Override public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) { return Shapes.empty(); }
     @Override public RenderShape getRenderShape(BlockState state) { return RenderShape.INVISIBLE; }
     @Nullable @Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) { return new VehicleMountHandleBlockEntity(pos, state); }
+
+    @Nullable @Override public <T extends BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(
+            Level level, BlockState state, net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
+        return !level.isClientSide
+                ? (tickerLevel, pos, tickerState, blockEntity) -> {
+                    VehicleMountHandleBlockEntity handle = (VehicleMountHandleBlockEntity) blockEntity;
+                    if ((tickerLevel.getGameTime() & 7L) == 0L) handle.captureShipPosition();
+                }
+                : null;
+    }
 }

@@ -26,6 +26,7 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     private int offsetZ;
     private boolean locked;
     private boolean redstonePowered;
+    private int captureRetries;
     private transient Map<Long, Object> placedShips;
 
     public VehicleMountHandleBlockEntity(BlockPos pos, BlockState state) {
@@ -73,7 +74,8 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     }
 
     public void captureShipPosition() {
-        if (level == null) return;
+        if (level == null || shipId >= 0L || captureRetries >= 40) return;
+        captureRetries++;
         VehicleSetupShipPosition position = VehicleSetupShipPosition.at(level, worldPosition);
         if (position != null) {
             shipId = position.shipId();
@@ -117,8 +119,10 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
                 } catch (ReflectiveOperationException ignored) { }
             }
         }
-        return ship == null ? Vec3.atCenterOf(position)
-                : com.erika.vsanalogwarfare.scope.compat.VsCompat.shipToWorldPosition(ship, Vec3.atCenterOf(position));
+        if (ship == null) return Vec3.atCenterOf(position);
+        Vec3 transformed = com.erika.vsanalogwarfare.scope.compat.VsCompat.shipToWorldPosition(
+                ship, Vec3.atCenterOf(position));
+        return transformed == null ? Vec3.atCenterOf(position) : transformed;
     }
 
     public void setPlacedShips(Map<Long, Object> ships) {
@@ -183,6 +187,7 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
         seats.clear();
         shipId = tag.getLong("ShipId");
         shipOffset = tag.contains("ShipOffset") ? BlockPos.of(tag.getLong("ShipOffset")) : null;
+        captureRetries = shipId >= 0L ? 40 : 0;
         revision = tag.getInt("Revision");
         offsetX = clampOffset(tag.getInt("OffsetX"));
         offsetY = clampOffset(tag.getInt("OffsetY"));

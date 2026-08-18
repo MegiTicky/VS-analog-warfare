@@ -12,16 +12,7 @@ public final class VehicleSetupReflection {
     private VehicleSetupReflection() { }
 
     @Nullable public static Object findShip(Level level, BlockPos pos) {
-        try {
-            Class<?> utils = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-            for (Method method : utils.getMethods()) {
-                if (method.getName().equals("getShipObjectManagingPos") && method.getParameterCount() == 2
-                        && method.getParameterTypes()[0].isInstance(level) && method.getParameterTypes()[1].isInstance(pos)) {
-                    return method.invoke(null, level, pos);
-                }
-            }
-        } catch (ReflectiveOperationException | LinkageError ignored) { }
-        return null;
+        return VsGameUtilsBridge.shipObjectManagingPos(level, pos);
     }
 
     @Nullable static ShipPosition shipPosition(Level level, BlockPos pos) {

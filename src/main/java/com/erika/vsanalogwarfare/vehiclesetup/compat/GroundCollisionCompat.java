@@ -15,7 +15,6 @@ import java.util.Set;
 /** Optional VMod bridge for persistent ship-to-ground collision ownership. */
 public final class GroundCollisionCompat {
     private static final String VMOD_MANAGER = "net.spaceeye.vmod.constraintsManaging.ConstraintManager";
-    private static final String VS_GAME_UTILS = "org.valkyrienskies.mod.common.VSGameUtilsKt";
     private static final Map<String, String> LAST_FAILURES = new HashMap<>();
     private static final Set<String> ACTIVE_SHIPS = new HashSet<>();
     private GroundCollisionCompat() { }
@@ -109,13 +108,8 @@ public final class GroundCollisionCompat {
     }
 
     private static String vsDimensionId(ServerLevel level) throws ReflectiveOperationException {
-        try {
-            Method getDimensionId = Class.forName(VS_GAME_UTILS).getMethod("getDimensionId", Level.class);
-            Object result = getDimensionId.invoke(null, level);
-            if (result instanceof String dimensionId) return dimensionId;
-        } catch (ClassNotFoundException error) {
-            throw new ReflectiveOperationException(error);
-        }
+        String dimensionId = VsGameUtilsBridge.dimensionId(level);
+        if (dimensionId != null) return dimensionId;
         throw new ReflectiveOperationException("Valkyrien Skies returned no dimension ID");
     }
 
