@@ -25,6 +25,8 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     private int offsetX;
     private int offsetY;
     private int offsetZ;
+    private boolean locked;
+    private boolean redstonePowered;
     private transient Map<Long, Object> placedShips;
 
     public VehicleMountHandleBlockEntity(BlockPos pos, BlockState state) {
@@ -36,6 +38,24 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     public int offsetX() { return offsetX; }
     public int offsetY() { return offsetY; }
     public int offsetZ() { return offsetZ; }
+    public boolean locked() { return locked; }
+
+    public void initializeRedstoneState(boolean powered) {
+        redstonePowered = powered;
+        setChanged();
+    }
+
+    public void updateRedstoneState(boolean powered) {
+        if (powered && !redstonePowered) {
+            locked = !locked;
+            setChanged();
+            if (level != null && !level.isClientSide) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        }
+        if (powered != redstonePowered) {
+            redstonePowered = powered;
+            setChanged();
+        }
+    }
 
     public void push(int x, int y, int z) {
         int nextX = clampOffset(offsetX + x);
@@ -153,6 +173,8 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
         tag.putInt("OffsetX", offsetX);
         tag.putInt("OffsetY", offsetY);
         tag.putInt("OffsetZ", offsetZ);
+        tag.putBoolean("Locked", locked);
+        tag.putBoolean("RedstonePowered", redstonePowered);
         ListTag list = new ListTag();
         for (VehicleMountSeatLink seat : seats) list.add(seat.save());
         tag.put("Seats", list);
@@ -167,6 +189,8 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
         offsetX = clampOffset(tag.getInt("OffsetX"));
         offsetY = clampOffset(tag.getInt("OffsetY"));
         offsetZ = clampOffset(tag.getInt("OffsetZ"));
+        locked = tag.getBoolean("Locked");
+        redstonePowered = tag.getBoolean("RedstonePowered");
         if (!tag.contains("Seats", Tag.TAG_LIST)) return;
         ListTag list = tag.getList("Seats", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {

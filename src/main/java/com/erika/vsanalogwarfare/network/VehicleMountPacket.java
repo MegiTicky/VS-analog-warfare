@@ -43,6 +43,10 @@ public final class VehicleMountPacket {
                     player.displayClientMessage(Component.literal("The selected vehicle mount handle is unavailable."), true);
                     return;
                 }
+                if (handle.locked()) {
+                    player.displayClientMessage(Component.literal("This vehicle mount handle is locked."), true);
+                    return;
+                }
                 if (!(player.level().getBlockState(packet.seatPos).getBlock() instanceof SeatBlock)) {
                     player.displayClientMessage(Component.literal("The selected Create seat is unavailable."), true);
                     return;
@@ -90,6 +94,10 @@ public final class VehicleMountPacket {
                 ServerPlayer player = context.getSender();
                 if (player == null || !(player.getMainHandItem().getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem)) return;
                 if (!(player.level().getBlockEntity(packet.handle) instanceof VehicleMountHandleBlockEntity handle)) return;
+                if (handle.locked()) {
+                    player.displayClientMessage(Component.literal("This vehicle mount handle is locked."), true);
+                    return;
+                }
                 if (player.position().distanceToSqr(handle.currentWorldPosition()) > 36.0) return;
                 Direction push = packet.face.getOpposite();
                 com.erika.vsanalogwarfare.VSAnalogWarfare.LOGGER.info("[VSAW_VEHICLE_MOUNT] Push packet player={} handle={} clickedFace={} push={}",

@@ -44,6 +44,10 @@ public class AnalogScrewdriverItem extends Item {
             return InteractionResult.CONSUME;
         }
         if (level.getBlockEntity(clicked) instanceof VehicleMountHandleBlockEntity) {
+            if (((VehicleMountHandleBlockEntity) level.getBlockEntity(clicked)).locked()) {
+                player.displayClientMessage(Component.literal("This vehicle mount handle is locked."), true);
+                return InteractionResult.FAIL;
+            }
             recorder.getOrCreateTag().putLong("VehicleMountHandle", clicked.asLong());
             player.displayClientMessage(Component.literal("Handle selected. Right-click a Create seat with the screwdriver to link it."), true);
             return InteractionResult.CONSUME;

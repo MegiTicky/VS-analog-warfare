@@ -62,7 +62,11 @@ public final class VehicleMountManager {
         if (handleLong == 0L) return false;
         BlockPos handlePos = BlockPos.of(handleLong);
         BlockEntity entity = player.level().getBlockEntity(handlePos);
-        if (!(entity instanceof VehicleMountHandleBlockEntity)) return false;
+        if (!(entity instanceof VehicleMountHandleBlockEntity handle)) return false;
+        if (handle.locked()) {
+            player.displayClientMessage(Component.literal("This vehicle mount handle is locked."), true);
+            return true;
+        }
         VehicleSetupShipPosition seatPosition = VehicleSetupShipPosition.at(player.level(), seatPos);
         if (seatPosition == null) {
             player.displayClientMessage(Component.literal("The seat must be on a loaded ship."), true);
@@ -84,8 +88,8 @@ public final class VehicleMountManager {
             player.displayClientMessage(Component.literal("That vehicle mount handle is unavailable."), true);
             return;
         }
-        if (player.position().distanceToSqr(handle.currentWorldPosition()) > 64.0) {
-            player.displayClientMessage(Component.literal("Move closer to the vehicle mount handle."), true);
+        if (handle.locked()) {
+            player.displayClientMessage(Component.literal("This vehicle mount handle is locked."), true);
             return;
         }
         if (index < 0) {

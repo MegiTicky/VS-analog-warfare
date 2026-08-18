@@ -22,6 +22,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import net.minecraft.server.level.ServerPlayer;
 import javax.annotation.Nullable;
@@ -46,6 +47,10 @@ public class VehicleMountHandleBlock extends BaseEntityBlock {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
         if (player.getItemInHand(hand).getItem() instanceof AnalogScrewdriverItem) {
             if (level.isClientSide) return InteractionResult.SUCCESS;
+            if (level.getBlockEntity(pos) instanceof VehicleMountHandleBlockEntity handle && handle.locked()) {
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal("This vehicle mount handle is locked."), true);
+                return InteractionResult.FAIL;
+            }
             player.getItemInHand(hand).getOrCreateTag().putLong("VehicleMountHandle", pos.asLong());
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("Handle selected. Right-click a Create seat with the screwdriver to link it."), true);
             return InteractionResult.CONSUME;
@@ -66,11 +71,21 @@ public class VehicleMountHandleBlock extends BaseEntityBlock {
 
     @Override public void setPlacedBy(Level level, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
         super.setPlacedBy(level, pos, state, placer, stack);
-        if (level.getBlockEntity(pos) instanceof VehicleMountHandleBlockEntity handle) handle.captureShipPosition();
+        if (level.getBlockEntity(pos) instanceof VehicleMountHandleBlockEntity handle) {
+            handle.captureShipPosition();
+            handle.initializeRedstoneState(level.hasNeighborSignal(pos));
+        }
+    }
+
+    @Override public void neighborChanged(BlockState state, Level level, BlockPos pos, Block block, BlockPos fromPos, boolean moving) {
+        super.neighborChanged(state, level, pos, block, fromPos, moving);
+        if (level.getBlockEntity(pos) instanceof VehicleMountHandleBlockEntity handle) {
+            handle.updateRedstoneState(level.hasNeighborSignal(pos));
+        }
     }
 
     @Override public VoxelShape getShape(BlockState state, BlockGetter level, BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) { return SHAPE; }
-    @Override public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) { return SHAPE; }
+    @Override public VoxelShape getCollisionShape(BlockState state, BlockGetter level, BlockPos pos, net.minecraft.world.phys.shapes.CollisionContext context) { return Shapes.empty(); }
     @Override public RenderShape getRenderShape(BlockState state) { return RenderShape.INVISIBLE; }
     @Nullable @Override public BlockEntity newBlockEntity(BlockPos pos, BlockState state) { return new VehicleMountHandleBlockEntity(pos, state); }
 }
