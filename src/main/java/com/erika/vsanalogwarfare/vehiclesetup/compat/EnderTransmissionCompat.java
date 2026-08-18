@@ -5,6 +5,7 @@ import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupAction;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -12,6 +13,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.security.SecureRandom;
 import java.util.Locale;
 
@@ -34,6 +37,43 @@ public final class EnderTransmissionCompat {
     public static boolean isEnergyTransmitter(BlockEntity blockEntity) {
         return blockEntity instanceof KineticBlockEntity
                 && isEnergyTransmitter(blockEntity.getBlockState());
+    }
+
+    public static List<DetectedTransmitter> scan(Level level, BlockPos setupPos) {
+        Object ship = VehicleSetupReflection.findShip(level, setupPos);
+        if (ship == null) return List.of();
+        try {
+            Object box = VehicleSetupReflection.invoke(ship, "getShipAABB");
+            Object id = VehicleSetupReflection.invoke(ship, "getId");
+            if (box == null || !(id instanceof Number shipId)) return List.of();
+            int minX = coordinate(box, "minX");
+            int minY = coordinate(box, "minY");
+            int minZ = coordinate(box, "minZ");
+            int maxX = coordinate(box, "maxX");
+            int maxY = coordinate(box, "maxY");
+            int maxZ = coordinate(box, "maxZ");
+            if ((long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > 1_000_000L) {
+                return List.of();
+            }
+            List<DetectedTransmitter> result = new ArrayList<>();
+            BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+            for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) {
+                pos.set(x, y, z);
+                if (!isEnergyTransmitter(level.getBlockState(pos))) continue;
+                BlockEntity blockEntity = level.getBlockEntity(pos);
+                if (!(blockEntity instanceof KineticBlockEntity transmitter)) continue;
+                CompoundTag data = transmitter.getPersistentData();
+                String password = data.contains(ORIGINAL_PASSWORD_TAG)
+                        ? data.getString(ORIGINAL_PASSWORD_TAG) : data.getString("password");
+                int channel = data.contains(ORIGINAL_CHANNEL_TAG)
+                        ? data.getInt(ORIGINAL_CHANNEL_TAG) : data.getInt("channel");
+                result.add(new DetectedTransmitter(pos.immutable(), shipId.longValue(),
+                        pos.offset(-minX, -minY, -minZ), channel, password));
+            }
+            return result;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return List.of();
+        }
     }
 
     public static String newPlacementId() {
@@ -137,4 +177,13 @@ public final class EnderTransmissionCompat {
             throw exception;
         }
     }
+
+    private static int coordinate(Object box, String name) throws ReflectiveOperationException {
+        Object value = box.getClass().getMethod(name).invoke(box);
+        if (!(value instanceof Number number)) throw new ReflectiveOperationException("Invalid ship bounding-box coordinate");
+        return number.intValue();
+    }
+
+    public record DetectedTransmitter(BlockPos worldPos, long shipId, BlockPos shipOffset,
+                                      int channel, String password) { }
 }

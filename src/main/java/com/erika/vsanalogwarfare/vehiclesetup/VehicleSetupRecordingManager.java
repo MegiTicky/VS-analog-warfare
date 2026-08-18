@@ -139,6 +139,24 @@ public final class VehicleSetupRecordingManager {
                 data.getString("password"));
     }
 
+    public static void scanEnderTransmitters(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        java.util.List<EnderTransmissionCompat.DetectedTransmitter> detected =
+                EnderTransmissionCompat.scan(player.level(), setup.getBlockPos());
+        if (detected.isEmpty()) {
+            player.displayClientMessage(Component.literal(
+                    "No energy transmitters found on the Vehicle Setup ship."), true);
+            return;
+        }
+        for (EnderTransmissionCompat.DetectedTransmitter transmitter : detected) {
+            setup.upsertEnderTransmitter(VehicleSetupAction.configureEnderTransmitter(
+                    transmitter.shipId(), transmitter.shipOffset(),
+                    transmitter.worldPos().subtract(setup.getBlockPos()),
+                    transmitter.channel(), transmitter.password()));
+        }
+        player.displayClientMessage(Component.literal("Added " + detected.size()
+                + " energy transmitter" + (detected.size() == 1 ? "" : "s") + " to the setup."), true);
+    }
+
     @SubscribeEvent
     public static void onPlace(BlockEvent.EntityPlaceEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;

@@ -11,7 +11,7 @@ import java.lang.reflect.Method;
 public final class VehicleSetupReflection {
     private VehicleSetupReflection() { }
 
-    @Nullable static Object findShip(Level level, BlockPos pos) {
+    @Nullable public static Object findShip(Level level, BlockPos pos) {
         try {
             Class<?> utils = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
             for (Method method : utils.getMethods()) {
@@ -63,7 +63,7 @@ public final class VehicleSetupReflection {
         return method.invoke(null, arguments);
     }
 
-    @Nullable static Object invoke(Object target, String name, Object... arguments) throws ReflectiveOperationException {
+    @Nullable public static Object invoke(Object target, String name, Object... arguments) throws ReflectiveOperationException {
         Method method = findMethod(target.getClass(), name, arguments);
         if (method == null) throw new NoSuchMethodException(target.getClass().getName() + "." + name);
         return method.invoke(target, arguments);

@@ -36,6 +36,8 @@ public class VehicleSetupEditorScreen extends Screen {
     private double scroll;
     private int dragged = -1;
     private int insertion = -1;
+    private int selectedTransmitter = -1;
+    private Button showButton;
     private final List<DelayField> delayFields = new ArrayList<>();
 
     private VehicleSetupEditorScreen(BlockPos setupPos, int revision, List<VehicleSetupAction> actions) {
@@ -56,15 +58,36 @@ public class VehicleSetupEditorScreen extends Screen {
             screen.revision = revision;
             screen.actions.clear();
             screen.actions.addAll(actions);
+            screen.selectedTransmitter = -1;
+            ClientTransmitterHighlight.clear();
             screen.rebuildDelayField();
             return;
         }
+        ClientTransmitterHighlight.clear();
         minecraft.setScreen(new VehicleSetupEditorScreen(pos, revision, actions));
     }
 
     @Override
     protected void init() {
+        addFooterWidgets();
+        rebuildDelayField();
+    }
+
+    private void addFooterWidgets() {
         int bottom = height - 28;
+        if (transmitters) {
+            addRenderableWidget(Button.builder(Component.literal("Scan energy"), button -> send(
+                    VehicleSetupEditorPacket.Operation.SCAN_TRANSMITTERS, 0, 0))
+                    .bounds(width / 2 - 152, bottom, 94, 20).build());
+            showButton = addRenderableWidget(Button.builder(Component.literal("Show added"), button -> toggleHighlight())
+                    .bounds(width / 2 - 54, bottom, 76, 20).build());
+            updateShowButton();
+            addRenderableWidget(Button.builder(Component.literal("Actions"), button -> switchView())
+                    .bounds(width / 2 + 26, bottom, 58, 20).build());
+            addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())
+                    .bounds(width / 2 + 88, bottom, 64, 20).build());
+            return;
+        }
         addRenderableWidget(Button.builder(Component.literal("Record more"), button -> {
             ModNetwork.sendToServer(new VehicleSetupEditorPacket(setupPos, revision,
                     VehicleSetupEditorPacket.Operation.APPEND_RECORDING, 0, 0));
@@ -72,16 +95,42 @@ public class VehicleSetupEditorScreen extends Screen {
         }).bounds(width / 2 - 152, bottom, 72, 20).build());
         addRenderableWidget(Button.builder(Component.literal("Standard time"), button -> send(
                 VehicleSetupEditorPacket.Operation.STANDARD_TIME, 0, 0)).bounds(width / 2 - 76, bottom, 78, 20).build());
-        addRenderableWidget(Button.builder(Component.literal(transmitters ? "Actions" : "Transmitters"), button -> {
-            commitDelayFields();
-            transmitters = !transmitters;
-            button.setMessage(Component.literal(transmitters ? "Actions" : "Transmitters"));
-            scroll = 0;
-            clampScroll();
-            rebuildDelayField();
-        }).bounds(width / 2 + 6, bottom, 78, 20).build());
-        addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose()).bounds(width / 2 + 88, bottom, 64, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Transmitters"), button -> switchView())
+                .bounds(width / 2 + 6, bottom, 78, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())
+                .bounds(width / 2 + 88, bottom, 64, 20).build());
+    }
+
+    private void switchView() {
+        commitDelayFields();
+        transmitters = !transmitters;
+        scroll = 0;
+        clampScroll();
+        clearWidgets();
+        addFooterWidgets();
         rebuildDelayField();
+    }
+
+    private void toggleHighlight() {
+        VehicleSetupAction action = selectedAction();
+        if (action == null) return;
+        if (ClientTransmitterHighlight.isShowing(action)) ClientTransmitterHighlight.clear();
+        else ClientTransmitterHighlight.show(setupPos, action);
+        updateShowButton();
+    }
+
+    private void updateShowButton() {
+        if (showButton == null) return;
+        VehicleSetupAction action = selectedAction();
+        showButton.active = action != null;
+        showButton.setMessage(Component.literal(action != null && ClientTransmitterHighlight.isShowing(action)
+                ? "Hide" : "Show added"));
+    }
+
+    private VehicleSetupAction selectedAction() {
+        return selectedTransmitter >= 0 && selectedTransmitter < actions.size()
+                && actions.get(selectedTransmitter).type() == VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER
+                ? actions.get(selectedTransmitter) : null;
     }
 
     @Override
@@ -95,28 +144,31 @@ public class VehicleSetupEditorScreen extends Screen {
         graphics.fill(left, top, right, bottom, 0xD8101419);
         graphics.drawCenteredString(font, transmitters ? "Recorded Energy Transmitters" : title.getString(), width / 2, 14, 0xFFFFFFFF);
         List<Integer> rows = rows();
-        int contentHeight = rows.size() * ROW_HEIGHT;
+        int contentHeight = rows.size() * rowHeight();
         clampScroll();
         int maxScroll = maxScroll();
         graphics.enableScissor(left, top, right, bottom);
         int textY = (ROW_HEIGHT - font.lineHeight) / 2;
         for (int visibleIndex = 0; visibleIndex < rows.size(); visibleIndex++) {
             int actionIndex = rows.get(visibleIndex);
-            int y = top + visibleIndex * ROW_HEIGHT - (int) scroll;
-            if (y + ROW_HEIGHT < top || y > bottom) continue;
+            int y = top + visibleIndex * rowHeight() - (int) scroll;
+            if (y + rowHeight() < top || y > bottom) continue;
             VehicleSetupAction action = actions.get(actionIndex);
-            boolean hovered = mouseX >= left && mouseX < right && mouseY >= y && mouseY < y + ROW_HEIGHT;
-            graphics.fill(left + 1, y + 1, right - 1, y + ROW_HEIGHT - 1,
-                    hovered ? 0xFF343B45 : 0xFF1B2026);
-            graphics.fill(left + 1, y + ROW_HEIGHT - 1, right - 1, y + ROW_HEIGHT, 0xFF47515D);
+            boolean hovered = mouseX >= left && mouseX < right && mouseY >= y && mouseY < y + rowHeight();
+            graphics.fill(left + 1, y + 1, right - 1, y + rowHeight() - 1,
+                    actionIndex == selectedTransmitter ? 0xFF3E5367 : hovered ? 0xFF343B45 : 0xFF1B2026);
+            graphics.fill(left + 1, y + rowHeight() - 1, right - 1, y + rowHeight(), 0xFF47515D);
             graphics.drawString(font, "=" + (actionIndex + 1), left + 5, y + textY, 0xFFB7C3D0);
-            graphics.renderItem(icon(action), left + 34, y + (ROW_HEIGHT - 16) / 2);
-            graphics.drawString(font, summary(action), left + 56, y + textY, 0xFFFFFFFF);
+            graphics.renderItem(icon(action), left + 34, y + (rowHeight() - 16) / 2);
             if (transmitters) {
-                graphics.drawString(font, "Ship " + action.targetShipId() + "  Offset " + action.shipOffset()
-                        + "  Channel " + action.transmitterChannel() + "  Password: "
-                        + (action.transmitterPassword() == null ? "" : action.transmitterPassword()), left + 56, y + textY, 0xFFB7C3D0);
+                graphics.drawString(font, summary(action), left + 56, y + 4, 0xFFFFFFFF);
+                graphics.drawString(font, "Ship " + action.targetShipId() + "  Offset " + action.shipOffset(),
+                        left + 56, y + 17, 0xFFB7C3D0);
+                graphics.drawString(font, "Channel " + action.transmitterChannel() + "  Password: "
+                        + (action.transmitterPassword() == null ? "" : action.transmitterPassword()),
+                        left + 56, y + 30, 0xFFB7C3D0);
             } else {
+                graphics.drawString(font, summary(action), left + 56, y + textY, 0xFFFFFFFF);
                 graphics.drawString(font, "Wait", right - 146, y + textY, 0xFFB7C3D0);
                 graphics.drawString(font, "ticks", right - 38, y + textY, 0xFFB7C3D0);
                 graphics.drawString(font, "X", right - 13, y + textY, 0xFFFF7777);
@@ -138,10 +190,15 @@ public class VehicleSetupEditorScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (!insideList(mouseX, mouseY)) return super.mouseScrolled(mouseX, mouseY, delta);
-        scroll -= delta * ROW_HEIGHT;
+        scroll -= delta * rowHeight();
         clampScroll();
         rebuildDelayField();
         return true;
+    }
+
+    @Override
+    public void onClose() {
+        super.onClose();
     }
 
     @Override
@@ -154,6 +211,11 @@ public class VehicleSetupEditorScreen extends Screen {
         if (super.mouseClicked(mouseX, mouseY, button)) return true;
         if (!insideList(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
         int row = rowAt(mouseY);
+        if (row >= 0 && button == 0 && transmitters) {
+            selectedTransmitter = row;
+            updateShowButton();
+            return true;
+        }
         if (row >= 0 && button == 0 && !transmitters) {
             int right = width / 2 + 154;
             if (mouseX >= right - 20) {
@@ -201,7 +263,7 @@ public class VehicleSetupEditorScreen extends Screen {
     }
 
     private int visibleRowAt(double mouseY) {
-        return (int) ((mouseY - LIST_TOP + scroll) / ROW_HEIGHT);
+        return (int) ((mouseY - LIST_TOP + scroll) / rowHeight());
     }
 
     private int rowAt(double mouseY) {
@@ -216,7 +278,11 @@ public class VehicleSetupEditorScreen extends Screen {
     }
 
     private int maxScroll() {
-        return Math.max(0, rows().size() * ROW_HEIGHT - (listBottom() - LIST_TOP));
+        return Math.max(0, rows().size() * rowHeight() - (listBottom() - LIST_TOP));
+    }
+
+    private int rowHeight() {
+        return transmitters ? 52 : ROW_HEIGHT;
     }
 
     private void clampScroll() {
@@ -234,12 +300,12 @@ public class VehicleSetupEditorScreen extends Screen {
         delayFields.clear();
         if (transmitters || minecraft == null) return;
         List<Integer> rows = rows();
-        int first = Math.max(0, (int) Math.floor(scroll / ROW_HEIGHT));
-        int last = Math.min(rows.size(), (int) Math.ceil((scroll + listBottom() - LIST_TOP) / ROW_HEIGHT) + 1);
+        int first = Math.max(0, (int) Math.floor(scroll / rowHeight()));
+        int last = Math.min(rows.size(), (int) Math.ceil((scroll + listBottom() - LIST_TOP) / rowHeight()) + 1);
         for (int visible = first; visible < last; visible++) {
             int actionIndex = rows.get(visible);
-            int y = LIST_TOP + visible * ROW_HEIGHT - (int) scroll;
-            if (y + ROW_HEIGHT <= LIST_TOP || y >= listBottom()) continue;
+            int y = LIST_TOP + visible * rowHeight() - (int) scroll;
+            if (y + rowHeight() <= LIST_TOP || y >= listBottom()) continue;
             DelayField field = new DelayField(actionIndex, width / 2 + 67,
                     y + (ROW_HEIGHT - FIELD_HEIGHT) / 2);
             delayFields.add(field);

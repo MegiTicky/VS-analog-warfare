@@ -119,6 +119,10 @@ public final class VsCompat {
         if (ship == null) {
             return localPosition;
         }
+        return shipToWorldPosition(ship, localPosition);
+    }
+
+    public static Vec3 shipToWorldPosition(Object ship, Vec3 localPosition) {
         Vector3d transformed = invokeMatrixTransform(ship, localPosition, true);
         return transformed == null ? localPosition : new Vec3(transformed.x, transformed.y, transformed.z);
     }
