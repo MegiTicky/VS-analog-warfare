@@ -1,12 +1,13 @@
 package com.erika.vsanalogwarfare.network;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
-import com.erika.vsanalogwarfare.client.ClientScopeState;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkRegistry;
@@ -213,17 +214,8 @@ public final class ModNetwork {
 
         public static void handle(RangefinderResultPacket packet, Supplier<NetworkEvent.Context> ctx) {
             NetworkEvent.Context context = ctx.get();
-            context.enqueueWork(() -> {
-                double currentDist = ClientScopeState.rangefinderDistance();
-
-                if (packet.shipDistance > 0) {
-                    if (currentDist < 0 || packet.shipDistance < currentDist) {
-                        ClientScopeState.setRangefinderDistance(packet.shipDistance);
-                    }
-                }
-
-                ClientScopeState.decrementRangefinderTasks();
-            });
+            context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> ClientNetworkHandlers.handleRangefinderResult(packet)));
             context.setPacketHandled(true);
         }
     }

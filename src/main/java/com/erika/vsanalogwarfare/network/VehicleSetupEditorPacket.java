@@ -85,7 +85,7 @@ public record VehicleSetupEditorPacket(BlockPos pos, int revision, Operation ope
 
         public static void handle(VehicleSetupEditorSnapshotPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
             contextSupplier.get().enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
-                    () -> () -> com.erika.vsanalogwarfare.client.VehicleSetupEditorScreen.open(packet.pos, packet.revision, packet.actions)));
+                    () -> () -> ClientNetworkHandlers.openVehicleSetupEditor(packet)));
             contextSupplier.get().setPacketHandled(true);
         }
     }

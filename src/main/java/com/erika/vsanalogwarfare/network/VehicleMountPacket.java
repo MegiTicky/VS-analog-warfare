@@ -2,7 +2,6 @@ package com.erika.vsanalogwarfare.network;
 
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountManager;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.FriendlyByteBuf;
@@ -11,9 +10,9 @@ import net.minecraft.network.chat.Component;
 import com.simibubi.create.content.contraptions.actors.seat.SeatBlock;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountSeatLink;
 import java.util.UUID;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkEvent;
-import com.erika.vsanalogwarfare.client.VehicleMountRoleScreen;
-import com.erika.vsanalogwarfare.client.VehicleMountSelectionScreen;
 
 import java.util.List;
 import java.util.function.Supplier;
@@ -26,7 +25,8 @@ public final class VehicleMountPacket {
         public static OpenRoleName decode(FriendlyByteBuf buf) { return new OpenRoleName(buf.readBlockPos(), buf.readUUID(), buf.readBlockPos(), buf.readLong(), buf.readBlockPos()); }
         public static void handle(OpenRoleName packet, Supplier<NetworkEvent.Context> supplier) {
             NetworkEvent.Context context = supplier.get();
-            context.enqueueWork(() -> Minecraft.getInstance().setScreen(new VehicleMountRoleScreen(packet.handle, packet.seat, packet.seatPos, packet.shipId, packet.shipOffset)));
+            context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> ClientNetworkHandlers.openRoleName(packet)));
             context.setPacketHandled(true);
         }
     }
@@ -121,7 +121,8 @@ public final class VehicleMountPacket {
         public static OpenSelection decode(FriendlyByteBuf buf) { return new OpenSelection(buf.readBlockPos(), buf.readVarInt(), buf.readList(FriendlyByteBuf::readUtf)); }
         public static void handle(OpenSelection packet, Supplier<NetworkEvent.Context> supplier) {
             NetworkEvent.Context context = supplier.get();
-            context.enqueueWork(() -> Minecraft.getInstance().setScreen(new VehicleMountSelectionScreen(packet.handle, packet.revision, packet.roles)));
+            context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> ClientNetworkHandlers.openSelection(packet)));
             context.setPacketHandled(true);
         }
     }

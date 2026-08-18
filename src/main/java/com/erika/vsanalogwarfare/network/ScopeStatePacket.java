@@ -1,6 +1,5 @@
 package com.erika.vsanalogwarfare.network;
 
-import com.erika.vsanalogwarfare.client.ClientScopeState;
 import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfile;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
 import net.minecraft.core.BlockPos;
@@ -56,10 +55,7 @@ public record ScopeStatePacket(boolean active, float fov, int zoomMagnification,
 
     public static void handle(ScopeStatePacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
         contextSupplier.get().enqueueWork(() ->
-                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ClientScopeState.set(
-                        packet.active, packet.fov, packet.zoomMagnification, packet.scopePos, packet.mountPos,
-                        packet.x, packet.y, packet.z, packet.yaw, packet.pitch,
-                        packet.qx, packet.qy, packet.qz, packet.qw, packet.ballisticProfile, packet.zeroDistance)));
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> ClientNetworkHandlers.handleScopeState(packet)));
         contextSupplier.get().setPacketHandled(true);
     }
 }
