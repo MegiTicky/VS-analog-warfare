@@ -78,6 +78,16 @@ public final class ModNetwork {
                 .decoder(SetZeroDistancePacket::decode)
                 .consumerMainThread(SetZeroDistancePacket::handle)
                 .add();
+        CHANNEL.messageBuilder(VehicleSetupEditorPacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleSetupEditorPacket::encode)
+                .decoder(VehicleSetupEditorPacket::decode)
+                .consumerMainThread(VehicleSetupEditorPacket::handle)
+                .add();
+        CHANNEL.messageBuilder(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::encode)
+                .decoder(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::decode)
+                .consumerMainThread(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::handle)
+                .add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object packet) {

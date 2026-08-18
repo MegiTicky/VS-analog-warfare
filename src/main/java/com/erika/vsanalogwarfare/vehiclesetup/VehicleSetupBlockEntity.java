@@ -16,6 +16,7 @@ import java.util.List;
 
 public class VehicleSetupBlockEntity extends BlockEntity {
     private final List<VehicleSetupAction> actions = new ArrayList<>();
+    private int revision;
 
     public VehicleSetupBlockEntity(BlockPos pos, BlockState state) { super(ModBlockEntities.VEHICLE_SETUP.get(), pos, state); }
     public void addAction(VehicleSetupAction action) { actions.add(action); markAndSync(); }
@@ -25,6 +26,31 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     public List<VehicleSetupAction> actions() { return List.copyOf(actions); }
     public void clearActions() { actions.clear(); markAndSync(); }
     public int actionCount() { return actions.size(); }
+    public int revision() { return revision; }
+    public boolean deleteAction(int index) {
+        if (index < 0 || index >= actions.size()) return false;
+        actions.remove(index);
+        markAndSync();
+        return true;
+    }
+    public boolean moveAction(int from, int to) {
+        if (from < 0 || from >= actions.size() || to < 0 || to >= actions.size()) return false;
+        if (from != to) actions.add(to, actions.remove(from));
+        markAndSync();
+        return true;
+    }
+    public boolean setActionDelay(int index, int delay) {
+        if (index < 0 || index >= actions.size() || delay < 0 || delay > 20 * 60 * 60) return false;
+        actions.set(index, actions.get(index).withDelayBeforeTicks(delay));
+        markAndSync();
+        return true;
+    }
+    public void useStandardTiming() {
+        for (int index = 0; index < actions.size(); index++) {
+            actions.set(index, actions.get(index).withDelayBeforeTicks(index == 0 ? 0 : 1));
+        }
+        markAndSync();
+    }
     public String actionSummary() {
         int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, tallyho = 0,
                 interactions = 0, leftClicks = 0, transmitters = 0, other = 0;
@@ -73,6 +99,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     }
 
     public void markAndSync() {
+        revision++;
         setChanged();
         if (level != null && !level.isClientSide) {
             level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
@@ -81,15 +108,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
 
     public void run(ServerPlayer player) {
         if (level == null || level.isClientSide) return;
-        int succeeded = 0;
-        String firstError = null;
-        for (VehicleSetupAction action : actions) {
-            String error = VehicleSetupExecutor.run(level, worldPosition, player, action);
-            if (error == null) succeeded++; else if (firstError == null) firstError = error;
-        }
-        player.displayClientMessage(Component.literal(firstError == null
-                ? "Vehicle setup complete: " + succeeded + " actions."
-                : "Vehicle setup: " + succeeded + " complete. " + firstError), true);
+        VehicleSetupRecordingManager.runScheduled(player, this);
     }
 
     @Override protected void saveAdditional(CompoundTag tag) {
@@ -97,11 +116,13 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         ListTag tags = new ListTag();
         for (VehicleSetupAction action : actions) tags.add(action.save());
         tag.put("VehicleSetupActions", tags);
+        tag.putInt("VehicleSetupRevision", revision);
     }
 
     @Override public void load(CompoundTag tag) {
         super.load(tag);
         actions.clear();
+        revision = tag.getInt("VehicleSetupRevision");
         if (!tag.contains("VehicleSetupActions", Tag.TAG_LIST)) return;
         ListTag tags = tag.getList("VehicleSetupActions", Tag.TAG_COMPOUND);
         for (int index = 0; index < tags.size(); index++) {

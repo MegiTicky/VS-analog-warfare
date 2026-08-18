@@ -16,6 +16,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import com.erika.vsanalogwarfare.network.ModNetwork;
+import com.erika.vsanalogwarfare.network.VehicleSetupEditorPacket;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VmodVehicleSetupCompat;
 import net.minecraft.server.level.ServerLevel;
@@ -33,6 +35,11 @@ public class VehicleSetupBlock extends BaseEntityBlock {
         if (hand != InteractionHand.MAIN_HAND || !player.getItemInHand(hand).isEmpty()) return InteractionResult.PASS;
         if (level.isClientSide) return InteractionResult.SUCCESS;
         if (player instanceof ServerPlayer serverPlayer && level.getBlockEntity(pos) instanceof VehicleSetupBlockEntity setup) {
+            if (player.isShiftKeyDown()) {
+                ModNetwork.sendToPlayer(serverPlayer, new VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket(
+                        pos, setup.revision(), setup.actions().stream().map(VehicleSetupAction::save).toList()));
+                return InteractionResult.CONSUME;
+            }
             OptionalModCompatibility.warnIfIssues(serverPlayer);
             VmodVehicleSetupCompat.runSetupOrLocal((ServerLevel) level, pos, serverPlayer, setup);
             return InteractionResult.CONSUME;
