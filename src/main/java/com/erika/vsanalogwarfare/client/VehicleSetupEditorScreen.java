@@ -388,7 +388,7 @@ public class VehicleSetupEditorScreen extends Screen {
             case PLACE_BLOCK -> "Place " + blockName(action.blockState());
             case REMOVE_BLOCK -> "Remove block";
             case LINK_DBW_BACKUPS -> "Link DBW backups";
-            case CREATE_TWEAKED_CONTROLLER -> "Create tweaked controller";
+            case CREATE_TWEAKED_CONTROLLER -> "Link controller to DBW hub";
             case SET_TRACKWORK_STIFFNESS -> "Set track stiffness to " + action.stiffness() + "x";
             case SPAWN_TALLYHO_HULL_MG -> "Spawn Tallyho hull MG";
             case SPAWN_TALLYHO_ENTITY -> "Spawn " + action.tallyhoEntity();

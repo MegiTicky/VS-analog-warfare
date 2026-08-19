@@ -131,6 +131,13 @@ public final class VehicleSetupAction {
                 null, null, stiffness, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
+    public static VehicleSetupAction setTrackworkStiffness(long shipId, @Nullable BlockPos shipOffset,
+                                                            BlockPos targetOffset, float stiffness) {
+        return new VehicleSetupAction(VehicleSetupActionType.SET_TRACKWORK_STIFFNESS, targetOffset, null,
+                shipOffset, shipId, -1L, null, null, stiffness, 0.0f, 0, null, null, 0,
+                0.0, 0.0, 0.0, null, 0, 0);
+    }
+
     public static VehicleSetupAction spawnTallyhoHullMg(long shipId, @Nullable BlockPos shipOffset,
                                                           BlockPos anchorOffset, float yaw, int muzzleOffset) {
         return new VehicleSetupAction(VehicleSetupActionType.SPAWN_TALLYHO_HULL_MG, anchorOffset, null, shipOffset,

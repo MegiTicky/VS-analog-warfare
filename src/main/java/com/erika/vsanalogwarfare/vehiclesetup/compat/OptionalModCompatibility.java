@@ -47,12 +47,12 @@ public final class OptionalModCompatibility {
 
     private static final List<Integration> INTEGRATIONS = List.of(
             new Integration("drivebywire", "Drive By Wire", "0.0.6b",
-                    "DBW backup relinks and tweaked controllers cannot be recorded or replayed.",
+                    "DBW backup relinks and controller links cannot be recorded or replayed.",
                     () -> {
                         try {
                             Class<?> manager = Class.forName("edn.stratodonut.drivebywire.wire.ShipWireNetworkManager");
                             if (!hasMethod(manager, "linkNetwork", 3)) return false;
-                            Class<?> hub = Class.forName("edn.stratodonut.drivebywire.blocks.TweakedControllerHubBlock");
+                            Class<?> hub = Class.forName("edn.stratodonut.drivebywire.blocks.ControllerHubBlock");
                             return hasUseMethod(hub);
                         } catch (Throwable ignored) { return false; }
                     }),
@@ -85,7 +85,7 @@ public final class OptionalModCompatibility {
                         } catch (Throwable ignored) { return false; }
                     }),
             new Integration("create_tweaked_controllers", "Create Tweaked Controllers", "1.20.1-1.2.4",
-                    "recorded controllers cannot be re-linked after placement.",
+                    "recorded tweaked controllers cannot be re-linked after placement.",
                     () -> {
                         try {
                             return !BuiltInRegistries.ITEM.get(

@@ -12,9 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -27,6 +25,7 @@ import java.util.Map;
 import javax.annotation.Nullable;
 
 public final class VehicleSetupExecutor {
+    private static final ResourceLocation CREATE_CONTROLLER = new ResourceLocation("create", "linked_controller");
     private static final ResourceLocation TWEAKED_CONTROLLER = new ResourceLocation("create_tweaked_controllers", "tweaked_linked_controller");
     private VehicleSetupExecutor() { }
 
@@ -49,7 +48,8 @@ public final class VehicleSetupExecutor {
             case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships));
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
             case CREATE_TWEAKED_CONTROLLER -> controller(player, action, ships);
-            case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level, anchor, action.stiffness());
+            case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level,
+                    stiffnessTarget(level, anchor, action, ships), action.stiffness());
             case SPAWN_TALLYHO_HULL_MG -> TallyhoCompat.spawnHullMg(level, target(level, anchor, action, ships),
                     action.yaw(), action.muzzleOffset());
             case SPAWN_TALLYHO_ENTITY -> TallyhoCompat.spawnEntity(level, target(level, anchor, action, ships),
@@ -69,7 +69,18 @@ public final class VehicleSetupExecutor {
             BlockPos resolved = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, action.shipOffset());
             if (resolved != null) return resolved;
         }
-        return anchor.offset(action.targetOffset());
+        return action.targetOffset() == null ? anchor : anchor.offset(action.targetOffset());
+    }
+
+    private static BlockPos stiffnessTarget(Level level, BlockPos anchor, VehicleSetupAction action,
+                                             @Nullable Map<Long, Object> ships) {
+        BlockPos resolved = target(level, anchor, action, ships);
+        if (TrackworkCompat.isStiffnessTarget(level, resolved)) return resolved;
+        if (action.targetOffset() != null) {
+            BlockPos relative = anchor.offset(action.targetOffset());
+            if (TrackworkCompat.isStiffnessTarget(level, relative)) return relative;
+        }
+        return resolved;
     }
 
     @Nullable private static String remove(Level level, BlockPos pos) {
@@ -152,8 +163,7 @@ public final class VehicleSetupExecutor {
     }
 
     @Nullable private static String controller(@Nullable ServerPlayer player, VehicleSetupAction action,
-                                                @Nullable Map<Long, Object> ships) {
-        if (!ModList.get().isLoaded("create_tweaked_controllers")) return "Create Tweaked Controllers is not installed";
+                                                 @Nullable Map<Long, Object> ships) {
         if (!ModList.get().isLoaded("drivebywire")) return "Drive By Wire is not installed";
         if (player == null) return "the schematic placer is offline";
         CompoundTag savedController = action.controller();
@@ -161,10 +171,11 @@ public final class VehicleSetupExecutor {
         Object ship = ships.get(action.targetShipId());
         BlockPos hub = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, action.targetOffset());
         if (hub == null) return "controller hub ship could not be resolved";
-        Item item = BuiltInRegistries.ITEM.get(TWEAKED_CONTROLLER);
-        if (item == Items.AIR) return "tweaked controller item is unavailable";
         ItemStack stack = ItemStack.of(savedController);
-        if (!stack.is(item)) return "recorded controller is incompatible";
+        ResourceLocation controllerId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (!CREATE_CONTROLLER.equals(controllerId) && !TWEAKED_CONTROLLER.equals(controllerId)) {
+            return "recorded controller is incompatible";
+        }
         stack.getOrCreateTag().putLong("Hub", hub.asLong());
         if (!player.getInventory().add(stack)) player.drop(stack, false);
         return null;

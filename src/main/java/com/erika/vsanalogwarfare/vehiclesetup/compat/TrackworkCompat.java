@@ -6,15 +6,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraftforge.fml.ModList;
 import javax.annotation.Nullable;
-import java.lang.reflect.Field;
 
 public final class TrackworkCompat {
     private TrackworkCompat() { }
-    @Nullable public static Float readStiffness(Level level, BlockPos pos) {
-        if (!ModList.get().isLoaded("trackwork")) return null;
-        try { Object controller = controller(level, pos); if (controller == null) return null; Field field = controller.getClass().getDeclaredField("suspensionStiffness"); field.setAccessible(true); return field.getFloat(controller); }
-        catch (ReflectiveOperationException | LinkageError ignored) { return null; }
-    }
     public static boolean isStiffnessTool(ItemStack stack) {
         if (!ModList.get().isLoaded("trackwork")) return false;
         try {
@@ -26,7 +20,9 @@ public final class TrackworkCompat {
         if (!ModList.get().isLoaded("trackwork")) return false;
         try {
             Class<?> trackBase = Class.forName("edn.stratodonut.trackwork.tracks.blocks.TrackBaseBlock");
-            return trackBase.isInstance(level.getBlockState(pos).getBlock());
+            Class<?> wheel = Class.forName("edn.stratodonut.trackwork.tracks.blocks.WheelBlock");
+            Object block = level.getBlockState(pos).getBlock();
+            return trackBase.isInstance(block) || wheel.isInstance(block);
         } catch (ClassNotFoundException | LinkageError ignored) { return false; }
     }
     @Nullable public static String setStiffness(Level level, BlockPos pos, float stiffness) {
@@ -36,6 +32,11 @@ public final class TrackworkCompat {
     }
     @Nullable private static Object controller(Level level, BlockPos pos) throws ReflectiveOperationException {
         Object ship = VehicleSetupReflection.findShip(level, pos); if (ship == null) return null;
-        return VehicleSetupReflection.invokeStatic(Class.forName("edn.stratodonut.trackwork.tracks.forces.PhysicsTrackController"), "getOrCreate", ship);
+        Object block = level.getBlockState(pos).getBlock();
+        Class<?> controller = Class.forName("edn.stratodonut.trackwork.tracks.forces.PhysicsTrackController");
+        if (Class.forName("edn.stratodonut.trackwork.tracks.blocks.WheelBlock").isInstance(block)) {
+            controller = Class.forName("edn.stratodonut.trackwork.tracks.forces.SimpleWheelController");
+        }
+        return VehicleSetupReflection.invokeStatic(controller, "getOrCreate", ship);
     }
 }

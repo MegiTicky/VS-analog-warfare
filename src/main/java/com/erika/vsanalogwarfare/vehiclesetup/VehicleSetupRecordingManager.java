@@ -91,6 +91,7 @@ public final class VehicleSetupRecordingManager {
     public static void recordControllerLink(net.minecraft.world.entity.player.Player player, BlockPos hub,
                                             ItemStack controller) {
         if (!(player instanceof ServerPlayer serverPlayer)) return;
+        if (!controller.hasTag() || !controller.getTag().contains("Hub")) return;
         VehicleSetupBlockEntity setup = activeSetup(serverPlayer);
         if (setup == null) return;
         claimGenericInteraction(serverPlayer, hub);
@@ -104,15 +105,16 @@ public final class VehicleSetupRecordingManager {
     }
 
     public static void recordTrackworkStiffness(net.minecraft.world.entity.player.Player player,
-                                                BlockPos clicked, ItemStack stack) {
+                                                BlockPos clicked, ItemStack stack, float stiffness) {
         if (!(player instanceof ServerPlayer serverPlayer) || !TrackworkCompat.isStiffnessTool(stack)
                 || !TrackworkCompat.isStiffnessTarget(serverPlayer.level(), clicked)) return;
         VehicleSetupBlockEntity setup = activeSetup(serverPlayer);
         if (setup == null) return;
         claimGenericInteraction(serverPlayer, clicked);
-        Float stiffness = TrackworkCompat.readStiffness(serverPlayer.level(), clicked);
-        if (stiffness == null) return;
-        recordAction(serverPlayer, setup, VehicleSetupAction.setTrackworkStiffness(stiffness));
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(serverPlayer.level(), clicked);
+        recordAction(serverPlayer, setup, VehicleSetupAction.setTrackworkStiffness(
+                ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(),
+                clicked.subtract(setup.getBlockPos()), stiffness));
         serverPlayer.displayClientMessage(Component.literal(
                 "Vehicle setup recorded suspension stiffness " + stiffness + "x: " + setup.actionSummary() + "."), true);
     }
