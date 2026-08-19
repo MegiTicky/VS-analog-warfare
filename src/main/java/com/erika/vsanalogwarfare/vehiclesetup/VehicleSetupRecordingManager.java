@@ -44,6 +44,7 @@ public final class VehicleSetupRecordingManager {
     private static final Set<UUID> REPLAYING_INTERACTIONS = new HashSet<>();
     private static final Map<UUID, Long> LAST_RECORDED_TICKS = new HashMap<>();
     private static final Map<BlockPos, PendingRun> PENDING_RUNS = new HashMap<>();
+    private static final Map<UUID, BlockPos> ACTIVE_REMOVAL_RECORDINGS = new HashMap<>();
 
     private VehicleSetupRecordingManager() { }
 
@@ -111,6 +112,10 @@ public final class VehicleSetupRecordingManager {
                 clicked.subtract(setup.getBlockPos()), stiffness));
         serverPlayer.displayClientMessage(Component.literal(
                 "Vehicle setup recorded suspension stiffness " + stiffness + "x: " + setup.actionSummary() + "."), true);
+    }
+    public static void toggleRemovalRecording(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        if (setup.getBlockPos().equals(ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID()))) { ACTIVE_REMOVAL_RECORDINGS.remove(player.getUUID()); player.displayClientMessage(Component.literal("Removal marker recording stopped."), true); }
+        else { ACTIVE_REMOVAL_RECORDINGS.put(player.getUUID(), setup.getBlockPos()); player.displayClientMessage(Component.literal("Removal marker recording started. Right-click temporary blocks to mark them."), true); }
     }
 
     public static void recordEnderTransmitter(ServerPlayer player, BlockPos pos, int channel, String password) {
@@ -227,6 +232,31 @@ public final class VehicleSetupRecordingManager {
     public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)
                 || event.isCanceled() && !event.getCancellationResult().consumesAction()) return;
+        BlockPos removalAnchor = ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID());
+        if (event.getItemStack().getItem() instanceof AnalogScrewdriverItem
+                && AnalogScrewdriverItem.removalMode(event.getItemStack()) && removalAnchor != null) {
+            if (player.level().getBlockEntity(removalAnchor) instanceof VehicleSetupBlockEntity setup
+                    && event.getPos().equals(removalAnchor)) {
+                toggleRemovalRecording(player, setup);
+            } else if (player.level().getBlockEntity(removalAnchor) instanceof VehicleSetupBlockEntity setup) {
+                VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), event.getPos());
+                BlockPos targetOffset = event.getPos().subtract(removalAnchor);
+                boolean duplicate = setup.markedRemovals().stream().anyMatch(action ->
+                        targetOffset.equals(action.targetOffset())
+                                && (ship == null ? action.targetShipId() < 0L : action.targetShipId() == ship.shipId()
+                                && ship.offset().equals(action.shipOffset())));
+                if (!duplicate) {
+                setup.addMarkedRemoval(VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
+                            ship == null ? null : ship.offset(), targetOffset,
+                            player.level().getBlockState(event.getPos())));
+                    player.displayClientMessage(Component.literal("Marked temporary block for removal."), true);
+                }
+            }
+            if (event.getPos().equals(removalAnchor) || player.level().getBlockState(event.getPos()).isAir()) {
+                event.setCanceled(true); event.setCancellationResult(InteractionResult.CONSUME); return;
+            }
+            event.setCanceled(true); event.setCancellationResult(InteractionResult.CONSUME); return;
+        }
         VehicleSetupBlockEntity setup = activeSetup(player);
         ItemStack item = event.getItemStack();
         if (setup == null || event.getPos().equals(setup.getBlockPos()) || item.getItem() instanceof BlockItem
@@ -273,19 +303,28 @@ public final class VehicleSetupRecordingManager {
             PendingRun run = entry.getValue();
             if (run.remainingTicks > 0 && --run.remainingTicks > 0) continue;
             do {
-                VehicleSetupAction action = run.actions.get(run.index++);
+                java.util.List<VehicleSetupAction> phaseActions = run.removing ? run.removals : run.actions;
+                VehicleSetupAction action = phaseActions.get(run.index++);
                 String error = VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action);
-                if (error == null) run.succeeded++; else if (run.firstError == null) run.firstError = error;
-                if (run.index >= run.actions.size()) {
+                if (error == null) { if (run.removing) run.removalSucceeded++; else run.succeeded++; }
+                else if (run.firstError == null) run.firstError = error;
+                if (run.index >= phaseActions.size()) {
+                    if (!run.removing && !run.removals.isEmpty()) {
+                        run.removing = true; run.index = 0; run.remainingTicks = run.removalDelay;
+                        run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. Removing temporary blocks in " + run.removalDelay + " ticks."), true);
+                        if (run.remainingTicks == 0) continue;
+                        break;
+                    }
                     run.player.displayClientMessage(Component.literal(run.firstError == null
-                            ? "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed."
-                            : "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed. " + run.firstError), true);
+                            ? "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed."
+                            : "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. " + run.firstError)
+                            .append(run.removals.isEmpty() ? "" : " Temporary blocks removed: " + run.removalSucceeded + "/" + run.removals.size() + "."), true);
                     iterator.remove();
                     break;
                 }
-                run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
+                if (!run.removing) run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
                         + run.actions.size() + " completed."), true);
-                run.remainingTicks = run.actions.get(run.index).delayBeforeTicks();
+                run.remainingTicks = phaseActions.get(run.index).delayBeforeTicks();
             } while (run.remainingTicks == 0);
         }
     }
@@ -306,7 +345,7 @@ public final class VehicleSetupRecordingManager {
         BlockPos anchorOffset = pos.subtract(setup.getBlockPos());
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
         recordAction(player, setup, VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
-                ship == null ? null : ship.offset(), anchorOffset));
+                ship == null ? null : ship.offset(), anchorOffset, player.level().getBlockState(pos)));
         player.displayClientMessage(Component.literal("Recorded removal: " + setup.actionSummary() + "."), true);
     }
 
@@ -382,12 +421,15 @@ public final class VehicleSetupRecordingManager {
             return;
         }
         java.util.List<VehicleSetupAction> actions = setup.actions();
-        if (actions.isEmpty()) {
+        java.util.List<VehicleSetupAction> removals = setup.markedRemovals();
+        if (actions.isEmpty() && removals.isEmpty()) {
             player.displayClientMessage(Component.literal("Vehicle setup has no saved actions."), true);
             return;
         }
-        PENDING_RUNS.put(setup.getBlockPos(), new PendingRun(player, player.level(), actions,
-                actions.get(0).delayBeforeTicks()));
+        PendingRun run = new PendingRun(player, player.level(), actions, removals, setup.removalDelayTicks(),
+                actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
+        if (actions.isEmpty()) run.removing = true;
+        PENDING_RUNS.put(setup.getBlockPos(), run);
     }
 
     private static void recordAction(ServerPlayer player, VehicleSetupBlockEntity setup, VehicleSetupAction action) {
@@ -409,15 +451,22 @@ public final class VehicleSetupRecordingManager {
         private final ServerPlayer player;
         private final Level level;
         private final java.util.List<VehicleSetupAction> actions;
+        private final java.util.List<VehicleSetupAction> removals;
+        private final int removalDelay;
+        private boolean removing;
         private int index;
         private int remainingTicks;
         private int succeeded;
+        private int removalSucceeded;
         private String firstError;
 
-        private PendingRun(ServerPlayer player, Level level, java.util.List<VehicleSetupAction> actions, int remainingTicks) {
+        private PendingRun(ServerPlayer player, Level level, java.util.List<VehicleSetupAction> actions,
+                           java.util.List<VehicleSetupAction> removals, int removalDelay, int remainingTicks) {
             this.player = player;
             this.level = level;
             this.actions = actions;
+            this.removals = removals;
+            this.removalDelay = removalDelay;
             this.remainingTicks = remainingTicks;
         }
     }

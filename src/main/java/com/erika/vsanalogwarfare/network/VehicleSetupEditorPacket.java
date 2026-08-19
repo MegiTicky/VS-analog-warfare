@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 public record VehicleSetupEditorPacket(BlockPos pos, int revision, Operation operation, int first, int second) {
-    public enum Operation { OPEN, MOVE, DELETE, SET_DELAY, STANDARD_TIME, CLEAR_ALL, SCAN_TRANSMITTERS }
+    public enum Operation { OPEN, MOVE, DELETE, SET_DELAY, STANDARD_TIME, CLEAR_ALL, SCAN_TRANSMITTERS, DELETE_MARKED_REMOVAL, CLEAR_MARKED_REMOVALS, SET_REMOVAL_DELAY }
 
     public static void encode(VehicleSetupEditorPacket packet, FriendlyByteBuf buf) {
         buf.writeBlockPos(packet.pos);
@@ -53,6 +53,9 @@ public record VehicleSetupEditorPacket(BlockPos pos, int revision, Operation ope
                 case STANDARD_TIME -> setup.useStandardTiming();
                 case CLEAR_ALL -> setup.clearActions();
                 case SCAN_TRANSMITTERS -> VehicleSetupRecordingManager.scanEnderTransmitters(player, setup);
+                case DELETE_MARKED_REMOVAL -> setup.deleteMarkedRemoval(packet.first);
+                case CLEAR_MARKED_REMOVALS -> setup.clearMarkedRemovals();
+                case SET_REMOVAL_DELAY -> setup.setRemovalDelayTicks(packet.first);
                 case OPEN -> { }
             }
             sendSnapshot(player, setup);
@@ -63,15 +66,19 @@ public record VehicleSetupEditorPacket(BlockPos pos, int revision, Operation ope
     private static void sendSnapshot(ServerPlayer player, VehicleSetupBlockEntity setup) {
         List<CompoundTag> actions = new ArrayList<>();
         setup.actions().forEach(action -> actions.add(action.save()));
-        ModNetwork.sendToPlayer(player, new VehicleSetupEditorSnapshotPacket(setup.getBlockPos(), setup.revision(), actions));
+        List<CompoundTag> removals = new ArrayList<>(); setup.markedRemovals().forEach(action -> removals.add(action.save()));
+        ModNetwork.sendToPlayer(player, new VehicleSetupEditorSnapshotPacket(setup.getBlockPos(), setup.revision(), actions, removals, setup.removalDelayTicks()));
     }
 
-    public record VehicleSetupEditorSnapshotPacket(BlockPos pos, int revision, List<CompoundTag> actions) {
+    public record VehicleSetupEditorSnapshotPacket(BlockPos pos, int revision, List<CompoundTag> actions, List<CompoundTag> removals, int removalDelay) {
         public static void encode(VehicleSetupEditorSnapshotPacket packet, FriendlyByteBuf buf) {
             buf.writeBlockPos(packet.pos);
             buf.writeInt(packet.revision);
             buf.writeVarInt(packet.actions.size());
             for (CompoundTag action : packet.actions) buf.writeNbt(action);
+            buf.writeVarInt(packet.removals.size());
+            for (CompoundTag removal : packet.removals) buf.writeNbt(removal);
+            buf.writeVarInt(packet.removalDelay);
         }
 
         public static VehicleSetupEditorSnapshotPacket decode(FriendlyByteBuf buf) {
@@ -80,7 +87,9 @@ public record VehicleSetupEditorPacket(BlockPos pos, int revision, Operation ope
             int size = buf.readVarInt();
             List<CompoundTag> actions = new ArrayList<>(size);
             for (int index = 0; index < size; index++) actions.add(buf.readNbt());
-            return new VehicleSetupEditorSnapshotPacket(pos, revision, actions);
+            int removalSize = buf.readVarInt(); List<CompoundTag> removals = new ArrayList<>(removalSize);
+            for (int index = 0; index < removalSize; index++) removals.add(buf.readNbt());
+            return new VehicleSetupEditorSnapshotPacket(pos, revision, actions, removals, buf.readVarInt());
         }
 
         public static void handle(VehicleSetupEditorSnapshotPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {

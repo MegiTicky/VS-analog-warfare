@@ -555,6 +555,15 @@ public final class ClientForgeEvents {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onMouseScroll(net.minecraftforge.client.event.InputEvent.MouseScrollingEvent event) {
         Minecraft mc = Minecraft.getInstance();
+        if (mc.screen == null && mc.player != null && mc.player.isShiftKeyDown()
+                && mc.player.getMainHandItem().getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem
+                && event.getScrollDelta() != 0) {
+            boolean removalMode = com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem.removalMode(mc.player.getMainHandItem());
+            com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
+                    new com.erika.vsanalogwarfare.network.SetScrewdriverModePacket(removalMode ? 0 : 1));
+            event.setCanceled(true);
+            return;
+        }
         if (ClientScopeState.active() && mc.player != null) {
             if (ClientKeyMappings.SCOPE_ZEROING.isDown()) {
                 double scrollDelta = event.getScrollDelta();

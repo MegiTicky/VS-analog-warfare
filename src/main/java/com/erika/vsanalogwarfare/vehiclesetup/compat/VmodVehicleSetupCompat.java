@@ -66,13 +66,15 @@ public final class VmodVehicleSetupCompat {
             player.displayClientMessage(Component.literal("Vehicle setup is already running."), true);
             return;
         }
-        List<VehicleSetupAction> actions = setup.actions();
-        if (actions.isEmpty()) {
+        List<VehicleSetupAction> actions = setup.actions(), removals = setup.markedRemovals();
+        if (actions.isEmpty() && removals.isEmpty()) {
             player.displayClientMessage(Component.literal("Vehicle setup has no saved actions."), true);
             return;
         }
-        PENDING_RUNS.put(setupPos, new PendingRun(level, player, actions, ships,
-                PLACEMENT_IDS.get(setupPos), actions.get(0).delayBeforeTicks()));
+        PendingRun run = new PendingRun(level, player, actions, removals, setup.removalDelayTicks(), ships,
+                PLACEMENT_IDS.get(setupPos), actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
+        if (actions.isEmpty()) run.removing = true;
+        PENDING_RUNS.put(setupPos, run);
     }
 
     @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID)
@@ -86,25 +88,34 @@ public final class VmodVehicleSetupCompat {
                 PendingRun run = entry.getValue();
                 if (run.remainingTicks > 0 && --run.remainingTicks > 0) continue;
                 do {
-                    VehicleSetupAction action = run.actions.get(run.index++);
+                    List<VehicleSetupAction> phaseActions = run.removing ? run.removals : run.actions;
+                    VehicleSetupAction action = phaseActions.get(run.index++);
                     String error = action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS
                             ? runDbw(run.level, entry.getKey(), action, run.ships)
                             : VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action, run.ships,
                                     run.placementId);
-                    if (error == null) run.succeeded++; else if (run.firstError == null) run.firstError = error;
-                    if (run.index >= run.actions.size()) {
+                    if (error == null) { if (run.removing) run.removalSucceeded++; else run.succeeded++; }
+                    else if (run.firstError == null) run.firstError = error;
+                    if (run.index >= phaseActions.size()) {
+                        if (!run.removing && !run.removals.isEmpty()) {
+                            run.removing = true; run.index = 0; run.remainingTicks = run.removalDelay;
+                            run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. Removing temporary blocks in " + run.removalDelay + " ticks."), true);
+                            if (run.remainingTicks == 0) continue;
+                            break;
+                        }
                         run.player.displayClientMessage(Component.literal(run.firstError == null
-                                ? "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed."
-                                : "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed. " + run.firstError), true);
+                                ? "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed."
+                                : "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. " + run.firstError)
+                                .append(run.removals.isEmpty() ? "" : " Temporary blocks removed: " + run.removalSucceeded + "/" + run.removals.size() + "."), true);
                         PENDING_RUNS.remove(entry.getKey(), run);
                         PLACED_SHIP_MAPPINGS.remove(entry.getKey(), run.ships);
                         if (run.placementId != null) PLACEMENT_IDS.remove(entry.getKey(), run.placementId);
                         else PLACEMENT_IDS.remove(entry.getKey());
                         break;
                     }
-                    run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
+                    if (!run.removing) run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
                             + run.actions.size() + " completed."), true);
-                    run.remainingTicks = run.actions.get(run.index).delayBeforeTicks();
+                    run.remainingTicks = phaseActions.get(run.index).delayBeforeTicks();
                 } while (run.remainingTicks == 0);
             }
         }
@@ -186,18 +197,25 @@ public final class VmodVehicleSetupCompat {
         private final ServerLevel level;
         private final ServerPlayer player;
         private final List<VehicleSetupAction> actions;
+        private final List<VehicleSetupAction> removals;
+        private final int removalDelay;
         private final Map<Long, Object> ships;
         @Nullable private final String placementId;
         private int index;
+        private boolean removing;
         private int remainingTicks;
         private int succeeded;
+        private int removalSucceeded;
         @Nullable private String firstError;
 
         private PendingRun(ServerLevel level, ServerPlayer player, List<VehicleSetupAction> actions,
-                           Map<Long, Object> ships, @Nullable String placementId, int remainingTicks) {
+                           List<VehicleSetupAction> removals, int removalDelay, Map<Long, Object> ships,
+                           @Nullable String placementId, int remainingTicks) {
             this.level = level;
             this.player = player;
             this.actions = actions;
+            this.removals = removals;
+            this.removalDelay = removalDelay;
             this.ships = ships;
             this.placementId = placementId;
             this.remainingTicks = remainingTicks;

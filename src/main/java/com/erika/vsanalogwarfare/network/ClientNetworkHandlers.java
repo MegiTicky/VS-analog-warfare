@@ -36,6 +36,6 @@ public final class ClientNetworkHandlers {
     }
 
     public static void openVehicleSetupEditor(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket packet) {
-        VehicleSetupEditorScreen.open(packet.pos(), packet.revision(), packet.actions());
+        VehicleSetupEditorScreen.open(packet.pos(), packet.revision(), packet.actions(), packet.removals(), packet.removalDelay());
     }
 }

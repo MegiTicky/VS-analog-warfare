@@ -18,7 +18,7 @@ import java.lang.reflect.Method;
 import java.util.function.Supplier;
 
 public final class ModNetwork {
-    private static final String PROTOCOL = "5";
+    private static final String PROTOCOL = "6";
     public static SimpleChannel CHANNEL;
 
     private ModNetwork() {
@@ -78,6 +78,11 @@ public final class ModNetwork {
                 .encoder(SetZeroDistancePacket::encode)
                 .decoder(SetZeroDistancePacket::decode)
                 .consumerMainThread(SetZeroDistancePacket::handle)
+                .add();
+        CHANNEL.messageBuilder(SetScrewdriverModePacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(SetScrewdriverModePacket::encode)
+                .decoder(SetScrewdriverModePacket::decode)
+                .consumerMainThread(SetScrewdriverModePacket::handle)
                 .add();
         CHANNEL.messageBuilder(VehicleSetupEditorPacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(VehicleSetupEditorPacket::encode)

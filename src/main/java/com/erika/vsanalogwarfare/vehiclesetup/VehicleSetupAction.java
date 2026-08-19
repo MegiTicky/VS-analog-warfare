@@ -111,8 +111,14 @@ public final class VehicleSetupAction {
     }
 
     public static VehicleSetupAction removeBlock(long shipId, @Nullable BlockPos shipOffset, BlockPos anchorOffset) {
+        return removeBlock(shipId, shipOffset, anchorOffset, null);
+    }
+
+    public static VehicleSetupAction removeBlock(long shipId, @Nullable BlockPos shipOffset, BlockPos anchorOffset,
+                                                 @Nullable BlockState state) {
         return new VehicleSetupAction(VehicleSetupActionType.REMOVE_BLOCK, anchorOffset, null, shipOffset,
-                shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
+                shipId, -1L, state == null ? null : NbtUtils.writeBlockState(state), null,
+                0.0f, 0.0f, 0, null, null, 0, 0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public static VehicleSetupAction linkDbwBackups(long sourceShipId, BlockPos sourceOffset,

@@ -51,7 +51,8 @@ public class VehicleSetupBlock extends BaseEntityBlock {
         if (player instanceof ServerPlayer serverPlayer && level.getBlockEntity(pos) instanceof VehicleSetupBlockEntity setup) {
             if (player.isShiftKeyDown()) {
                 ModNetwork.sendToPlayer(serverPlayer, new VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket(
-                        pos, setup.revision(), setup.actions().stream().map(VehicleSetupAction::save).toList()));
+                        pos, setup.revision(), setup.actions().stream().map(VehicleSetupAction::save).toList(),
+                        setup.markedRemovals().stream().map(VehicleSetupAction::save).toList(), setup.removalDelayTicks()));
                 return InteractionResult.CONSUME;
             }
             OptionalModCompatibility.warnIfIssues(serverPlayer);

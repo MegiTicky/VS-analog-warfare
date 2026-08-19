@@ -16,6 +16,8 @@ import java.util.List;
 
 public class VehicleSetupBlockEntity extends BlockEntity {
     private final List<VehicleSetupAction> actions = new ArrayList<>();
+    private final List<VehicleSetupAction> markedRemovals = new ArrayList<>();
+    private int removalDelayTicks;
     private int revision;
 
     public VehicleSetupBlockEntity(BlockPos pos, BlockState state) { super(ModBlockEntities.VEHICLE_SETUP.get(), pos, state); }
@@ -25,6 +27,12 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     }
     public List<VehicleSetupAction> actions() { return List.copyOf(actions); }
     public void clearActions() { actions.clear(); markAndSync(); }
+    public List<VehicleSetupAction> markedRemovals() { return List.copyOf(markedRemovals); }
+    public void addMarkedRemoval(VehicleSetupAction action) { markedRemovals.add(action); markAndSync(); }
+    public boolean deleteMarkedRemoval(int index) { if (index < 0 || index >= markedRemovals.size()) return false; markedRemovals.remove(index); markAndSync(); return true; }
+    public void clearMarkedRemovals() { if (!markedRemovals.isEmpty()) { markedRemovals.clear(); markAndSync(); } }
+    public int removalDelayTicks() { return removalDelayTicks; }
+    public boolean setRemovalDelayTicks(int delay) { if (delay < 0 || delay > 20 * 60 * 60) return false; removalDelayTicks = delay; markAndSync(); return true; }
     public int actionCount() { return actions.size(); }
     public int revision() { return revision; }
     public boolean deleteAction(int index) {
@@ -116,18 +124,27 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         ListTag tags = new ListTag();
         for (VehicleSetupAction action : actions) tags.add(action.save());
         tag.put("VehicleSetupActions", tags);
+        ListTag removals = new ListTag(); for (VehicleSetupAction action : markedRemovals) removals.add(action.save());
+        tag.put("VehicleSetupMarkedRemovals", removals);
+        tag.putInt("VehicleSetupRemovalDelay", removalDelayTicks);
         tag.putInt("VehicleSetupRevision", revision);
     }
 
     @Override public void load(CompoundTag tag) {
         super.load(tag);
         actions.clear();
+        markedRemovals.clear(); removalDelayTicks = tag.getInt("VehicleSetupRemovalDelay");
         revision = tag.getInt("VehicleSetupRevision");
-        if (!tag.contains("VehicleSetupActions", Tag.TAG_LIST)) return;
-        ListTag tags = tag.getList("VehicleSetupActions", Tag.TAG_COMPOUND);
-        for (int index = 0; index < tags.size(); index++) {
-            VehicleSetupAction action = VehicleSetupAction.load(tags.getCompound(index));
-            if (action != null) actions.add(action);
+        if (tag.contains("VehicleSetupActions", Tag.TAG_LIST)) {
+            ListTag tags = tag.getList("VehicleSetupActions", Tag.TAG_COMPOUND);
+            for (int index = 0; index < tags.size(); index++) {
+                VehicleSetupAction action = VehicleSetupAction.load(tags.getCompound(index));
+                if (action != null) actions.add(action);
+            }
+        }
+        if (tag.contains("VehicleSetupMarkedRemovals", Tag.TAG_LIST)) {
+            ListTag removals = tag.getList("VehicleSetupMarkedRemovals", Tag.TAG_COMPOUND);
+            for (int index = 0; index < removals.size(); index++) { VehicleSetupAction action = VehicleSetupAction.load(removals.getCompound(index)); if (action != null && action.type() == VehicleSetupActionType.REMOVE_BLOCK) markedRemovals.add(action); }
         }
     }
 

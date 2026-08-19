@@ -21,6 +21,7 @@ import javax.annotation.Nullable;
 public class AnalogScrewdriverItem extends Item {
     private static final String ANCHOR = "VehicleSetupAnchor";
     private static final String ENDER_PAIR_SOURCE = "VSAWEnderPairSource";
+    private static final String REMOVAL_MODE = "VSAWRemovalMode";
     public AnalogScrewdriverItem(Properties properties) { super(properties); }
 
     @Override public InteractionResult useOn(UseOnContext context) {
@@ -39,7 +40,8 @@ public class AnalogScrewdriverItem extends Item {
         if (level.getBlockEntity(clicked) instanceof VehicleSetupBlockEntity setupBlock) {
             OptionalModCompatibility.warnIfIssues(player);
             recorder.getOrCreateTag().putLong(ANCHOR, clicked.asLong());
-            if (player.isShiftKeyDown()) VehicleSetupRecordingManager.inspect(player, setupBlock);
+            if (removalMode(recorder)) VehicleSetupRecordingManager.toggleRemovalRecording(player, setupBlock);
+            else if (player.isShiftKeyDown()) VehicleSetupRecordingManager.inspect(player, setupBlock);
             else VehicleSetupRecordingManager.toggle(player, setupBlock);
             return InteractionResult.CONSUME;
         }
@@ -73,6 +75,9 @@ public class AnalogScrewdriverItem extends Item {
         }
         return InteractionResult.PASS;
     }
+
+    public static boolean removalMode(ItemStack stack) { return stack.getOrCreateTag().getBoolean(REMOVAL_MODE); }
+    public static void setRemovalMode(ItemStack stack, boolean removalMode) { stack.getOrCreateTag().putBoolean(REMOVAL_MODE, removalMode); }
 
     private static InteractionResult success(ServerPlayer player, String message) { player.displayClientMessage(Component.literal(message), true); return InteractionResult.CONSUME; }
     private static InteractionResult fail(ServerPlayer player, String message) { player.displayClientMessage(Component.literal(message), true); return InteractionResult.FAIL; }
