@@ -8,11 +8,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -29,6 +31,7 @@ public class VehicleSetupEditorScreen extends Screen {
     private static final int ROW_HEIGHT = 30;
     private static final int LIST_TOP = 35;
     private static final int FIELD_HEIGHT = 18;
+    private static final int ACTION_TEXT_WIDTH = 160;
     private final BlockPos setupPos;
     private int revision;
     private final List<VehicleSetupAction> actions;
@@ -38,6 +41,7 @@ public class VehicleSetupEditorScreen extends Screen {
     private int insertion = -1;
     private int selectedTransmitter = -1;
     private Button showButton;
+    private Button clearAllButton;
     private final List<DelayField> delayFields = new ArrayList<>();
 
     private VehicleSetupEditorScreen(BlockPos setupPos, int revision, List<VehicleSetupAction> actions) {
@@ -78,27 +82,40 @@ public class VehicleSetupEditorScreen extends Screen {
         if (transmitters) {
             addRenderableWidget(Button.builder(Component.literal("Scan energy"), button -> send(
                     VehicleSetupEditorPacket.Operation.SCAN_TRANSMITTERS, 0, 0))
-                    .bounds(width / 2 - 152, bottom, 94, 20).build());
+                    .bounds(width / 2 - 152, bottom, 94, 20)
+                    .tooltip(Tooltip.create(Component.literal("Find and add Ender Transmitters on the setup ship.")))
+                    .build());
             showButton = addRenderableWidget(Button.builder(Component.literal("Show added"), button -> toggleHighlight())
-                    .bounds(width / 2 - 54, bottom, 76, 20).build());
+                    .bounds(width / 2 - 54, bottom, 76, 20)
+                    .tooltip(Tooltip.create(Component.literal("Highlight the selected transmitter in the world.")))
+                    .build());
             updateShowButton();
             addRenderableWidget(Button.builder(Component.literal("Actions"), button -> switchView())
-                    .bounds(width / 2 + 26, bottom, 58, 20).build());
+                    .bounds(width / 2 + 26, bottom, 58, 20)
+                    .tooltip(Tooltip.create(Component.literal("Return to the recorded action list.")))
+                    .build());
             addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())
-                    .bounds(width / 2 + 88, bottom, 64, 20).build());
+                    .bounds(width / 2 + 88, bottom, 64, 20)
+                    .tooltip(Tooltip.create(Component.literal("Close the Vehicle Setup Macro.")))
+                    .build());
             return;
         }
-        addRenderableWidget(Button.builder(Component.literal("Record more"), button -> {
-            ModNetwork.sendToServer(new VehicleSetupEditorPacket(setupPos, revision,
-                    VehicleSetupEditorPacket.Operation.APPEND_RECORDING, 0, 0));
-            onClose();
-        }).bounds(width / 2 - 152, bottom, 72, 20).build());
+        clearAllButton = addRenderableWidget(new RedButton(width / 2 - 152, bottom, 72, 20,
+                Component.literal("Delete all").withStyle(ChatFormatting.RED), button -> confirmClearAll()));
+        clearAllButton.setTooltip(Tooltip.create(Component.literal("Delete every recorded action in this macro.")));
         addRenderableWidget(Button.builder(Component.literal("Standard time"), button -> send(
-                VehicleSetupEditorPacket.Operation.STANDARD_TIME, 0, 0)).bounds(width / 2 - 76, bottom, 78, 20).build());
+                VehicleSetupEditorPacket.Operation.STANDARD_TIME, 0, 0))
+                .bounds(width / 2 - 76, bottom, 78, 20)
+                .tooltip(Tooltip.create(Component.literal("Set the first action to 0 ticks and all following actions to 1 tick.")))
+                .build());
         addRenderableWidget(Button.builder(Component.literal("Transmitters"), button -> switchView())
-                .bounds(width / 2 + 6, bottom, 78, 20).build());
+                .bounds(width / 2 + 6, bottom, 78, 20)
+                .tooltip(Tooltip.create(Component.literal("View and configure recorded Ender Transmitter actions.")))
+                .build());
         addRenderableWidget(Button.builder(Component.literal("Done"), button -> onClose())
-                .bounds(width / 2 + 88, bottom, 64, 20).build());
+                .bounds(width / 2 + 88, bottom, 64, 20)
+                .tooltip(Tooltip.create(Component.literal("Close the Vehicle Setup Macro.")))
+                .build());
     }
 
     private void switchView() {
@@ -109,6 +126,15 @@ public class VehicleSetupEditorScreen extends Screen {
         clearWidgets();
         addFooterWidgets();
         rebuildDelayField();
+    }
+
+    private void confirmClearAll() {
+        if (!clearAllButton.getMessage().getString().equals("Confirm?")) {
+            clearAllButton.setMessage(Component.literal("Confirm?").withStyle(ChatFormatting.RED));
+            clearAllButton.setTooltip(Tooltip.create(Component.literal("Click again to permanently delete every recorded action.")));
+            return;
+        }
+        send(VehicleSetupEditorPacket.Operation.CLEAR_ALL, 0, 0);
     }
 
     private void toggleHighlight() {
@@ -168,10 +194,13 @@ public class VehicleSetupEditorScreen extends Screen {
                         + (action.transmitterPassword() == null ? "" : action.transmitterPassword()),
                         left + 56, y + 30, 0xFFB7C3D0);
             } else {
-                graphics.drawString(font, summary(action), left + 56, y + textY, 0xFFFFFFFF);
-                graphics.drawString(font, "Wait", right - 146, y + textY, 0xFFB7C3D0);
+                graphics.drawString(font, abbreviatedSummary(action), left + 56, y + textY, 0xFFFFFFFF);
                 graphics.drawString(font, "ticks", right - 38, y + textY, 0xFFB7C3D0);
                 graphics.drawString(font, "X", right - 13, y + textY, 0xFFFF7777);
+                if (mouseX >= left + 56 && mouseX < width / 2 + 67 && mouseY >= y && mouseY < y + rowHeight()) {
+                    graphics.renderTooltip(font, Component.literal("Click and hold to drag and change this action's order."),
+                            mouseX, mouseY);
+                }
             }
             if (dragged >= 0 && insertion == visibleIndex) graphics.fill(left, y, right, y + 2, 0xFF71B7FF);
         }
@@ -328,6 +357,7 @@ public class VehicleSetupEditorScreen extends Screen {
             this.originalDelay = actions.get(actionIndex).delayBeforeTicks();
             setValue(Integer.toString(originalDelay));
             setFilter(value -> value.matches("\\d{0,5}"));
+            setTooltip(Tooltip.create(Component.literal("Delay before this action runs, in ticks.")));
         }
 
         @Override
@@ -398,9 +428,30 @@ public class VehicleSetupEditorScreen extends Screen {
         };
     }
 
+    private String abbreviatedSummary(VehicleSetupAction action) {
+        String text = summary(action);
+        if (font.width(text) <= ACTION_TEXT_WIDTH) return text;
+        return font.plainSubstrByWidth(text, ACTION_TEXT_WIDTH - font.width("..."), false) + "...";
+    }
+
     private static String blockName(CompoundTag state) {
         if (state == null) return "block";
         Block block = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), state).getBlock();
         return block.getName().getString();
+    }
+
+    private static final class RedButton extends Button {
+        private RedButton(int x, int y, int width, int height, Component message, OnPress onPress) {
+            super(x, y, width, height, message, onPress, DEFAULT_NARRATION);
+        }
+
+        @Override
+        public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+            int color = isHoveredOrFocused() ? 0xFF9D3535 : 0xFF702424;
+            graphics.fill(getX(), getY(), getX() + width, getY() + height, color);
+            graphics.fill(getX(), getY(), getX() + width, getY() + 1, 0xFFFF7777);
+            graphics.drawCenteredString(Minecraft.getInstance().font, getMessage(), getX() + width / 2,
+                    getY() + (height - 8) / 2, active ? 0xFFFFFFFF : 0xFF777777);
+        }
     }
 }

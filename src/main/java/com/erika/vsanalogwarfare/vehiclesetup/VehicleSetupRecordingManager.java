@@ -48,10 +48,6 @@ public final class VehicleSetupRecordingManager {
     private VehicleSetupRecordingManager() { }
 
     public static void toggle(ServerPlayer player, VehicleSetupBlockEntity setup) {
-        toggle(player, setup, false);
-    }
-
-    public static void toggle(ServerPlayer player, VehicleSetupBlockEntity setup, boolean append) {
         UUID playerId = player.getUUID();
         BlockPos current = ACTIVE_RECORDINGS.get(playerId);
         if (setup.getBlockPos().equals(current)) {
@@ -60,13 +56,11 @@ public final class VehicleSetupRecordingManager {
             player.displayClientMessage(Component.literal("Vehicle setup recording stopped: " + setup.actionSummary() + "."), true);
             return;
         }
-        if (!append) setup.clearActions();
         OptionalModCompatibility.warnIfIssues(player);
         ACTIVE_RECORDINGS.put(playerId, setup.getBlockPos());
         LAST_RECORDED_TICKS.put(playerId, player.level().getGameTime());
-        player.displayClientMessage(Component.literal(append
-                ? "Vehicle setup append recording started. Use the recorder on this block again to stop."
-                : "Vehicle setup recording started. Place, break, or interact with blocks normally, then use the recorder on this block again to stop."), true);
+        player.displayClientMessage(Component.literal(
+                "Vehicle setup recording started. Place, break, or interact with blocks normally, then use the recorder on this block again to stop."), true);
     }
 
     public static void inspect(ServerPlayer player, VehicleSetupBlockEntity setup) {
@@ -284,11 +278,13 @@ public final class VehicleSetupRecordingManager {
                 if (error == null) run.succeeded++; else if (run.firstError == null) run.firstError = error;
                 if (run.index >= run.actions.size()) {
                     run.player.displayClientMessage(Component.literal(run.firstError == null
-                            ? "Vehicle setup complete: " + run.succeeded + " actions."
-                            : "Vehicle setup: " + run.succeeded + " complete. " + run.firstError), true);
+                            ? "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed."
+                            : "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed. " + run.firstError), true);
                     iterator.remove();
                     break;
                 }
+                run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
+                        + run.actions.size() + " completed."), true);
                 run.remainingTicks = run.actions.get(run.index).delayBeforeTicks();
             } while (run.remainingTicks == 0);
         }

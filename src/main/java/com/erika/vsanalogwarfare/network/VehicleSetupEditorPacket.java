@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.function.Supplier;
 
 public record VehicleSetupEditorPacket(BlockPos pos, int revision, Operation operation, int first, int second) {
-    public enum Operation { OPEN, MOVE, DELETE, SET_DELAY, STANDARD_TIME, APPEND_RECORDING, SCAN_TRANSMITTERS }
+    public enum Operation { OPEN, MOVE, DELETE, SET_DELAY, STANDARD_TIME, CLEAR_ALL, SCAN_TRANSMITTERS }
 
     public static void encode(VehicleSetupEditorPacket packet, FriendlyByteBuf buf) {
         buf.writeBlockPos(packet.pos);
@@ -51,11 +51,11 @@ public record VehicleSetupEditorPacket(BlockPos pos, int revision, Operation ope
                 case DELETE -> setup.deleteAction(packet.first);
                 case SET_DELAY -> setup.setActionDelay(packet.first, packet.second);
                 case STANDARD_TIME -> setup.useStandardTiming();
-                case APPEND_RECORDING -> VehicleSetupRecordingManager.toggle(player, setup, true);
+                case CLEAR_ALL -> setup.clearActions();
                 case SCAN_TRANSMITTERS -> VehicleSetupRecordingManager.scanEnderTransmitters(player, setup);
                 case OPEN -> { }
             }
-            if (packet.operation != Operation.APPEND_RECORDING) sendSnapshot(player, setup);
+            sendSnapshot(player, setup);
         });
         context.setPacketHandled(true);
     }

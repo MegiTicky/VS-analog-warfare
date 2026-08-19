@@ -12,6 +12,9 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.network.chat.Component;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
@@ -25,6 +28,7 @@ public final class VmodVehicleSetupCompat {
     private static final ConcurrentHashMap<Integer, UUID> PLACERS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, Map<Long, Object>> PLACED_SHIP_MAPPINGS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, String> PLACEMENT_IDS = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<BlockPos, PendingRun> PENDING_RUNS = new ConcurrentHashMap<>();
     private VmodVehicleSetupCompat() { }
 
     public static void rememberPlacement(UUID player, List<?> ships) { PLACERS.put(System.identityHashCode(ships), player); }
@@ -58,19 +62,52 @@ public final class VmodVehicleSetupCompat {
             setup.run(player);
             return;
         }
-        int succeeded = 0;
-        String firstError = null;
-        for (VehicleSetupAction action : setup.actions()) {
-            String error = action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS
-                    ? runDbw(level, setupPos, action, ships)
-                    : VehicleSetupExecutor.run(level, setupPos, player, action, ships, PLACEMENT_IDS.get(setupPos));
-            if (error == null) succeeded++; else if (firstError == null) firstError = error;
+        if (PENDING_RUNS.containsKey(setupPos)) {
+            player.displayClientMessage(Component.literal("Vehicle setup is already running."), true);
+            return;
         }
-        player.displayClientMessage(Component.literal(firstError == null
-                ? "Vehicle setup complete: " + succeeded + " actions."
-                : "Vehicle setup: " + succeeded + " complete. " + firstError), true);
-        PLACED_SHIP_MAPPINGS.remove(setupPos);
-        PLACEMENT_IDS.remove(setupPos);
+        List<VehicleSetupAction> actions = setup.actions();
+        if (actions.isEmpty()) {
+            player.displayClientMessage(Component.literal("Vehicle setup has no saved actions."), true);
+            return;
+        }
+        PENDING_RUNS.put(setupPos, new PendingRun(level, player, actions, ships,
+                PLACEMENT_IDS.get(setupPos), actions.get(0).delayBeforeTicks()));
+    }
+
+    @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID)
+    public static final class Events {
+        private Events() { }
+
+        @SubscribeEvent
+        public static void onServerTick(TickEvent.ServerTickEvent event) {
+            if (event.phase != TickEvent.Phase.END) return;
+            for (Map.Entry<BlockPos, PendingRun> entry : PENDING_RUNS.entrySet()) {
+                PendingRun run = entry.getValue();
+                if (run.remainingTicks > 0 && --run.remainingTicks > 0) continue;
+                do {
+                    VehicleSetupAction action = run.actions.get(run.index++);
+                    String error = action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS
+                            ? runDbw(run.level, entry.getKey(), action, run.ships)
+                            : VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action, run.ships,
+                                    run.placementId);
+                    if (error == null) run.succeeded++; else if (run.firstError == null) run.firstError = error;
+                    if (run.index >= run.actions.size()) {
+                        run.player.displayClientMessage(Component.literal(run.firstError == null
+                                ? "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed."
+                                : "Vehicle setup: " + run.index + "/" + run.actions.size() + " completed. " + run.firstError), true);
+                        PENDING_RUNS.remove(entry.getKey(), run);
+                        PLACED_SHIP_MAPPINGS.remove(entry.getKey(), run.ships);
+                        if (run.placementId != null) PLACEMENT_IDS.remove(entry.getKey(), run.placementId);
+                        else PLACEMENT_IDS.remove(entry.getKey());
+                        break;
+                    }
+                    run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
+                            + run.actions.size() + " completed."), true);
+                    run.remainingTicks = run.actions.get(run.index).delayBeforeTicks();
+                } while (run.remainingTicks == 0);
+            }
+        }
     }
 
     private static void scanShip(ServerLevel level, Object ship, Map<Long, Object> ships, String placementId) {
@@ -143,5 +180,27 @@ public final class VmodVehicleSetupCompat {
     private static int coordinate(Object box, String name) throws ReflectiveOperationException {
         Object value = box.getClass().getMethod(name).invoke(box);
         return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    private static final class PendingRun {
+        private final ServerLevel level;
+        private final ServerPlayer player;
+        private final List<VehicleSetupAction> actions;
+        private final Map<Long, Object> ships;
+        @Nullable private final String placementId;
+        private int index;
+        private int remainingTicks;
+        private int succeeded;
+        @Nullable private String firstError;
+
+        private PendingRun(ServerLevel level, ServerPlayer player, List<VehicleSetupAction> actions,
+                           Map<Long, Object> ships, @Nullable String placementId, int remainingTicks) {
+            this.level = level;
+            this.player = player;
+            this.actions = actions;
+            this.ships = ships;
+            this.placementId = placementId;
+            this.remainingTicks = remainingTicks;
+        }
     }
 }
