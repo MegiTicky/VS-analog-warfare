@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TallyhoCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -42,12 +43,24 @@ public final class VehicleSetupExecutor {
 
     @Nullable
     public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
-                             @Nullable Map<Long, Object> ships, @Nullable String placementId) {
-        return switch (action.type()) {
+                              @Nullable Map<Long, Object> ships, @Nullable String placementId) {
+        return run(level, anchor, player, action, ships, placementId, -1);
+    }
+
+    @Nullable
+    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
+                             @Nullable Map<Long, Object> ships, @Nullable String placementId, int actionIndex) {
+        BlockPos debugTarget = debugTarget(level, anchor, action, ships);
+        String before = debugTarget == null ? null : level.getBlockState(debugTarget).toString();
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action begin: placementId={}, index={}, type={}, anchor={}, "
+                        + "originalShipId={}, shipOffset={}, targetOffset={}, target={}, before={}",
+                placementId, actionIndex, action.type(), anchor, action.targetShipId(), action.shipOffset(),
+                action.targetOffset(), debugTarget, before);
+        String result = switch (action.type()) {
             case PLACE_BLOCK -> place(level, target(level, anchor, action, ships), action.blockState());
             case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships));
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
-            case CREATE_TWEAKED_CONTROLLER -> controller(player, action, ships);
+            case CREATE_TWEAKED_CONTROLLER -> controller(level, anchor, player, action, ships);
             case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level,
                     stiffnessTarget(level, anchor, action, ships), action.stiffness());
             case SPAWN_TALLYHO_HULL_MG -> TallyhoCompat.spawnHullMg(level, target(level, anchor, action, ships),
@@ -60,16 +73,58 @@ public final class VehicleSetupExecutor {
             case CONFIGURE_ENDER_TRANSMITTER -> EnderTransmissionCompat.configure(
                     level, target(level, anchor, action, ships), action, placementId);
         };
+        String after = debugTarget == null ? null : level.getBlockState(debugTarget).toString();
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action end: placementId={}, index={}, type={}, target={}, "
+                        + "result={}, after={}, changed={}",
+                placementId, actionIndex, action.type(), debugTarget, result == null ? "success" : result,
+                after, before == null ? "unknown" : !before.equals(after));
+        return result;
     }
 
-    private static BlockPos target(Level level, BlockPos anchor, VehicleSetupAction action,
-                                   @Nullable Map<Long, Object> ships) {
+    @Nullable
+    private static BlockPos debugTarget(Level level, BlockPos anchor, VehicleSetupAction action,
+                                        @Nullable Map<Long, Object> ships) {
+        return switch (action.type()) {
+            case PLACE_BLOCK, REMOVE_BLOCK, SET_TRACKWORK_STIFFNESS, SPAWN_TALLYHO_HULL_MG,
+                    SPAWN_TALLYHO_ENTITY, GENERIC_BLOCK_INTERACTION, GENERIC_BLOCK_LEFT_CLICK,
+                    CONFIGURE_ENDER_TRANSMITTER -> target(level, anchor, action, ships);
+            default -> null;
+        };
+    }
+
+    public static BlockPos target(Level level, BlockPos anchor, VehicleSetupAction action,
+                                  @Nullable Map<Long, Object> ships) {
         if (ships != null && action.targetShipId() >= 0L && action.shipOffset() != null) {
             Object ship = ships.get(action.targetShipId());
             BlockPos resolved = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, action.shipOffset());
-            if (resolved != null) return resolved;
+            if (resolved != null) {
+                Object anchorShip = VehicleSetupReflection.findShip(level, anchor);
+                if (anchorShip != null && VehicleSetupReflection.sameShip(anchorShip, ship)
+                        && action.targetOffset() != null) {
+                    BlockPos anchorResolved = anchor.offset(action.targetOffset());
+                    if (!anchorResolved.equals(resolved)) {
+                        VSAnalogWarfare.LOGGER.warn("[VSAW setup-debug] Same-ship target correction: "
+                                        + "type={}, originalShipId={}, runtimeShipId={}, aabbTarget={}, "
+                                        + "anchorTarget={}, delta={}",
+                                action.type(), action.targetShipId(), VehicleSetupReflection.shipId(ship),
+                                resolved, anchorResolved, anchorResolved.subtract(resolved));
+                    }
+                    return anchorResolved;
+                }
+                VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action target resolved: type={}, anchor={}, "
+                                + "shipId={}, shipOffset={}, targetOffset={}, resolved={}",
+                        action.type(), anchor, action.targetShipId(), action.shipOffset(), action.targetOffset(), resolved);
+                return resolved;
+            }
+            VSAnalogWarfare.LOGGER.warn("[VSAW setup-debug] Action ship target unresolved; using anchor fallback: "
+                            + "type={}, anchor={}, shipId={}, shipOffset={}, targetOffset={}, shipFound={}",
+                    action.type(), anchor, action.targetShipId(), action.shipOffset(), action.targetOffset(), ship != null);
         }
-        return action.targetOffset() == null ? anchor : anchor.offset(action.targetOffset());
+        BlockPos fallback = action.targetOffset() == null ? anchor : anchor.offset(action.targetOffset());
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action anchor target resolved: type={}, anchor={}, "
+                        + "targetOffset={}, resolved={}",
+                action.type(), anchor, action.targetOffset(), fallback);
+        return fallback;
     }
 
     private static BlockPos stiffnessTarget(Level level, BlockPos anchor, VehicleSetupAction action,
@@ -162,14 +217,14 @@ public final class VehicleSetupExecutor {
         }
     }
 
-    @Nullable private static String controller(@Nullable ServerPlayer player, VehicleSetupAction action,
-                                                 @Nullable Map<Long, Object> ships) {
+    @Nullable private static String controller(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                                VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
         if (!ModList.get().isLoaded("drivebywire")) return "Drive By Wire is not installed";
         if (player == null) return "the schematic placer is offline";
         CompoundTag savedController = action.controller();
         if (savedController == null || action.targetOffset() == null || ships == null) return "recorded controller mapping is missing";
         Object ship = ships.get(action.targetShipId());
-        BlockPos hub = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, action.targetOffset());
+        BlockPos hub = ship == null ? null : controllerHubPosition(level, anchor, ship, action.targetOffset());
         if (hub == null) return "controller hub ship could not be resolved";
         ItemStack stack = ItemStack.of(savedController);
         ResourceLocation controllerId = BuiltInRegistries.ITEM.getKey(stack.getItem());
@@ -178,6 +233,22 @@ public final class VehicleSetupExecutor {
         }
         stack.getOrCreateTag().putLong("Hub", hub.asLong());
         if (!player.getInventory().add(stack)) player.drop(stack, false);
+        VSAnalogWarfare.LOGGER.info("[VSAW] Created DBW controller for hub={} (shipId={}, recordedOffset={})",
+                hub, action.targetShipId(), action.targetOffset());
         return null;
+    }
+
+    private static BlockPos controllerHubPosition(Level level, BlockPos anchor, Object ship, BlockPos recordedOffset) {
+        BlockPos anchorCandidate = anchor.offset(recordedOffset);
+        if (isControllerHub(level, anchorCandidate)) return anchorCandidate;
+        BlockPos shipCandidate = VehicleSetupReflection.positionOnShip(ship, recordedOffset);
+        if (shipCandidate != null && isControllerHub(level, shipCandidate)) return shipCandidate;
+        return anchorCandidate;
+    }
+
+    private static boolean isControllerHub(Level level, BlockPos pos) {
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock());
+        return id != null && "drivebywire".equals(id.getNamespace())
+                && ("controller_hub".equals(id.getPath()) || "tweaked_controller_hub".equals(id.getPath()));
     }
 }

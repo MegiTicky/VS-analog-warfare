@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.vehiclesetup.compat;
 
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
@@ -15,6 +16,27 @@ public final class VehicleSetupReflection {
         return VsGameUtilsBridge.shipObjectManagingPos(level, pos);
     }
 
+    public static boolean sameShip(Object first, Object second) {
+        if (first == second) return true;
+        try {
+            Object firstId = invoke(first, "getId");
+            Object secondId = invoke(second, "getId");
+            return firstId instanceof Number firstNumber && secondId instanceof Number secondNumber
+                    && firstNumber.longValue() == secondNumber.longValue();
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
+    public static long shipId(Object ship) {
+        try {
+            Object id = invoke(ship, "getId");
+            return id instanceof Number number ? number.longValue() : -1L;
+        } catch (ReflectiveOperationException ignored) {
+            return -1L;
+        }
+    }
+
     @Nullable static ShipPosition shipPosition(Level level, BlockPos pos) {
         Object ship = findShip(level, pos);
         if (ship == null) return null;
@@ -22,7 +44,18 @@ public final class VehicleSetupReflection {
             Object id = invoke(ship, "getId");
             Object box = invoke(ship, "getShipAABB");
             if (!(id instanceof Number number) || box == null) return null;
-            return new ShipPosition(number.longValue(), pos.offset(-coordinate(box, "minX"), -coordinate(box, "minY"), -coordinate(box, "minZ")));
+            double rawMinX = coordinateRaw(box, "minX");
+            double rawMinY = coordinateRaw(box, "minY");
+            double rawMinZ = coordinateRaw(box, "minZ");
+            int minX = coordinate(box, "minX");
+            int minY = coordinate(box, "minY");
+            int minZ = coordinate(box, "minZ");
+            BlockPos offset = pos.offset(-minX, -minY, -minZ);
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Recorded ship position: shipId={}, world={}, "
+                            + "aabbMin=({}, {}, {}), aabbMinRaw=({}, {}, {}), offset={}, reconstructed={}",
+                    number.longValue(), pos, minX, minY, minZ, rawMinX, rawMinY, rawMinZ, offset,
+                    new BlockPos(minX, minY, minZ).offset(offset));
+            return new ShipPosition(number.longValue(), offset);
         } catch (ReflectiveOperationException ignored) { return null; }
     }
 
@@ -43,8 +76,21 @@ public final class VehicleSetupReflection {
 
     @Nullable public static BlockPos positionOnShip(Object ship, BlockPos offset) {
         try {
+            Object id = invoke(ship, "getId");
             Object box = invoke(ship, "getShipAABB");
-            return box == null ? null : new BlockPos(coordinate(box, "minX"), coordinate(box, "minY"), coordinate(box, "minZ")).offset(offset);
+            if (box == null) return null;
+            double rawMinX = coordinateRaw(box, "minX");
+            double rawMinY = coordinateRaw(box, "minY");
+            double rawMinZ = coordinateRaw(box, "minZ");
+            int minX = coordinate(box, "minX");
+            int minY = coordinate(box, "minY");
+            int minZ = coordinate(box, "minZ");
+            BlockPos resolved = new BlockPos(minX, minY, minZ).offset(offset);
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Resolved ship position: shipId={}, "
+                            + "aabbMin=({}, {}, {}), aabbMinRaw=({}, {}, {}), offset={}, resolved={}",
+                    id instanceof Number number ? number.longValue() : "unknown", minX, minY, minZ,
+                    rawMinX, rawMinY, rawMinZ, offset, resolved);
+            return resolved;
         } catch (ReflectiveOperationException ignored) { return null; }
     }
 
@@ -95,7 +141,16 @@ public final class VehicleSetupReflection {
     private static int coordinate(Object box, String name) throws ReflectiveOperationException {
         Object value = box.getClass().getMethod(name).invoke(box);
         if (!(value instanceof Number number)) throw new ReflectiveOperationException("Invalid ship bounding-box coordinate");
+        if (number.doubleValue() != Math.floor(number.doubleValue())) {
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Fractional ship AABB coordinate: {}={}", name, number);
+        }
         return number.intValue();
+    }
+
+    private static double coordinateRaw(Object box, String name) throws ReflectiveOperationException {
+        Object value = box.getClass().getMethod(name).invoke(box);
+        if (!(value instanceof Number number)) throw new ReflectiveOperationException("Invalid ship bounding-box coordinate");
+        return number.doubleValue();
     }
     private static Class<?> wrap(Class<?> type) {
         if (!type.isPrimitive()) return type;

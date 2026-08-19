@@ -38,6 +38,8 @@ public final class VmodVehicleSetupCompat {
             Object shipsValue = VehicleSetupReflection.invoke(item, "getShips");
             if (!(levelValue instanceof ServerLevel level) || !(shipsValue instanceof List<?> ships)) return;
             UUID player = PLACERS.remove(System.identityHashCode(ships));
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] VMod placement complete: gameTime={}, player={}, shipPairs={}",
+                    level.getGameTime(), player, ships.size());
              // VMod may load schematic block-entity tags in a delayed task.
              level.getServer().execute(() -> level.getServer().execute(() -> register(level, ships)));
         } catch (ReflectiveOperationException | LinkageError error) {
@@ -49,9 +51,14 @@ public final class VmodVehicleSetupCompat {
         Map<Long, Object> ships = new HashMap<>();
         for (Object pair : pairs) {
             Object ship = pairValue(pair, "getFirst"); Object id = pairValue(pair, "getSecond");
-            if (ship != null && id instanceof Number number) ships.put(number.longValue(), ship);
+            if (ship != null && id instanceof Number number) {
+                ships.put(number.longValue(), ship);
+                logShip("Mapped pasted ship", number.longValue(), ship);
+            }
         }
         String placementId = EnderTransmissionCompat.newPlacementId();
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] VMod registration: gameTime={}, placementId={}, mappedShips={}",
+                level.getGameTime(), placementId, ships.size());
         for (Object ship : ships.values()) scanShip(level, ship, ships, placementId);
     }
 
@@ -75,6 +82,9 @@ public final class VmodVehicleSetupCompat {
                 PLACEMENT_IDS.get(setupPos), actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
         if (actions.isEmpty()) run.removing = true;
         PENDING_RUNS.put(setupPos, run);
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Setup started: gameTime={}, placementId={}, setup={}, "
+                        + "actions={}, removals={}, mappedShips={}",
+                level.getGameTime(), run.placementId, setupPos, actions.size(), removals.size(), ships.size());
     }
 
     @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID)
@@ -90,10 +100,11 @@ public final class VmodVehicleSetupCompat {
                 do {
                     List<VehicleSetupAction> phaseActions = run.removing ? run.removals : run.actions;
                     VehicleSetupAction action = phaseActions.get(run.index++);
+                    int actionIndex = run.index - 1;
                     String error = action.type() == VehicleSetupActionType.LINK_DBW_BACKUPS
                             ? runDbw(run.level, entry.getKey(), action, run.ships)
                             : VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action, run.ships,
-                                    run.placementId);
+                                    run.placementId, actionIndex);
                     if (error == null) { if (run.removing) run.removalSucceeded++; else run.succeeded++; }
                     else if (run.firstError == null) run.firstError = error;
                     if (run.index >= phaseActions.size()) {
@@ -123,9 +134,13 @@ public final class VmodVehicleSetupCompat {
 
     private static void scanShip(ServerLevel level, Object ship, Map<Long, Object> ships, String placementId) {
         try {
+            Object id = VehicleSetupReflection.invoke(ship, "getId");
             Object box = VehicleSetupReflection.invoke(ship, "getShipAABB"); if (box == null) return;
             int minX = coordinate(box, "minX"), minY = coordinate(box, "minY"), minZ = coordinate(box, "minZ");
             int maxX = coordinate(box, "maxX"), maxY = coordinate(box, "maxY"), maxZ = coordinate(box, "maxZ");
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Scanning pasted ship: runtimeShipId={}, aabbMin=({}, {}, {}), "
+                            + "aabbMax=({}, {}, {}), gameTime={}",
+                    id, minX, minY, minZ, maxX, maxY, maxZ, level.getGameTime());
             if ((long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > 1_000_000L) return;
             BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
             for (int x = minX; x <= maxX; x++) for (int y = minY; y <= maxY; y++) for (int z = minZ; z <= maxZ; z++) {
@@ -137,6 +152,9 @@ public final class VmodVehicleSetupCompat {
                     BlockPos setupPos = pos.immutable();
                     PLACED_SHIP_MAPPINGS.put(setupPos, ships);
                     PLACEMENT_IDS.put(setupPos, placementId);
+                    VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Setup discovered: gameTime={}, setup={}, "
+                                    + "runtimeShipId={}, placementId={}",
+                            level.getGameTime(), setupPos, id, placementId);
                     runEnderTransmitterActions(level, setupPos, (VehicleSetupBlockEntity) entity, ships, placementId);
                 }
                 if (entity instanceof VehicleMountHandleBlockEntity handle) {
@@ -147,6 +165,26 @@ public final class VmodVehicleSetupCompat {
         } catch (ReflectiveOperationException ignored) { }
     }
 
+    private static void logShip(String label, long originalShipId, Object ship) {
+        try {
+            Object runtimeId = VehicleSetupReflection.invoke(ship, "getId");
+            Object box = VehicleSetupReflection.invoke(ship, "getShipAABB");
+            if (box == null) {
+                VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId={}, aabb=missing",
+                        label, originalShipId, runtimeId);
+                return;
+            }
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId={}, "
+                            + "aabbMin=({}, {}, {}), aabbMax=({}, {}, {})",
+                    label, originalShipId, runtimeId,
+                    coordinate(box, "minX"), coordinate(box, "minY"), coordinate(box, "minZ"),
+                    coordinate(box, "maxX"), coordinate(box, "maxY"), coordinate(box, "maxZ"));
+        } catch (ReflectiveOperationException ignored) {
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId=unknown, aabb=unavailable",
+                    label, originalShipId);
+        }
+    }
+
     private static void runEnderTransmitterActions(ServerLevel level, BlockPos setupPos,
                                                    VehicleSetupBlockEntity setup, Map<Long, Object> ships,
                                                    String placementId) {
@@ -154,7 +192,7 @@ public final class VmodVehicleSetupCompat {
             if (action.type() != VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) continue;
             Object ship = ships.get(action.targetShipId());
             BlockPos target = ship == null || action.shipOffset() == null ? null
-                    : VehicleSetupReflection.positionOnShip(ship, action.shipOffset());
+                    : VehicleSetupExecutor.target(level, setupPos, action, ships);
             if (target == null) {
                 VSAnalogWarfare.LOGGER.warn("[VSAW] Ender transmitter at {} could not resolve after paste", setupPos);
                 continue;
@@ -170,12 +208,14 @@ public final class VmodVehicleSetupCompat {
             VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} could not resolve both placed ships", setupPos);
             return "DBW link could not resolve both placed ships";
         }
-        BlockPos source = VehicleSetupReflection.positionOnShip(sourceShip, action.targetOffset());
-        BlockPos target = VehicleSetupReflection.positionOnShip(targetShip, action.secondaryOffset());
+        BlockPos source = DbwCompat.resolveBackup(level, sourceShip, action.targetOffset(), targetShip);
+        BlockPos target = DbwCompat.resolveBackup(level, targetShip, action.secondaryOffset(), sourceShip);
         if (source == null || target == null) {
             VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} could not resolve backup positions", setupPos);
             return "DBW link could not resolve backup positions";
         }
+        VSAnalogWarfare.LOGGER.info("[VSAW] DBW relink positions: sourceShipId={}, source={}, targetShipId={}, target={}",
+                action.targetShipId(), source, action.secondaryShipId(), target);
         String error = DbwCompat.linkBackups(level, source, target);
         if (error != null) {
             VSAnalogWarfare.LOGGER.warn("[VSAW] DBW link at {} failed: {}", setupPos, error);

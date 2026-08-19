@@ -213,6 +213,7 @@ public class VehicleSetupEditorScreen extends Screen {
                 graphics.drawString(font, "Channel " + action.transmitterChannel() + "  Password: "
                         + (action.transmitterPassword() == null ? "" : action.transmitterPassword()),
                         left + 56, y + 30, 0xFFB7C3D0);
+                graphics.drawString(font, "X", right - 13, y + textY, 0xFFFF7777);
             } else if (page == Page.ACTIONS) {
                 graphics.drawString(font, abbreviatedSummary(action), left + 56, y + textY, 0xFFFFFFFF);
                 graphics.drawString(font, "ticks", right - 38, y + textY, 0xFFB7C3D0);
@@ -270,8 +271,13 @@ public class VehicleSetupEditorScreen extends Screen {
         if (!insideList(mouseX, mouseY)) return super.mouseClicked(mouseX, mouseY, button);
         int row = rowAt(mouseY);
         if (row >= 0 && button == 0 && page == Page.TRANSMITTERS) {
-            selectedTransmitter = row;
-            updateShowButton();
+            int right = width / 2 + 154;
+            if (mouseX >= right - 20) {
+                send(VehicleSetupEditorPacket.Operation.DELETE, row, 0);
+            } else {
+                selectedTransmitter = row;
+                updateShowButton();
+            }
             return true;
         }
         if (row >= 0 && button == 0 && page != Page.TRANSMITTERS) {

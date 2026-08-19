@@ -95,7 +95,8 @@ public final class VehicleSetupRecordingManager {
             serverPlayer.displayClientMessage(Component.literal("Vehicle setup could not record controller link: hub is not on a loaded ship."), true);
             return;
         }
-        recordAction(serverPlayer, setup, VehicleSetupAction.createTweakedController(hubPosition.shipId(), hubPosition.offset(), controller));
+        recordAction(serverPlayer, setup, VehicleSetupAction.createTweakedController(
+                hubPosition.shipId(), hub.subtract(setup.getBlockPos()), controller));
         serverPlayer.displayClientMessage(Component.literal("Vehicle setup recorded controller link: " + setup.actionSummary() + "."), true);
     }
 
@@ -246,10 +247,11 @@ public final class VehicleSetupRecordingManager {
                                 && (ship == null ? action.targetShipId() < 0L : action.targetShipId() == ship.shipId()
                                 && ship.offset().equals(action.shipOffset())));
                 if (!duplicate) {
-                setup.addMarkedRemoval(VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
+                    setup.addMarkedRemoval(VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
                             ship == null ? null : ship.offset(), targetOffset,
                             player.level().getBlockState(event.getPos())));
-                    player.displayClientMessage(Component.literal("Marked temporary block for removal."), true);
+                    player.displayClientMessage(Component.literal("Marked temporary block for removal. Total marked: "
+                            + setup.markedRemovals().size() + "."), true);
                 }
             }
             if (event.getPos().equals(removalAnchor) || player.level().getBlockState(event.getPos()).isAir()) {
@@ -305,7 +307,8 @@ public final class VehicleSetupRecordingManager {
             do {
                 java.util.List<VehicleSetupAction> phaseActions = run.removing ? run.removals : run.actions;
                 VehicleSetupAction action = phaseActions.get(run.index++);
-                String error = VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action);
+                String error = VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action,
+                        null, null, run.index - 1);
                 if (error == null) { if (run.removing) run.removalSucceeded++; else run.succeeded++; }
                 else if (run.firstError == null) run.firstError = error;
                 if (run.index >= phaseActions.size()) {
