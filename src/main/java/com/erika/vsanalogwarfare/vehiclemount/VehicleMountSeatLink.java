@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.vehiclemount;
 
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -69,6 +70,20 @@ public record VehicleMountSeatLink(String role, UUID seatUuid, BlockPos seatPos,
                 } catch (ReflectiveOperationException ignored) { }
             }
         }
-        return ship == null ? null : VehicleSetupReflection.positionOnShip(ship, shipOffset);
+        BlockPos resolved = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, shipOffset);
+        if (resolved != null && handle != null && shipId >= 0L && handle.shipId() == shipId
+                && shipOffset != null && handle.shipOffset() != null) {
+            BlockPos anchor = handle.getBlockPos();
+            BlockPos seat = anchor.offset(shipOffset.subtract(handle.shipOffset()));
+            if (level.getBlockState(seat).getBlock() instanceof SeatBlock) {
+                if (!seat.equals(resolved)) {
+                    VSAnalogWarfare.LOGGER.warn("[VSAW setup-debug] Same-ship seat correction: "
+                                    + "originalShipId={}, aabbTarget={}, anchorTarget={}, delta={}",
+                            shipId, resolved, seat, seat.subtract(resolved));
+                }
+                return seat;
+            }
+        }
+        return resolved;
     }
 }

@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.vehiclemount;
 
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupShipPosition;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
@@ -15,6 +16,8 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import javax.annotation.Nullable;
 
 public class VehicleMountHandleBlockEntity extends BlockEntity {
     private final List<VehicleMountSeatLink> seats = new ArrayList<>();
@@ -89,20 +92,33 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
 
     public BlockPos currentPosition() {
         if (level == null || shipId < 0L || shipOffset == null) return worldPosition;
-        Object mapped = placedShips == null ? null : placedShips.get(shipId);
+        BlockPos resolved = resolveShipPosition(shipId, shipOffset);
+        if (resolved != null && level.getBlockEntity(resolved) instanceof VehicleMountHandleBlockEntity) {
+            return resolved;
+        }
+        if (resolved != null && !resolved.equals(worldPosition)) {
+            VSAnalogWarfare.LOGGER.warn("[VSAW setup-debug] Handle position corrected: shipId={}, "
+                            + "aabbTarget={}, blockEntity={}, delta={}",
+                    shipId, resolved, worldPosition, worldPosition.subtract(resolved));
+        }
+        return worldPosition;
+    }
+
+    @Nullable private BlockPos resolveShipPosition(long targetShipId, BlockPos targetShipOffset) {
+        Object mapped = placedShips == null ? null : placedShips.get(targetShipId);
         if (mapped != null) {
-            BlockPos resolved = VehicleSetupReflection.positionOnShip(mapped, shipOffset);
+            BlockPos resolved = VehicleSetupReflection.positionOnShip(mapped, targetShipOffset);
             if (resolved != null) return resolved;
         }
         for (Object ship : com.erika.vsanalogwarfare.scope.compat.VsCompat.getAllShips(level)) {
             try {
-                if (((Number) VehicleSetupReflection.invoke(ship, "getId")).longValue() == shipId) {
-                    BlockPos resolved = VehicleSetupReflection.positionOnShip(ship, shipOffset);
+                if (((Number) VehicleSetupReflection.invoke(ship, "getId")).longValue() == targetShipId) {
+                    BlockPos resolved = VehicleSetupReflection.positionOnShip(ship, targetShipOffset);
                     if (resolved != null) return resolved;
                 }
             } catch (ReflectiveOperationException ignored) { }
         }
-        return worldPosition;
+        return null;
     }
 
     public Vec3 currentWorldPosition() {
