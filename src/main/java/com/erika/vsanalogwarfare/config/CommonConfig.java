@@ -9,6 +9,7 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.IntValue MOUSE_AIM_TARGET_TIMEOUT_TICKS;
     public static final ForgeConfigSpec.DoubleValue MOUSE_AIM_RATE_MULTIPLIER;
     public static final ForgeConfigSpec.DoubleValue MAX_RANGEFINDER_DISTANCE;
+    public static final ForgeConfigSpec.BooleanValue DISABLE_CONTRAPTION_ENTITY_COLLISION;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -34,6 +35,12 @@ public final class CommonConfig {
                 .defineInRange("maxRangefinderDistance", 2000.0D, 10.0D, 10000.0D);
         builder.pop();
 
+        builder.push("contraption");
+        DISABLE_CONTRAPTION_ENTITY_COLLISION = builder
+                .comment("When true, Create contraptions do not physically collide with entities.")
+                .define("disableEntityCollision", false);
+        builder.pop();
+
         SPEC = builder.build();
     }
 
@@ -47,4 +54,5 @@ public final class CommonConfig {
 
     // Add the new getter
     public static double maxRangefinderDistance() { return MAX_RANGEFINDER_DISTANCE.get(); }
+    public static boolean disableContraptionEntityCollision() { return DISABLE_CONTRAPTION_ENTITY_COLLISION.get(); }
 }

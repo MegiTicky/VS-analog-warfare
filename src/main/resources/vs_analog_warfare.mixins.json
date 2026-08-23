@@ -6,6 +6,7 @@
   "plugin": "com.erika.vsanalogwarfare.mixin.VsawMixinConfigPlugin",
   "refmap": "vs_analog_warfare.mixins.refmap.json",
   "mixins": [
+    "AbstractContraptionEntityMixin",
     "MountedDualCannonContraptionMixin"
   ],
   "client": [
