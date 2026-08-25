@@ -15,20 +15,13 @@ public record SetScrewdriverModePacket(int mode) {
         NetworkEvent.Context context = contextSupplier.get();
         context.enqueueWork(() -> {
             ServerPlayer player = context.getSender();
-            if (player != null && player.isShiftKeyDown()
-                    && player.getMainHandItem().getItem() instanceof AnalogScrewdriverItem) {
+            if (player != null && player.getMainHandItem().getItem() instanceof AnalogScrewdriverItem) {
                 int mode = Math.max(AnalogScrewdriverItem.REGULAR_MODE,
                         Math.min(AnalogScrewdriverItem.TRANSMITTER_MODE, packet.mode));
                 AnalogScrewdriverItem.setMode(player.getMainHandItem(), mode);
                 if (mode != AnalogScrewdriverItem.TRANSMITTER_MODE) {
                     com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupRecordingManager.stopTransmitterRecording(player);
                 }
-                String message = switch (mode) {
-                    case AnalogScrewdriverItem.REMOVAL_MODE_VALUE -> "Screwdriver mode: mark for removal";
-                    case AnalogScrewdriverItem.TRANSMITTER_MODE -> "Screwdriver mode: energy transmitter scan";
-                    default -> "Screwdriver mode: regular";
-                };
-                player.displayClientMessage(net.minecraft.network.chat.Component.literal(message), true);
             }
         });
         context.setPacketHandled(true);

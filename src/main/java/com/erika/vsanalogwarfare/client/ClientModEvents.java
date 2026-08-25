@@ -6,6 +6,8 @@ import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
+import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -27,5 +29,11 @@ public final class ClientModEvents {
         event.register(ClientKeyMappings.SCOPE_RANGEFINDER);
         event.register(ClientKeyMappings.SCOPE_ZEROING);
         event.register(ClientKeyMappings.VEHICLE_MOUNT);
+    }
+
+    @SubscribeEvent
+    public static void registerGuiOverlays(RegisterGuiOverlaysEvent event) {
+        event.registerAbove(VanillaGuiOverlay.HOTBAR.id(), "analog_screwdriver",
+                AnalogScrewdriverOverlay::render);
     }
 }

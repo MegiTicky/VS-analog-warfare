@@ -50,6 +50,7 @@ public final class ClientForgeEvents {
     @SubscribeEvent
     public static void onClientDisconnect(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientTransmitterHighlight.clear();
+        AnalogScrewdriverOverlay.reset();
         ClientScopeState.set(false, 70.0f, 3, null, null,
                 0.0, 0.0, 0.0, 0.0f, 0.0f,
                 0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0);
@@ -80,6 +81,7 @@ public final class ClientForgeEvents {
             return;
         }
         Minecraft mc = Minecraft.getInstance();
+        AnalogScrewdriverOverlay.tick();
         if (!mc.options.keyAttack.isDown()) {
             vehicleHandleAttackHeld = false;
         }
@@ -555,13 +557,7 @@ public final class ClientForgeEvents {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onMouseScroll(net.minecraftforge.client.event.InputEvent.MouseScrollingEvent event) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.screen == null && mc.player != null && mc.player.isShiftKeyDown()
-                && mc.player.getMainHandItem().getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem
-                && event.getScrollDelta() != 0) {
-            int mode = com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem.mode(mc.player.getMainHandItem());
-            int nextMode = Math.floorMod(mode + (event.getScrollDelta() > 0 ? 1 : -1), 3);
-            com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
-                    new com.erika.vsanalogwarfare.network.SetScrewdriverModePacket(nextMode));
+        if (mc.screen == null && AnalogScrewdriverOverlay.mouseScrolled(event.getScrollDelta())) {
             event.setCanceled(true);
             return;
         }
