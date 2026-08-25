@@ -1,6 +1,7 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
+import com.erika.vsanalogwarfare.config.ClientConfig;
 import com.erika.vsanalogwarfare.registry.ModBlocks;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
@@ -40,6 +41,7 @@ import java.util.UUID;
 public final class VehicleSetupRecordingManager {
     private static final Map<UUID, BlockPos> ACTIVE_RECORDINGS = new HashMap<>();
     private static final Map<UUID, PendingInteraction> PENDING_INTERACTIONS = new HashMap<>();
+    private static final Map<UUID, PendingTallyhoPlacement> PENDING_TALLYHO_PLACEMENTS = new HashMap<>();
     private static final Map<UUID, PendingLeftClick> PENDING_LEFT_CLICKS = new HashMap<>();
     private static final Set<UUID> REPLAYING_INTERACTIONS = new HashSet<>();
     private static final Map<UUID, Long> LAST_RECORDED_TICKS = new HashMap<>();
@@ -231,11 +233,15 @@ public final class VehicleSetupRecordingManager {
 
     @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = true)
     public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)
-                || event.isCanceled() && !event.getCancellationResult().consumesAction()) return;
+        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)) return;
+        ItemStack item = event.getItemStack();
+        boolean tallyhoPlacement = TallyhoCompat.isPlacementItem(item);
+        if (!tallyhoPlacement && event.isCanceled() && !event.getCancellationResult().consumesAction()) {
+            return;
+        }
         BlockPos removalAnchor = ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID());
-        if (event.getItemStack().getItem() instanceof AnalogScrewdriverItem
-                && AnalogScrewdriverItem.removalMode(event.getItemStack()) && removalAnchor != null) {
+        if (item.getItem() instanceof AnalogScrewdriverItem
+                && AnalogScrewdriverItem.removalMode(item) && removalAnchor != null) {
             if (player.level().getBlockEntity(removalAnchor) instanceof VehicleSetupBlockEntity setup
                     && event.getPos().equals(removalAnchor)) {
                 toggleRemovalRecording(player, setup);
@@ -260,7 +266,24 @@ public final class VehicleSetupRecordingManager {
             event.setCanceled(true); event.setCancellationResult(InteractionResult.CONSUME); return;
         }
         VehicleSetupBlockEntity setup = activeSetup(player);
-        ItemStack item = event.getItemStack();
+        if (tallyhoPlacement) {
+            if (ClientConfig.ignoreTallyhoEntityPlacement()) {
+                return;
+            }
+            if (setup == null || event.getPos().equals(setup.getBlockPos())) {
+                return;
+            }
+            if (event.getUseItem() == Event.Result.DENY) {
+                return;
+            }
+            Vec3 hitPosition = event.getHitVec().getLocation();
+            PENDING_TALLYHO_PLACEMENTS.put(player.getUUID(), new PendingTallyhoPlacement(
+                    setup.getBlockPos(), player.level().getGameTime() + 1L, 0,
+                    hitPosition, Vec3.atCenterOf(event.getPos()),
+                    TallyhoCompat.nearbyEntityIds((net.minecraft.server.level.ServerLevel) player.level(),
+                            hitPosition, Vec3.atCenterOf(event.getPos()))));
+            return;
+        }
         if (setup == null || event.getPos().equals(setup.getBlockPos()) || item.getItem() instanceof BlockItem
                 || item.getItem() instanceof AnalogScrewdriverItem) return;
         BlockPos pos = event.getPos();
@@ -299,6 +322,30 @@ public final class VehicleSetupRecordingManager {
                 continue;
             }
             recordGenericInteraction(player, setup, interaction);
+        }
+        Map<UUID, PendingTallyhoPlacement> tallyhoPlacements = new HashMap<>(PENDING_TALLYHO_PLACEMENTS);
+        PENDING_TALLYHO_PLACEMENTS.clear();
+        for (Map.Entry<UUID, PendingTallyhoPlacement> entry : tallyhoPlacements.entrySet()) {
+            ServerPlayer player = event.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player == null || player.level().getGameTime() < entry.getValue().captureTick()) {
+                if (player != null) PENDING_TALLYHO_PLACEMENTS.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            PendingTallyhoPlacement placement = entry.getValue();
+            VehicleSetupBlockEntity setup = activeSetup(player);
+            if (setup == null || !setup.getBlockPos().equals(placement.anchor())) continue;
+            TallyhoCompat.CapturedEntity captured = TallyhoCompat.captureNewEntity(
+                    (net.minecraft.server.level.ServerLevel) player.level(), placement.position(),
+                    placement.alternatePosition(), placement.existingEntities());
+            if (captured == null) {
+                if (placement.attempt() < 4) {
+                    PENDING_TALLYHO_PLACEMENTS.put(entry.getKey(), placement.withNextAttempt());
+                }
+                continue;
+            }
+            recordTallyhoEntity(player, setup, captured);
+            player.displayClientMessage(Component.literal("Vehicle setup automatically recorded Tallyho entity: "
+                    + captured.entityId() + ". " + setup.actionSummary() + "."), true);
         }
         for (java.util.Iterator<Map.Entry<BlockPos, PendingRun>> iterator = PENDING_RUNS.entrySet().iterator(); iterator.hasNext();) {
             Map.Entry<BlockPos, PendingRun> entry = iterator.next();
@@ -410,6 +457,14 @@ public final class VehicleSetupRecordingManager {
                 + setup.actionSummary() + "."), true);
     }
 
+    private static void recordTallyhoEntity(ServerPlayer player, VehicleSetupBlockEntity setup,
+                                            TallyhoCompat.CapturedEntity captured) {
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), captured.supportPosition());
+        recordAction(player, setup, VehicleSetupAction.spawnTallyhoEntity(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), captured.supportPosition().subtract(setup.getBlockPos()),
+                captured.positionOffset(), captured.entityId(), captured.baseYaw(), captured.variant(), captured.state()));
+    }
+
     public static void beginInteractionReplay(ServerPlayer player) {
         REPLAYING_INTERACTIONS.add(player.getUUID());
     }
@@ -448,7 +503,15 @@ public final class VehicleSetupRecordingManager {
 
     private record PendingInteraction(BlockPos anchor, BlockPos pos, BlockState initialState, ItemStack item,
                                       InteractionHand hand, Direction face, Vec3 hitOffset, boolean handled,
-                                       boolean sneaking) { }
+                                        boolean sneaking) { }
+
+    private record PendingTallyhoPlacement(BlockPos anchor, long captureTick, int attempt, Vec3 position,
+                                           Vec3 alternatePosition, java.util.Set<UUID> existingEntities) {
+        private PendingTallyhoPlacement withNextAttempt() {
+            return new PendingTallyhoPlacement(anchor, captureTick + 1L, attempt + 1,
+                    position, alternatePosition, existingEntities);
+        }
+    }
 
     private static final class PendingRun {
         private final ServerPlayer player;

@@ -27,6 +27,8 @@ import javax.annotation.Nullable;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 /** Optional reflection bridge for Tallyho's directly placed entities. */
@@ -51,6 +53,8 @@ public final class TallyhoCompat {
     private static final ResourceLocation CROWS_ITEM = new ResourceLocation(MOD_ID, "crows_item");
     private static final ResourceLocation TARGETING_POD_ITEM = new ResourceLocation(MOD_ID, "tgp_remote");
     private static final ResourceLocation REMOTE_CAMERA_ITEM = new ResourceLocation(MOD_ID, "remote_camera");
+    private static final ResourceLocation HULL_MG_ITEM = new ResourceLocation(MOD_ID, "hull_mg");
+    private static final ResourceLocation COAX_MG_ITEM = new ResourceLocation(MOD_ID, "coax_mg");
 
     private static final String MISSILE_REGISTRY_CLASS = "edn.stratodonut.tallyho.missile.MissileRegistry";
     private static final String GUN_MOUNT_CLASS = "edn.stratodonut.tallyho.entity.GunMountEntity";
@@ -128,6 +132,35 @@ public final class TallyhoCompat {
         Float baseYaw = readFloatField(entity, BASE_YAW_FIELD);
         return new CapturedEntity(supportPosition, positionOffset, key.toString(),
                 baseYaw == null ? entity.getYRot() : baseYaw, variant, state);
+    }
+
+    public static boolean isPlacementItem(ItemStack stack) {
+        if (!isLoaded()) return false;
+        ResourceLocation key = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        return HULL_MG_ITEM.equals(key) || COAX_MG_ITEM.equals(key)
+                || GUN_MOUNT_ITEM.equals(key) || TRIPOD_ITEM.equals(key) || CHIN_TURRET_ITEM.equals(key)
+                || CROWS_ITEM.equals(key) || TARGETING_POD_ITEM.equals(key)
+                || PERISCOPE_ARC_ITEM.equals(key) || PERISCOPE_360_ITEM.equals(key)
+                || REMOTE_CAMERA_ITEM.equals(key);
+    }
+
+    @Nullable
+    public static CapturedEntity captureNewEntity(ServerLevel level, Vec3 position,
+                                                  @Nullable Vec3 alternatePosition, Set<UUID> existingEntities) {
+        return nearbyEntities(level, position, alternatePosition).stream()
+                .filter(entity -> !existingEntities.contains(entity.getUUID()))
+                .filter(Entity::isAddedToWorld)
+                .map(TallyhoCompat::capture)
+                .filter(Objects::nonNull)
+                .findFirst()
+                .orElse(null);
+    }
+
+    public static Set<UUID> nearbyEntityIds(ServerLevel level, Vec3 position,
+                                            @Nullable Vec3 alternatePosition) {
+        return nearbyEntities(level, position, alternatePosition).stream()
+                .map(Entity::getUUID)
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     @Nullable

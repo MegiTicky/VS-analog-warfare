@@ -7,6 +7,7 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.DoubleValue SCOPE_ZOOM_SENSITIVITY_MULTIPLIER;
     public static final ForgeConfigSpec.BooleanValue DISABLE_PLAYER_BLOCK_INTERACTION_WHILE_SCOPED;
     public static final ForgeConfigSpec.IntValue ZEROING_STEP;
+    public static final ForgeConfigSpec.BooleanValue IGNORE_TALLYHO_ENTITY_PLACEMENT;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -20,6 +21,11 @@ public final class ClientConfig {
         ZEROING_STEP = builder
                 .comment("Distance increment (in meters) when adjusting sight zero with scroll wheel while holding the zeroing key.")
                 .defineInRange("zeroingStep", 50, 10, 500);
+        builder.pop();
+        builder.push("actionToIgnore");
+        IGNORE_TALLYHO_ENTITY_PLACEMENT = builder
+                .comment("When true, generic Tallyho entity placement is ignored by Vehicle Setup. Tallyho entities can still be recorded with the Analog Screwdriver.")
+                .define("ignoreTallyhoEntityPlacement", false);
         builder.pop();
         SPEC = builder.build();
     }
@@ -37,5 +43,9 @@ public final class ClientConfig {
 
     public static int zeroingStep() {
         return ZEROING_STEP.get();
+    }
+
+    public static boolean ignoreTallyhoEntityPlacement() {
+        return IGNORE_TALLYHO_ENTITY_PLACEMENT.get();
     }
 }
