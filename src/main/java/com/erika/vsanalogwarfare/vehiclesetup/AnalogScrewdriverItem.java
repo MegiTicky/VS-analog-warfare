@@ -22,6 +22,10 @@ public class AnalogScrewdriverItem extends Item {
     private static final String ANCHOR = "VehicleSetupAnchor";
     private static final String ENDER_PAIR_SOURCE = "VSAWEnderPairSource";
     private static final String REMOVAL_MODE = "VSAWRemovalMode";
+    private static final String MODE = "VSAWScrewdriverMode";
+    public static final int REGULAR_MODE = 0;
+    public static final int REMOVAL_MODE_VALUE = 1;
+    public static final int TRANSMITTER_MODE = 2;
     public AnalogScrewdriverItem(Properties properties) { super(properties); }
 
     @Override public InteractionResult useOn(UseOnContext context) {
@@ -29,6 +33,13 @@ public class AnalogScrewdriverItem extends Item {
         if (level.isClientSide || !(context.getPlayer() instanceof ServerPlayer player)) return InteractionResult.SUCCESS;
         ItemStack recorder = context.getItemInHand();
         BlockPos clicked = context.getClickedPos();
+        if (mode(recorder) == TRANSMITTER_MODE
+                && !(level.getBlockEntity(clicked) instanceof VehicleSetupBlockEntity)) {
+            if (!VehicleSetupRecordingManager.scanTransmitterShip(player, clicked)) {
+                return fail(player, "Start transmitter recording by right-clicking a Vehicle Setup block first.");
+            }
+            return InteractionResult.CONSUME;
+        }
         if (player.isShiftKeyDown() && recorder.getOrCreateTag().getLong("VehicleMountHandle") != 0L) {
             if (level.getBlockState(clicked).getBlock() instanceof SeatBlock
                     && VehicleMountManager.tryOpenSeatRoleName(player, recorder, clicked)) return InteractionResult.CONSUME;
@@ -41,6 +52,7 @@ public class AnalogScrewdriverItem extends Item {
             OptionalModCompatibility.warnIfIssues(player);
             recorder.getOrCreateTag().putLong(ANCHOR, clicked.asLong());
             if (removalMode(recorder)) VehicleSetupRecordingManager.toggleRemovalRecording(player, setupBlock);
+            else if (mode(recorder) == TRANSMITTER_MODE) VehicleSetupRecordingManager.toggleTransmitterRecording(player, setupBlock);
             else if (player.isShiftKeyDown()) VehicleSetupRecordingManager.inspect(player, setupBlock);
             else VehicleSetupRecordingManager.toggle(player, setupBlock);
             return InteractionResult.CONSUME;
@@ -76,8 +88,24 @@ public class AnalogScrewdriverItem extends Item {
         return InteractionResult.PASS;
     }
 
-    public static boolean removalMode(ItemStack stack) { return stack.getOrCreateTag().getBoolean(REMOVAL_MODE); }
-    public static void setRemovalMode(ItemStack stack, boolean removalMode) { stack.getOrCreateTag().putBoolean(REMOVAL_MODE, removalMode); }
+    public static int mode(ItemStack stack) {
+        CompoundTag tag = stack.getOrCreateTag();
+        if (tag.contains(MODE)) return Math.max(REGULAR_MODE, Math.min(TRANSMITTER_MODE, tag.getInt(MODE)));
+        return tag.getBoolean(REMOVAL_MODE) ? REMOVAL_MODE_VALUE : REGULAR_MODE;
+    }
+
+    public static boolean removalMode(ItemStack stack) { return mode(stack) == REMOVAL_MODE_VALUE; }
+
+    public static void setMode(ItemStack stack, int mode) {
+        int normalized = Math.max(REGULAR_MODE, Math.min(TRANSMITTER_MODE, mode));
+        CompoundTag tag = stack.getOrCreateTag();
+        tag.putInt(MODE, normalized);
+        tag.putBoolean(REMOVAL_MODE, normalized == REMOVAL_MODE_VALUE);
+    }
+
+    public static void setRemovalMode(ItemStack stack, boolean removalMode) {
+        setMode(stack, removalMode ? REMOVAL_MODE_VALUE : REGULAR_MODE);
+    }
 
     private static InteractionResult success(ServerPlayer player, String message) { player.displayClientMessage(Component.literal(message), true); return InteractionResult.CONSUME; }
     private static InteractionResult fail(ServerPlayer player, String message) { player.displayClientMessage(Component.literal(message), true); return InteractionResult.FAIL; }

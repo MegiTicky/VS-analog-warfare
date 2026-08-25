@@ -47,6 +47,7 @@ public final class VehicleSetupRecordingManager {
     private static final Map<UUID, Long> LAST_RECORDED_TICKS = new HashMap<>();
     private static final Map<BlockPos, PendingRun> PENDING_RUNS = new HashMap<>();
     private static final Map<UUID, BlockPos> ACTIVE_REMOVAL_RECORDINGS = new HashMap<>();
+    private static final Map<UUID, BlockPos> ACTIVE_TRANSMITTER_RECORDINGS = new HashMap<>();
 
     private VehicleSetupRecordingManager() { }
 
@@ -60,6 +61,8 @@ public final class VehicleSetupRecordingManager {
             return;
         }
         OptionalModCompatibility.warnIfIssues(player);
+        ACTIVE_TRANSMITTER_RECORDINGS.remove(playerId);
+        ACTIVE_REMOVAL_RECORDINGS.remove(playerId);
         ACTIVE_RECORDINGS.put(playerId, setup.getBlockPos());
         LAST_RECORDED_TICKS.put(playerId, player.level().getGameTime());
         player.displayClientMessage(Component.literal(
@@ -118,7 +121,31 @@ public final class VehicleSetupRecordingManager {
     }
     public static void toggleRemovalRecording(ServerPlayer player, VehicleSetupBlockEntity setup) {
         if (setup.getBlockPos().equals(ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID()))) { ACTIVE_REMOVAL_RECORDINGS.remove(player.getUUID()); player.displayClientMessage(Component.literal("Removal marker recording stopped."), true); }
-        else { ACTIVE_REMOVAL_RECORDINGS.put(player.getUUID(), setup.getBlockPos()); player.displayClientMessage(Component.literal("Removal marker recording started. Right-click temporary blocks to mark them."), true); }
+        else {
+            ACTIVE_RECORDINGS.remove(player.getUUID());
+            ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
+            ACTIVE_REMOVAL_RECORDINGS.put(player.getUUID(), setup.getBlockPos());
+            player.displayClientMessage(Component.literal("Removal marker recording started. Right-click temporary blocks to mark them."), true);
+        }
+    }
+
+    public static void toggleTransmitterRecording(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        UUID playerId = player.getUUID();
+        if (setup.getBlockPos().equals(ACTIVE_TRANSMITTER_RECORDINGS.get(playerId))) {
+            ACTIVE_TRANSMITTER_RECORDINGS.remove(playerId);
+            player.displayClientMessage(Component.literal("Energy transmitter recording stopped."), true);
+            return;
+        }
+        ACTIVE_RECORDINGS.remove(playerId);
+        LAST_RECORDED_TICKS.remove(playerId);
+        ACTIVE_REMOVAL_RECORDINGS.remove(playerId);
+        ACTIVE_TRANSMITTER_RECORDINGS.put(playerId, setup.getBlockPos());
+        player.displayClientMessage(Component.literal(
+                "Energy transmitter recording started. Right-click any block on a ship to scan it, then use the recorder on this block again to stop."), true);
+    }
+
+    public static void stopTransmitterRecording(ServerPlayer player) {
+        ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
     }
 
     public static void recordEnderTransmitter(ServerPlayer player, BlockPos pos, int channel, String password) {
@@ -144,11 +171,22 @@ public final class VehicleSetupRecordingManager {
     }
 
     public static void scanEnderTransmitters(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        scanEnderTransmitters(player, setup, setup.getBlockPos());
+    }
+
+    public static boolean scanTransmitterShip(ServerPlayer player, BlockPos scanOrigin) {
+        VehicleSetupBlockEntity setup = activeTransmitterSetup(player);
+        if (setup == null) return false;
+        scanEnderTransmitters(player, setup, scanOrigin);
+        return true;
+    }
+
+    private static void scanEnderTransmitters(ServerPlayer player, VehicleSetupBlockEntity setup, BlockPos scanOrigin) {
         java.util.List<EnderTransmissionCompat.DetectedTransmitter> detected =
-                EnderTransmissionCompat.scan(player.level(), setup.getBlockPos());
+                EnderTransmissionCompat.scan(player.level(), scanOrigin);
         if (detected.isEmpty()) {
             player.displayClientMessage(Component.literal(
-                    "No energy transmitters found on the Vehicle Setup ship."), true);
+                    "No energy transmitters found on the clicked ship."), true);
             return;
         }
         for (EnderTransmissionCompat.DetectedTransmitter transmitter : detected) {
@@ -406,6 +444,15 @@ public final class VehicleSetupRecordingManager {
         Level level = player.level();
         if (level.getBlockEntity(anchor) instanceof VehicleSetupBlockEntity setup) return setup;
         ACTIVE_RECORDINGS.remove(player.getUUID());
+        return null;
+    }
+
+    private static VehicleSetupBlockEntity activeTransmitterSetup(ServerPlayer player) {
+        if (REPLAYING_INTERACTIONS.contains(player.getUUID())) return null;
+        BlockPos anchor = ACTIVE_TRANSMITTER_RECORDINGS.get(player.getUUID());
+        if (anchor == null) return null;
+        if (player.level().getBlockEntity(anchor) instanceof VehicleSetupBlockEntity setup) return setup;
+        ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
         return null;
     }
 

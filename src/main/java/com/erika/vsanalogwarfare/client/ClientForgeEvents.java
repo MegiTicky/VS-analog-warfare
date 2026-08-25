@@ -558,9 +558,10 @@ public final class ClientForgeEvents {
         if (mc.screen == null && mc.player != null && mc.player.isShiftKeyDown()
                 && mc.player.getMainHandItem().getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem
                 && event.getScrollDelta() != 0) {
-            boolean removalMode = com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem.removalMode(mc.player.getMainHandItem());
+            int mode = com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem.mode(mc.player.getMainHandItem());
+            int nextMode = Math.floorMod(mode + (event.getScrollDelta() > 0 ? 1 : -1), 3);
             com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
-                    new com.erika.vsanalogwarfare.network.SetScrewdriverModePacket(removalMode ? 0 : 1));
+                    new com.erika.vsanalogwarfare.network.SetScrewdriverModePacket(nextMode));
             event.setCanceled(true);
             return;
         }
