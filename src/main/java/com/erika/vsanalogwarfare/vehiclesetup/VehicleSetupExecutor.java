@@ -58,7 +58,7 @@ public final class VehicleSetupExecutor {
                 action.targetOffset(), debugTarget, before);
         String result = switch (action.type()) {
             case PLACE_BLOCK -> place(level, target(level, anchor, action, ships), action.blockState());
-            case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships));
+            case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships), action);
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
             case CREATE_TWEAKED_CONTROLLER -> controller(level, anchor, player, action, ships);
             case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level,
@@ -138,8 +138,39 @@ public final class VehicleSetupExecutor {
         return resolved;
     }
 
-    @Nullable private static String remove(Level level, BlockPos pos) {
-        return level.getBlockState(pos).isAir() || level.removeBlock(pos, false) ? null : "could not remove block";
+    @Nullable private static String remove(Level level, BlockPos pos, VehicleSetupAction action) {
+        BlockState recorded = action.blockState() == null ? null
+                : NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), action.blockState());
+        if (recorded != null && recorded.isAir()) recorded = null;
+        BlockState current = level.getBlockState(pos);
+        if (current.isAir()) {
+            if (recorded == null) return null;
+            BlockPos found = findBlockNearby(level, pos, recorded);
+            if (found == null) return "temporary block not found near " + pos;
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
+                    pos, found, BuiltInRegistries.BLOCK.getKey(recorded.getBlock()));
+            pos = found;
+        } else if (recorded != null && current.getBlock() != recorded.getBlock()) {
+            BlockPos found = findBlockNearby(level, pos, recorded);
+            if (found == null) return "temporary block not found near " + pos;
+            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
+                    pos, found, BuiltInRegistries.BLOCK.getKey(recorded.getBlock()));
+            pos = found;
+        }
+        return level.removeBlock(pos, false) ? null : "could not remove block";
+    }
+
+    @Nullable private static BlockPos findBlockNearby(Level level, BlockPos pos, BlockState expected) {
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                for (int z = -1; z <= 1; z++) {
+                    if (x == 0 && y == 0 && z == 0) continue;
+                    BlockPos candidate = pos.offset(x, y, z);
+                    if (level.getBlockState(candidate).getBlock() == expected.getBlock()) return candidate;
+                }
+            }
+        }
+        return null;
     }
 
     @Nullable private static String place(Level level, BlockPos pos, @Nullable CompoundTag savedState) {
