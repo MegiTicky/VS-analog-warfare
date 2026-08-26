@@ -1,6 +1,7 @@
 package com.erika.vsanalogwarfare.client;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
+import com.erika.vsanalogwarfare.ponder.VehicleSetupPonder;
 import com.erika.vsanalogwarfare.registry.ModEntities;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import net.minecraftforge.api.distmarker.Dist;
@@ -10,6 +11,7 @@ import net.minecraftforge.client.event.RegisterGuiOverlaysEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 
 @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public final class ClientModEvents {
@@ -35,5 +37,10 @@ public final class ClientModEvents {
     public static void registerGuiOverlays(RegisterGuiOverlaysEvent event) {
         event.registerAbove(VanillaGuiOverlay.HOTBAR.id(), "analog_screwdriver",
                 AnalogScrewdriverOverlay::render);
+    }
+
+    @SubscribeEvent
+    public static void clientSetup(FMLClientSetupEvent event) {
+        VehicleSetupPonder.register();
     }
 }

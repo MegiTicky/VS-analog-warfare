@@ -222,10 +222,10 @@ public final class VehicleSetupExecutor {
         if (!ModList.get().isLoaded("drivebywire")) return "Drive By Wire is not installed";
         if (player == null) return "the schematic placer is offline";
         CompoundTag savedController = action.controller();
-        if (savedController == null || action.targetOffset() == null || ships == null) return "recorded controller mapping is missing";
-        Object ship = ships.get(action.targetShipId());
-        BlockPos hub = ship == null ? null : controllerHubPosition(level, anchor, ship, action.targetOffset());
-        if (hub == null) return "controller hub ship could not be resolved";
+        if (savedController == null || action.targetOffset() == null) return "recorded controller mapping is missing";
+        Object ship = ships == null ? null : ships.get(action.targetShipId());
+        BlockPos hub = controllerHubPosition(level, anchor, ship, action.targetOffset());
+        if (!isControllerHub(level, hub)) return "controller hub could not be found at the recorded position";
         ItemStack stack = ItemStack.of(savedController);
         ResourceLocation controllerId = BuiltInRegistries.ITEM.getKey(stack.getItem());
         if (!CREATE_CONTROLLER.equals(controllerId) && !TWEAKED_CONTROLLER.equals(controllerId)) {
@@ -238,11 +238,14 @@ public final class VehicleSetupExecutor {
         return null;
     }
 
-    private static BlockPos controllerHubPosition(Level level, BlockPos anchor, Object ship, BlockPos recordedOffset) {
+    private static BlockPos controllerHubPosition(Level level, BlockPos anchor, @Nullable Object ship,
+                                                  BlockPos recordedOffset) {
         BlockPos anchorCandidate = anchor.offset(recordedOffset);
         if (isControllerHub(level, anchorCandidate)) return anchorCandidate;
-        BlockPos shipCandidate = VehicleSetupReflection.positionOnShip(ship, recordedOffset);
-        if (shipCandidate != null && isControllerHub(level, shipCandidate)) return shipCandidate;
+        if (ship != null) {
+            BlockPos shipCandidate = VehicleSetupReflection.positionOnShip(ship, recordedOffset);
+            if (shipCandidate != null && isControllerHub(level, shipCandidate)) return shipCandidate;
+        }
         return anchorCandidate;
     }
 

@@ -84,6 +84,11 @@ public final class ModNetwork {
                 .decoder(SetScrewdriverModePacket::decode)
                 .consumerMainThread(SetScrewdriverModePacket::handle)
                 .add();
+        CHANNEL.messageBuilder(ScrewdriverHudPacket.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(ScrewdriverHudPacket::encode)
+                .decoder(ScrewdriverHudPacket::decode)
+                .consumerMainThread(ScrewdriverHudPacket::handle)
+                .add();
         CHANNEL.messageBuilder(VehicleSetupEditorPacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
                 .encoder(VehicleSetupEditorPacket::encode)
                 .decoder(VehicleSetupEditorPacket::decode)

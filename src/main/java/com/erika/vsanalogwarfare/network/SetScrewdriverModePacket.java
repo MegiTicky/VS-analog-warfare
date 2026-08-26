@@ -22,6 +22,7 @@ public record SetScrewdriverModePacket(int mode) {
                 if (mode != AnalogScrewdriverItem.TRANSMITTER_MODE) {
                     com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupRecordingManager.stopTransmitterRecording(player);
                 }
+                com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupRecordingManager.sendHudState(player);
             }
         });
         context.setPacketHandled(true);

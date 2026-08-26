@@ -2,6 +2,8 @@ package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.config.ClientConfig;
+import com.erika.vsanalogwarfare.network.ModNetwork;
+import com.erika.vsanalogwarfare.network.ScrewdriverHudPacket;
 import com.erika.vsanalogwarfare.registry.ModBlocks;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
@@ -33,6 +35,8 @@ import net.minecraftforge.fml.common.Mod;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -57,7 +61,7 @@ public final class VehicleSetupRecordingManager {
         if (setup.getBlockPos().equals(current)) {
             ACTIVE_RECORDINGS.remove(playerId);
             LAST_RECORDED_TICKS.remove(playerId);
-            player.displayClientMessage(Component.literal("Vehicle setup recording stopped: " + setup.actionSummary() + "."), true);
+            sendHudState(player);
             return;
         }
         OptionalModCompatibility.warnIfIssues(player);
@@ -65,8 +69,7 @@ public final class VehicleSetupRecordingManager {
         ACTIVE_REMOVAL_RECORDINGS.remove(playerId);
         ACTIVE_RECORDINGS.put(playerId, setup.getBlockPos());
         LAST_RECORDED_TICKS.put(playerId, player.level().getGameTime());
-        player.displayClientMessage(Component.literal(
-                "Vehicle setup recording started. Place, break, or interact with blocks normally, then use the recorder on this block again to stop."), true);
+        sendHudState(player);
     }
 
     public static void inspect(ServerPlayer player, VehicleSetupBlockEntity setup) {
@@ -85,7 +88,6 @@ public final class VehicleSetupRecordingManager {
         recordAction(player, setup, VehicleSetupAction.linkDbwBackups(
                 sourcePosition.shipId(), sourcePosition.offset(),
                 targetPosition.shipId(), targetPosition.offset()));
-        player.displayClientMessage(Component.literal("Vehicle setup recorded DBW relink: " + setup.actionSummary() + "."), true);
     }
 
     public static void recordControllerLink(net.minecraft.world.entity.player.Player player, BlockPos hub,
@@ -102,7 +104,6 @@ public final class VehicleSetupRecordingManager {
         }
         recordAction(serverPlayer, setup, VehicleSetupAction.createTweakedController(
                 hubPosition.shipId(), hub.subtract(setup.getBlockPos()), controller));
-        serverPlayer.displayClientMessage(Component.literal("Vehicle setup recorded controller link: " + setup.actionSummary() + "."), true);
     }
 
     public static void recordTrackworkStiffness(net.minecraft.world.entity.player.Player player,
@@ -116,16 +117,17 @@ public final class VehicleSetupRecordingManager {
         recordAction(serverPlayer, setup, VehicleSetupAction.setTrackworkStiffness(
                 ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(),
                 clicked.subtract(setup.getBlockPos()), stiffness));
-        serverPlayer.displayClientMessage(Component.literal(
-                "Vehicle setup recorded suspension stiffness " + stiffness + "x: " + setup.actionSummary() + "."), true);
     }
     public static void toggleRemovalRecording(ServerPlayer player, VehicleSetupBlockEntity setup) {
-        if (setup.getBlockPos().equals(ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID()))) { ACTIVE_REMOVAL_RECORDINGS.remove(player.getUUID()); player.displayClientMessage(Component.literal("Removal marker recording stopped."), true); }
+        if (setup.getBlockPos().equals(ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID()))) {
+            ACTIVE_REMOVAL_RECORDINGS.remove(player.getUUID());
+            sendHudState(player);
+        }
         else {
             ACTIVE_RECORDINGS.remove(player.getUUID());
             ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
             ACTIVE_REMOVAL_RECORDINGS.put(player.getUUID(), setup.getBlockPos());
-            player.displayClientMessage(Component.literal("Removal marker recording started. Right-click temporary blocks to mark them."), true);
+            sendHudState(player);
         }
     }
 
@@ -133,19 +135,71 @@ public final class VehicleSetupRecordingManager {
         UUID playerId = player.getUUID();
         if (setup.getBlockPos().equals(ACTIVE_TRANSMITTER_RECORDINGS.get(playerId))) {
             ACTIVE_TRANSMITTER_RECORDINGS.remove(playerId);
-            player.displayClientMessage(Component.literal("Energy transmitter recording stopped."), true);
+            sendHudState(player);
             return;
         }
         ACTIVE_RECORDINGS.remove(playerId);
         LAST_RECORDED_TICKS.remove(playerId);
         ACTIVE_REMOVAL_RECORDINGS.remove(playerId);
         ACTIVE_TRANSMITTER_RECORDINGS.put(playerId, setup.getBlockPos());
-        player.displayClientMessage(Component.literal(
-                "Energy transmitter recording started. Right-click any block on a ship to scan it, then use the recorder on this block again to stop."), true);
+        sendHudState(player);
     }
 
     public static void stopTransmitterRecording(ServerPlayer player) {
         ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
+    }
+
+    public static void sendHudState(ServerPlayer player) {
+        ItemStack stack = player.getMainHandItem();
+        if (!(stack.getItem() instanceof AnalogScrewdriverItem)) return;
+
+        UUID playerId = player.getUUID();
+        int mode = AnalogScrewdriverItem.mode(stack);
+        int recordingMode = AnalogScrewdriverItem.REGULAR_MODE;
+        BlockPos anchor = ACTIVE_RECORDINGS.get(playerId);
+        if (anchor == null) {
+            recordingMode = AnalogScrewdriverItem.REMOVAL_MODE_VALUE;
+            anchor = ACTIVE_REMOVAL_RECORDINGS.get(playerId);
+        }
+        if (anchor == null) {
+            recordingMode = AnalogScrewdriverItem.TRANSMITTER_MODE;
+            anchor = ACTIVE_TRANSMITTER_RECORDINGS.get(playerId);
+        }
+        VehicleSetupBlockEntity setup = anchor == null ? null
+                : player.level().getBlockEntity(anchor) instanceof VehicleSetupBlockEntity value ? value : null;
+
+        if (setup == null) {
+            ModNetwork.sendToPlayer(player, new ScrewdriverHudPacket(false, mode, "", List.of()));
+            return;
+        }
+
+        List<VehicleSetupAction> actions = recordingMode == AnalogScrewdriverItem.REMOVAL_MODE_VALUE
+                ? setup.markedRemovals()
+                : setup.actions();
+        List<String> entries = new ArrayList<>();
+        for (VehicleSetupAction action : actions) {
+            if (recordingMode == AnalogScrewdriverItem.TRANSMITTER_MODE
+                    && action.type() != VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) continue;
+            entries.add(describeAction(action));
+        }
+        ModNetwork.sendToPlayer(player, new ScrewdriverHudPacket(true, recordingMode,
+                "Setup " + anchor.toShortString(), entries));
+    }
+
+    private static String describeAction(VehicleSetupAction action) {
+        String offset = action.targetOffset() == null ? "" : " at " + action.targetOffset().toShortString();
+        return switch (action.type()) {
+            case PLACE_BLOCK -> "Place block" + offset;
+            case REMOVE_BLOCK -> "Remove block" + offset;
+            case LINK_DBW_BACKUPS -> "Link DBW backups";
+            case CREATE_TWEAKED_CONTROLLER -> "Create controller link" + offset;
+            case SET_TRACKWORK_STIFFNESS -> "Set suspension to " + action.stiffness() + "x" + offset;
+            case SPAWN_TALLYHO_HULL_MG -> "Spawn hull MG" + offset;
+            case SPAWN_TALLYHO_ENTITY -> "Spawn " + (action.tallyhoEntity() == null ? "Tallyho entity" : action.tallyhoEntity()) + offset;
+            case GENERIC_BLOCK_INTERACTION -> "Interact with block" + offset;
+            case GENERIC_BLOCK_LEFT_CLICK -> "Left-click block" + offset;
+            case CONFIGURE_ENDER_TRANSMITTER -> "Configure Ender transmitter" + offset;
+        };
     }
 
     public static void recordEnderTransmitter(ServerPlayer player, BlockPos pos, int channel, String password) {
@@ -160,8 +214,6 @@ public final class VehicleSetupRecordingManager {
         }
         setup.upsertEnderTransmitter(timedAction(player, VehicleSetupAction.configureEnderTransmitter(
                 ship.shipId(), ship.offset(), pos.subtract(setup.getBlockPos()), channel, password)));
-        player.displayClientMessage(Component.literal("Vehicle setup recorded Ender transmitter: "
-                + setup.actionSummary() + "."), true);
     }
 
     public static void recordEnderTransmitterConfiguration(ServerPlayer player, KineticBlockEntity transmitter) {
@@ -262,9 +314,6 @@ public final class VehicleSetupRecordingManager {
         recordAction(player, setup, VehicleSetupAction.spawnTallyhoEntity(ship == null ? -1L : ship.shipId(),
                 ship == null ? null : ship.offset(), captured.supportPosition().subtract(setup.getBlockPos()),
                 captured.positionOffset(), captured.entityId(), captured.baseYaw(), captured.variant(), captured.state()));
-        player.displayClientMessage(Component.literal("Vehicle setup recorded Tallyho entity: "
-                + captured.entityId() + ". "
-                + setup.actionSummary() + "."), true);
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.CONSUME);
     }
@@ -294,8 +343,6 @@ public final class VehicleSetupRecordingManager {
                     setup.addMarkedRemoval(VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
                             ship == null ? null : ship.offset(), targetOffset,
                             player.level().getBlockState(event.getPos())));
-                    player.displayClientMessage(Component.literal("Marked temporary block for removal. Total marked: "
-                            + setup.markedRemovals().size() + "."), true);
                 }
             }
             if (event.getPos().equals(removalAnchor) || player.level().getBlockState(event.getPos()).isAir()) {
@@ -347,6 +394,11 @@ public final class VehicleSetupRecordingManager {
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
+            if (player.tickCount % 5 == 0 && player.getMainHandItem().getItem() instanceof AnalogScrewdriverItem) {
+                sendHudState(player);
+            }
+        }
         Map<UUID, PendingInteraction> pending = new HashMap<>(PENDING_INTERACTIONS);
         PENDING_INTERACTIONS.clear();
         for (Map.Entry<UUID, PendingInteraction> entry : pending.entrySet()) {
@@ -382,8 +434,6 @@ public final class VehicleSetupRecordingManager {
                 continue;
             }
             recordTallyhoEntity(player, setup, captured);
-            player.displayClientMessage(Component.literal("Vehicle setup automatically recorded Tallyho entity: "
-                    + captured.entityId() + ". " + setup.actionSummary() + "."), true);
         }
         for (java.util.Iterator<Map.Entry<BlockPos, PendingRun>> iterator = PENDING_RUNS.entrySet().iterator(); iterator.hasNext();) {
             Map.Entry<BlockPos, PendingRun> entry = iterator.next();
@@ -424,7 +474,6 @@ public final class VehicleSetupRecordingManager {
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
         recordAction(player, setup, VehicleSetupAction.placeBlock(ship == null ? -1L : ship.shipId(),
                 ship == null ? null : ship.offset(), anchorOffset, state));
-        player.displayClientMessage(Component.literal("Recorded placement: " + setup.actionSummary() + "."), true);
     }
 
     private static void recordRemove(ServerPlayer player, BlockPos pos) {
@@ -434,7 +483,6 @@ public final class VehicleSetupRecordingManager {
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
         recordAction(player, setup, VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
                 ship == null ? null : ship.offset(), anchorOffset, player.level().getBlockState(pos)));
-        player.displayClientMessage(Component.literal("Recorded removal: " + setup.actionSummary() + "."), true);
     }
 
     private static VehicleSetupBlockEntity activeSetup(ServerPlayer player) {
@@ -468,8 +516,6 @@ public final class VehicleSetupRecordingManager {
         pending.setRecordedAction(action);
         VSAnalogWarfare.LOGGER.debug("[VSAW] Generic left-click recorded: block={} pos={} player={}",
                 blockId(pending.initialState()), pending.pos(), player.getGameProfile().getName());
-        player.displayClientMessage(Component.literal("Vehicle setup recorded block left-click: "
-                + setup.actionSummary() + "."), true);
     }
 
     private static void discardPendingLeftClick(ServerPlayer player, BlockPos pos, boolean blockWasBroken) {
@@ -500,8 +546,6 @@ public final class VehicleSetupRecordingManager {
                 interaction.item(), interaction.hand(), interaction.face(), interaction.hitOffset(), interaction.sneaking()));
         VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction recorded: block={} pos={} player={} handled={}.",
                 blockId, interaction.pos(), player.getGameProfile().getName(), interaction.handled());
-        player.displayClientMessage(Component.literal("Vehicle setup recorded block interaction: "
-                + setup.actionSummary() + "."), true);
     }
 
     private static void recordTallyhoEntity(ServerPlayer player, VehicleSetupBlockEntity setup,
