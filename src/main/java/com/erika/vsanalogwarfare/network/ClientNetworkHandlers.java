@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.client.ClientScopeState;
 import com.erika.vsanalogwarfare.client.VehicleMountRoleScreen;
 import com.erika.vsanalogwarfare.client.VehicleMountSelectionScreen;
 import com.erika.vsanalogwarfare.client.VehicleSetupEditorScreen;
+import com.erika.vsanalogwarfare.client.ScopeLinkScreen;
 import net.minecraft.client.Minecraft;
 
 public final class ClientNetworkHandlers {
@@ -37,5 +38,9 @@ public final class ClientNetworkHandlers {
 
     public static void openVehicleSetupEditor(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket packet) {
         VehicleSetupEditorScreen.open(packet.pos(), packet.revision(), packet.actions(), packet.removals(), packet.removalDelay());
+    }
+
+    public static void openScopeLinks(ScopeLinkPacket.Open packet) {
+        Minecraft.getInstance().setScreen(new ScopeLinkScreen(packet.scope(), packet.revision(), packet.primary(), packet.secondary()));
     }
 }

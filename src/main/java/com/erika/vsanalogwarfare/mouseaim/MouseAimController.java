@@ -80,6 +80,25 @@ public final class MouseAimController {
         callNoArg(mount, "sendData");
     }
 
+    /** Set a linked cannon to the requested world-space bore direction. */
+    public static void setAimDirection(Level level, BlockPos mountPos, Vec3 targetWorldDirection) {
+        if (level == null || mountPos == null || targetWorldDirection == null
+                || targetWorldDirection.lengthSqr() < 1.0e-8) return;
+        BlockEntity mount = level.getBlockEntity(mountPos);
+        if (!CbcCompat.isCannonMount(mount)) return;
+        Vec3 localTarget;
+        if (VsCompat.isPlayerMountedToShip()) {
+            localTarget = targetWorldDirection.normalize();
+        } else {
+            localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection.normalize());
+        }
+        AimAngles desired = AimAngles.fromDirection(localTarget);
+        float pitch = clampPitchToMount(mount, desired.pitch());
+        writeYawPitch(mount, desired.yaw(), pitch);
+        callNoArg(mount, "applyRotation");
+        callNoArg(mount, "sendData");
+    }
+
     private static float clampPitchToMount(Object mount, float pitch) {
         Object contraption = callNoArgResult(mount, "getContraption");
         if (contraption == null) {

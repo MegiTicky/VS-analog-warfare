@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfileResolver;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
 import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -13,13 +14,20 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class ScopeBlockEntity extends BlockEntity {
     private static final int DEFAULT_SCAN_RADIUS = 8;
 
     @Nullable
-    private BlockPos linkedMountPos;
+    private ScopeCannonLink primaryLink;
+    private final List<ScopeCannonLink> secondaryLinks = new ArrayList<>();
+    private boolean primaryLinkDeleted;
+    private transient Map<Long, Object> placedShips;
+    private int revision;
     private long shipId = -1L;
     private Vec3 shipLocalScopePos = Vec3.ZERO;
     private Vec3 cameraOffset = new Vec3(0.0, 0.25, 0.0);
@@ -37,9 +45,14 @@ public class ScopeBlockEntity extends BlockEntity {
     }
 
     public static void tick(Level level, BlockPos pos, BlockState state, ScopeBlockEntity be) {
-        if (!level.isClientSide && level.getGameTime() % 40L == 0L) {
+        if (level.isClientSide) return;
+        if (level.getGameTime() % 40L == 0L) {
             be.captureVsAnchor();
+            be.initializeDefaultPrimaryLink();
             be.refreshBallisticProfile();
+        }
+        if (!be.secondaryLinks.isEmpty() && level.getGameTime() % 2L == 0L) {
+            be.synchronizeSecondaryCannons();
         }
     }
 
@@ -48,6 +61,11 @@ public class ScopeBlockEntity extends BlockEntity {
             return;
         }
         BlockPos mount = resolveMountPos();
+        if (!CbcCompat.isCannonMount(this.level.getBlockEntity(mount))) {
+            this.currentProfile = BallisticProfile.EMPTY;
+            setChanged();
+            return;
+        }
         Optional<BallisticProfile> resolved = BallisticProfileResolver.resolve(this.level, mount);
         this.currentProfile = resolved.orElse(BallisticProfile.EMPTY);
         resolved.ifPresent(profile -> this.lastValidProfile = profile);
@@ -77,27 +95,135 @@ public class ScopeBlockEntity extends BlockEntity {
 
     @Nullable
     public BlockPos getLinkedMountPos() {
-        return linkedMountPos;
+        return resolveMountPos();
     }
 
     public void setLinkedMountPos(@Nullable BlockPos linkedMountPos) {
-        this.linkedMountPos = linkedMountPos;
-        setChanged();
+        if (linkedMountPos == null) {
+            clearPrimaryLink();
+        } else {
+            linkPrimary(linkedMountPos);
+        }
     }
 
     public BlockPos resolveMountPos() {
         if (this.level == null) {
             return this.worldPosition;
         }
-        if (this.linkedMountPos != null && CbcCompat.isCannonMount(this.level.getBlockEntity(this.linkedMountPos))) {
-            return this.linkedMountPos;
+        if (this.primaryLink != null) {
+            BlockPos resolved = this.primaryLink.resolve(this.level, this.placedShips);
+            if (resolved != null && CbcCompat.isCannonMount(this.level.getBlockEntity(resolved))) {
+                return resolved;
+            }
+            return this.worldPosition;
         }
-        BlockPos found = CbcCompat.findNearestMount(this.level, this.worldPosition, DEFAULT_SCAN_RADIUS).orElse(null);
-        if (found != null) {
-            setLinkedMountPos(found);
-            return found;
+        initializeDefaultPrimaryLink();
+        if (this.primaryLink != null) {
+            BlockPos resolved = this.primaryLink.resolve(this.level, this.placedShips);
+            if (resolved != null && CbcCompat.isCannonMount(this.level.getBlockEntity(resolved))) return resolved;
         }
         return this.worldPosition;
+    }
+
+    public void initializeDefaultPrimaryLink() {
+        if (this.level == null || this.level.isClientSide || this.primaryLink != null || this.primaryLinkDeleted) return;
+        BlockPos found = CbcCompat.findNearestMount(this.level, this.worldPosition, DEFAULT_SCAN_RADIUS).orElse(null);
+        if (found != null) linkPrimary(found);
+    }
+
+    @Nullable
+    public ScopeCannonLink getPrimaryLink() {
+        return primaryLink;
+    }
+
+    public List<ScopeCannonLink> getSecondaryLinks() {
+        return List.copyOf(secondaryLinks);
+    }
+
+    public int getLinkRevision() {
+        return revision;
+    }
+
+    public void linkPrimary(BlockPos target) {
+        if (this.level == null || !CbcCompat.isCannonMount(this.level.getBlockEntity(target))) return;
+        this.primaryLink = ScopeCannonLink.fromTarget(this.level, target);
+        this.primaryLinkDeleted = false;
+        markLinkChanged();
+        refreshBallisticProfile();
+    }
+
+    public boolean addSecondary(BlockPos target) {
+        if (this.level == null || !CbcCompat.isCannonMount(this.level.getBlockEntity(target))) return false;
+        ScopeCannonLink link = ScopeCannonLink.fromTarget(this.level, target);
+        if ((primaryLink != null && sameTarget(primaryLink, link))
+                || secondaryLinks.stream().anyMatch(existing -> sameTarget(existing, link))) return false;
+        secondaryLinks.add(link);
+        markLinkChanged();
+        return true;
+    }
+
+    public boolean clearPrimaryLinkAndReturn() {
+        if (primaryLink == null) return false;
+        primaryLink = null;
+        primaryLinkDeleted = true;
+        markLinkChanged();
+        currentProfile = BallisticProfile.EMPTY;
+        return true;
+    }
+
+    public void clearPrimaryLink() {
+        clearPrimaryLinkAndReturn();
+    }
+
+    public boolean removeSecondary(int index) {
+        if (index < 0 || index >= secondaryLinks.size()) return false;
+        secondaryLinks.remove(index);
+        markLinkChanged();
+        return true;
+    }
+
+    public void setPlacedShips(Map<Long, Object> placedShips) {
+        this.placedShips = placedShips;
+        initializeDefaultPrimaryLink();
+        refreshBallisticProfile();
+    }
+
+    public void initializeAfterSchematicPlacement(Map<Long, Object> placedShips) {
+        this.placedShips = placedShips;
+        captureVsAnchor();
+        initializeDefaultPrimaryLink();
+        refreshBallisticProfile();
+        synchronizeSecondaryCannons();
+    }
+
+    private void synchronizeSecondaryCannons() {
+        if (this.level == null || this.primaryLink == null) return;
+        BlockPos primary = resolveMountPos();
+        if (!CbcCompat.isCannonMount(this.level.getBlockEntity(primary))) return;
+        Vec3 primaryDirection = CbcCompat.getAimDirection(this.level, primary, Direction.NORTH, 1.0f, true).orElse(null);
+        if (primaryDirection == null) return;
+        for (ScopeCannonLink link : secondaryLinks) {
+            BlockPos secondary = link.resolve(this.level, this.placedShips);
+            if (secondary == null || secondary.equals(primary)
+                    || !CbcCompat.isCannonMount(this.level.getBlockEntity(secondary))) continue;
+            com.erika.vsanalogwarfare.mouseaim.MouseAimController.setAimDirection(this.level, secondary, primaryDirection);
+        }
+    }
+
+    private static boolean sameTarget(ScopeCannonLink first, ScopeCannonLink second) {
+        if (first.shipId() != second.shipId()) return false;
+        if (first.shipOffset() != null || second.shipOffset() != null) {
+            return first.shipOffset() != null && first.shipOffset().equals(second.shipOffset());
+        }
+        return first.fallbackPos().equals(second.fallbackPos());
+    }
+
+    private void markLinkChanged() {
+        revision++;
+        setChanged();
+        if (level != null && !level.isClientSide) {
+            level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+        }
     }
 
     public long getShipId() {
@@ -144,9 +270,12 @@ public class ScopeBlockEntity extends BlockEntity {
     @Override
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
-        if (this.linkedMountPos != null) {
-            tag.putLong("LinkedMountPos", this.linkedMountPos.asLong());
-        }
+        if (this.primaryLink != null) tag.put("PrimaryLink", this.primaryLink.save());
+        tag.putBoolean("PrimaryLinkDeleted", this.primaryLinkDeleted);
+        net.minecraft.nbt.ListTag secondary = new net.minecraft.nbt.ListTag();
+        for (ScopeCannonLink link : this.secondaryLinks) secondary.add(link.save());
+        tag.put("SecondaryLinks", secondary);
+        tag.putInt("LinkRevision", this.revision);
         tag.putLong("ShipId", this.shipId);
         tag.putDouble("LocalX", this.shipLocalScopePos.x);
         tag.putDouble("LocalY", this.shipLocalScopePos.y);
@@ -167,7 +296,20 @@ public class ScopeBlockEntity extends BlockEntity {
     @Override
     public void load(CompoundTag tag) {
         super.load(tag);
-        this.linkedMountPos = tag.contains("LinkedMountPos") ? BlockPos.of(tag.getLong("LinkedMountPos")) : null;
+        this.primaryLink = tag.contains("PrimaryLink") ? ScopeCannonLink.load(tag.getCompound("PrimaryLink")) : null;
+        if (this.primaryLink == null && tag.contains("LinkedMountPos")) {
+            this.primaryLink = new ScopeCannonLink(-1L, null, BlockPos.of(tag.getLong("LinkedMountPos")));
+        }
+        this.primaryLinkDeleted = tag.getBoolean("PrimaryLinkDeleted");
+        this.secondaryLinks.clear();
+        if (tag.contains("SecondaryLinks", net.minecraft.nbt.Tag.TAG_LIST)) {
+            net.minecraft.nbt.ListTag secondary = tag.getList("SecondaryLinks", net.minecraft.nbt.Tag.TAG_COMPOUND);
+            for (int i = 0; i < secondary.size(); i++) {
+                ScopeCannonLink link = ScopeCannonLink.load(secondary.getCompound(i));
+                if (link != null) this.secondaryLinks.add(link);
+            }
+        }
+        this.revision = tag.getInt("LinkRevision");
         this.shipId = tag.getLong("ShipId");
         this.shipLocalScopePos = new Vec3(tag.getDouble("LocalX"), tag.getDouble("LocalY"), tag.getDouble("LocalZ"));
         this.cameraOffset = new Vec3(tag.getDouble("CameraOffsetX"), tag.getDouble("CameraOffsetY"), tag.getDouble("CameraOffsetZ"));

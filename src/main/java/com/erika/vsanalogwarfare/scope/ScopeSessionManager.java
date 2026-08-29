@@ -25,16 +25,21 @@ public final class ScopeSessionManager {
     private ScopeSessionManager() {
     }
 
-    public static void start(ServerPlayer player, ScopeBlockEntity scope) {
+    public static boolean start(ServerPlayer player, ScopeBlockEntity scope) {
         stop(player);
         scope.captureVsAnchor();
         var mountPos = scope.resolveMountPos();
+        if (!com.erika.vsanalogwarfare.scope.compat.CbcCompat.isCannonMount(player.level().getBlockEntity(mountPos))) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal("This scope has no linked primary cannon."), true);
+            return false;
+        }
         ScopeSession session = new ScopeSession(player, scope, mountPos);
         if (player.level() instanceof net.minecraft.server.level.ServerLevel level) {
             session.update(level);
         }
         SESSIONS.put(player.getUUID(), session);
         ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), scope.getZeroDistance()));
+        return true;
     }
 
     public static void stop(ServerPlayer player) {

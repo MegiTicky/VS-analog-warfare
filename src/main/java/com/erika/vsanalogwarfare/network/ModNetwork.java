@@ -115,8 +115,17 @@ public final class ModNetwork {
                 .encoder(VehicleMountPacket.Dismount::encode).decoder(VehicleMountPacket.Dismount::decode)
                 .consumerMainThread(VehicleMountPacket.Dismount::handle).add();
         CHANNEL.messageBuilder(VehicleMountPacket.OpenSelection.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
-                .encoder(VehicleMountPacket.OpenSelection::encode).decoder(VehicleMountPacket.OpenSelection::decode)
-                .consumerMainThread(VehicleMountPacket.OpenSelection::handle).add();
+                 .encoder(VehicleMountPacket.OpenSelection::encode).decoder(VehicleMountPacket.OpenSelection::decode)
+                 .consumerMainThread(VehicleMountPacket.OpenSelection::handle).add();
+        CHANNEL.messageBuilder(ScopeLinkPacket.Open.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(ScopeLinkPacket.Open::encode).decoder(ScopeLinkPacket.Open::decode)
+                .consumerMainThread(ScopeLinkPacket.Open::handle).add();
+        CHANNEL.messageBuilder(ScopeLinkPacket.Arm.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ScopeLinkPacket.Arm::encode).decoder(ScopeLinkPacket.Arm::decode)
+                .consumerMainThread(ScopeLinkPacket.Arm::handle).add();
+        CHANNEL.messageBuilder(ScopeLinkPacket.Delete.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ScopeLinkPacket.Delete::encode).decoder(ScopeLinkPacket.Delete::decode)
+                .consumerMainThread(ScopeLinkPacket.Delete::handle).add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object packet) {

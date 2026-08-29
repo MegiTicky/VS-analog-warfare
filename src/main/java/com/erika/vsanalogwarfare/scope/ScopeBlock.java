@@ -70,6 +70,14 @@ public class ScopeBlock extends FaceAttachedHorizontalDirectionalBlock implement
         if (hand != InteractionHand.MAIN_HAND) {
             return InteractionResult.PASS;
         }
+        if (player.getItemInHand(hand).getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem) {
+            if (level.isClientSide) return InteractionResult.SUCCESS;
+            if (player instanceof ServerPlayer serverPlayer && level.getBlockEntity(pos) instanceof ScopeBlockEntity scope) {
+                ScopeLinkManager.open(serverPlayer, scope);
+                return InteractionResult.CONSUME;
+            }
+            return InteractionResult.PASS;
+        }
         if (level.isClientSide) {
             return InteractionResult.SUCCESS;
         }
@@ -80,8 +88,7 @@ public class ScopeBlock extends FaceAttachedHorizontalDirectionalBlock implement
         if (!(be instanceof ScopeBlockEntity scope)) {
             return InteractionResult.PASS;
         }
-        ScopeSessionManager.start(serverPlayer, scope);
-        return InteractionResult.CONSUME;
+        return ScopeSessionManager.start(serverPlayer, scope) ? InteractionResult.CONSUME : InteractionResult.FAIL;
     }
 
     @Override
@@ -90,6 +97,8 @@ public class ScopeBlock extends FaceAttachedHorizontalDirectionalBlock implement
         BlockEntity be = level.getBlockEntity(pos);
         if (be instanceof ScopeBlockEntity scope) {
             scope.captureVsAnchor();
+            scope.initializeDefaultPrimaryLink();
+            scope.refreshBallisticProfile();
         }
     }
 
