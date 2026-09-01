@@ -22,6 +22,7 @@ public final class ModCreativeModeTabs {
                         output.accept(ModItems.VEHICLE_SETUP.get());
                         output.accept(ModItems.GROUND_COLLISION_DISABLER.get());
                         output.accept(ModItems.VEHICLE_MOUNT_HANDLE.get());
+                        output.accept(ModItems.DECORATION_BEARING.get());
                         output.accept(ModItems.ANALOG_SCREWDRIVER.get());
                     })
                     .build());

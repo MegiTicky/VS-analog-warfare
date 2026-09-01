@@ -11,6 +11,8 @@
   "key.vs_analog_warfare.scope_rangefinder": "Scope Rangefinder",
   "key.vs_analog_warfare.scope_zeroing": "Scope Zeroing",
   "block.vs_analog_warfare.vehicle_mount_handle": "Mount Handle",
+  "item.vs_analog_warfare.decoration_bearing": "Cannon Decoration Bearing",
+  "block.vs_analog_warfare.decoration_bearing": "Cannon Decoration Bearing",
   "item.vs_analog_warfare.vehicle_mount_handle": "Mount Handle",
   "itemGroup.vs_analog_warfare.main": "VS Analog Warfare",
   "key.vs_analog_warfare.vehicle_mount": "Mount / Dismount Vehicle",

@@ -31,6 +31,9 @@ public final class ModItems {
     public static final RegistryObject<Item> VEHICLE_MOUNT_HANDLE = ITEMS.register("vehicle_mount_handle",
             () -> new BlockItem(ModBlocks.VEHICLE_MOUNT_HANDLE.get(), new Item.Properties()));
 
+    public static final RegistryObject<Item> DECORATION_BEARING = ITEMS.register("decoration_bearing",
+            () -> new BlockItem(ModBlocks.DECORATION_BEARING.get(), new Item.Properties()));
+
     public static final RegistryObject<Item> ANALOG_SCREWDRIVER = ITEMS.register("analog_screwdriver",
             () -> new AnalogScrewdriverItem(new Item.Properties().stacksTo(1)));
 
@@ -47,6 +50,7 @@ public final class ModItems {
                 event.accept(VEHICLE_SETUP);
                 event.accept(GROUND_COLLISION_DISABLER);
                 event.accept(VEHICLE_MOUNT_HANDLE);
+                event.accept(DECORATION_BEARING);
                 event.accept(ANALOG_SCREWDRIVER);
             }
         }

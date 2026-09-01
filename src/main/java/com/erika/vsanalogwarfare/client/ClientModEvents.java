@@ -4,6 +4,10 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.ponder.VehicleSetupPonder;
 import com.erika.vsanalogwarfare.registry.ModEntities;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
+import com.jozufozu.flywheel.backend.instancing.InstancedRenderRegistry;
+import com.simibubi.create.content.contraptions.bearing.BearingInstance;
+import com.simibubi.create.content.contraptions.bearing.BearingRenderer;
+import com.simibubi.create.content.contraptions.render.ContraptionEntityRenderer;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
@@ -21,6 +25,8 @@ public final class ClientModEvents {
     @SubscribeEvent
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.SCOPE_CAMERA.get(), ScopeCameraRenderer::new);
+        event.registerEntityRenderer(ModEntities.DECORATION_BEARING_CONTRAPTION.get(), ContraptionEntityRenderer::new);
+        event.registerBlockEntityRenderer(ModBlockEntities.DECORATION_BEARING.get(), BearingRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.VEHICLE_MOUNT_HANDLE.get(), VehicleMountHandleRenderer::new);
     }
 
@@ -42,5 +48,8 @@ public final class ClientModEvents {
     @SubscribeEvent
     public static void clientSetup(FMLClientSetupEvent event) {
         VehicleSetupPonder.register();
+        InstancedRenderRegistry.configure(ModBlockEntities.DECORATION_BEARING.get())
+                .factory(BearingInstance::new)
+                .apply();
     }
 }

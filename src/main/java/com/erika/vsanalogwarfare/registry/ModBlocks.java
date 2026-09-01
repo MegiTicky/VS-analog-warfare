@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.scope.ScopeBlock;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlock;
 import com.erika.vsanalogwarfare.vehiclesetup.GroundCollisionDisablerBlock;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlock;
+import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -43,6 +44,10 @@ public final class ModBlocks {
 
     public static final RegistryObject<Block> VEHICLE_MOUNT_HANDLE = BLOCKS.register("vehicle_mount_handle",
             () -> new VehicleMountHandleBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL).strength(1.5f, 6.0f).noOcclusion()));
+
+    public static final RegistryObject<Block> DECORATION_BEARING = BLOCKS.register("decoration_bearing",
+            () -> new DecorationBearingBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL).strength(1.5f, 6.0f).noOcclusion()));
 
     private ModBlocks() {

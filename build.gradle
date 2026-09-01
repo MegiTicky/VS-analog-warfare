@@ -109,6 +109,9 @@ dependencies {
     compileOnly "maven.modrinth:DistantHorizonsApi:5.1.0"
     runtimeOnly "maven.modrinth:DistantHorizonsApi:5.1.0"
     compileOnly 'org.joml:joml-primitives:1.10.0'
+    // Flywheel is bundled inside Create's jarjar (0.6.11) at runtime; this is the
+    // exact matching version, used only for compilation (never packaged).
+    compileOnly files('gradle/flywheel/flywheel-forge-1.20.1-0.6.11-13.jar')
     
     compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:0.4.1"))
     runtimeOnly("io.github.llamalad7:mixinextras-forge:0.4.1")

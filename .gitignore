@@ -17,3 +17,6 @@ AGENTS.md
 
 # Commit the Gradle wrapper jar (everything else *.jar stays ignored).
 !gradle/wrapper/gradle-wrapper.jar
+
+# Exact Flywheel jar bundled inside Create 0.5.1.j; needed on the compile classpath.
+!gradle/flywheel/

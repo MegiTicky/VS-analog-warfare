@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.registry;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.scope.ScopeCameraEntity;
+import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingContraptionEntity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraftforge.registries.DeferredRegister;
@@ -20,6 +21,14 @@ public final class ModEntities {
                             .updateInterval(1)
                             .noSave()
                             .build(VSAnalogWarfare.MOD_ID + ":scope_camera"));
+
+    public static final RegistryObject<EntityType<DecorationBearingContraptionEntity>> DECORATION_BEARING_CONTRAPTION =
+            ENTITIES.register("decoration_bearing_contraption", () -> EntityType.Builder
+                    .<DecorationBearingContraptionEntity>of(DecorationBearingContraptionEntity::new, MobCategory.MISC)
+                    .sized(1.0f, 1.0f)
+                    .clientTrackingRange(256)
+                    .updateInterval(1)
+                    .build(VSAnalogWarfare.MOD_ID + ":decoration_bearing_contraption"));
 
     private ModEntities() {
     }

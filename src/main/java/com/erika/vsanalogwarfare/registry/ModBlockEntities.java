@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.GroundCollisionDisablerBlockEntity;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
+import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -35,6 +36,10 @@ public final class ModBlockEntities {
     public static final RegistryObject<BlockEntityType<VehicleMountHandleBlockEntity>> VEHICLE_MOUNT_HANDLE =
             BLOCK_ENTITIES.register("vehicle_mount_handle", () -> BlockEntityType.Builder.of(
                     VehicleMountHandleBlockEntity::new, ModBlocks.VEHICLE_MOUNT_HANDLE.get()).build(null));
+
+    public static final RegistryObject<BlockEntityType<DecorationBearingBlockEntity>> DECORATION_BEARING =
+            BLOCK_ENTITIES.register("decoration_bearing", () -> BlockEntityType.Builder.of(
+                    DecorationBearingBlockEntity::new, ModBlocks.DECORATION_BEARING.get()).build(null));
 
     private ModBlockEntities() {
     }
