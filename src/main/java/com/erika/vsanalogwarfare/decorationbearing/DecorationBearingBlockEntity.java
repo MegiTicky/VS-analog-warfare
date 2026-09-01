@@ -111,7 +111,9 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
         BlockPos mount = resolveMount();
         BlockPos anchor = worldPosition.relative(facing);
-        Vec3 pivotOffset = Vec3.atCenterOf(mount).subtract(Vec3.atLowerCornerOf(anchor));
+        Direction verticalDir = level.getBlockState(mount).getValue(BlockStateProperties.VERTICAL_DIRECTION);
+        BlockPos trunnion = mount.relative(verticalDir, -2);
+        Vec3 pivotOffset = Vec3.atCenterOf(trunnion).subtract(Vec3.atLowerCornerOf(anchor));
         movedContraption = DecorationBearingContraptionEntity.create(level, this, contraption, facing, pivotOffset);
         movedContraption.setRotationAxis(facing.getAxis());
         level.addFreshEntity(movedContraption);
