@@ -64,8 +64,8 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         Vec3 direction = CbcCompat.getAimDirection(level, mount, Direction.NORTH, 1.0f, false)
                 .orElse(null);
         if (direction == null) return;
-        float nextYaw = (float) Math.toDegrees(Math.atan2(-direction.x, direction.z));
-        float nextPitch = (float) Math.toDegrees(Math.asin(direction.y));
+        float nextYaw = (float) -Math.toDegrees(Math.atan2(-direction.x, direction.z));
+        float nextPitch = (float) -Math.toDegrees(Math.asin(direction.y));
         bearing.yaw = nextYaw;
         bearing.pitch = nextPitch;
         if (bearing.movedContraption instanceof DecorationBearingContraptionEntity decoration)
