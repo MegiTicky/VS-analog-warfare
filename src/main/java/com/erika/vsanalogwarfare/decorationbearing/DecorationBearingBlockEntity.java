@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.AssemblyException;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
+import com.simibubi.create.content.contraptions.OrientedContraptionEntity;
 import com.simibubi.create.content.contraptions.bearing.BearingContraption;
 import com.simibubi.create.content.contraptions.bearing.IBearingBlockEntity;
 import com.simibubi.create.content.contraptions.IDisplayAssemblyExceptions;
@@ -25,7 +26,7 @@ import java.util.List;
 public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         implements IBearingBlockEntity, IDisplayAssemblyExceptions {
     private ScopeCannonLink linkedMount;
-    private ControlledContraptionEntity movedContraption;
+    private DecorationBearingContraptionEntity movedContraption;
     private float yaw;
     private float pitch;
     private boolean running;
@@ -61,15 +62,49 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
         BlockPos mount = bearing.resolveMount();
         if (mount == null) return;
+
+        // Get the cannon's current aim direction in world space
         Vec3 direction = CbcCompat.getAimDirection(level, mount, Direction.NORTH, 1.0f, false)
                 .orElse(null);
         if (direction == null) return;
-        float nextYaw = (float) -Math.toDegrees(Math.atan2(-direction.x, direction.z));
-        float nextPitch = (float) -Math.toDegrees(Math.asin(direction.y));
+
+        // Extract yaw/pitch that our applyRotation expects.
+        // Our applyRotation does: rotate(pitch, pitchAxis) → rotate(yaw, Y) → rotate(initialYaw, Y)
+        // For a cannon with horizontal facing H, CBC sets initialYaw = H.getVecF().yRot()
+        // and the cannon's world direction = applyRotation(forward, yaw, pitch, initialYaw).
+        //
+        // To invert: undo initialYaw first.
+        BlockPos mountPos = bearing.resolveMount();
+        Direction verticalDir = bearing.level.getBlockState(mountPos).getValue(BlockStateProperties.VERTICAL_DIRECTION);
+        BlockPos cannonStart = mountPos.relative(verticalDir, -2);
+
+        // initialYaw = horizontalFacing.getVecF().yRot() — Direction.getVecF() doesn't exist in 1.20.1
+        // Use the vector components directly: NORTH=(0,0,-1), SOUTH=(0,0,1), EAST=(1,0,0), WEST=(-1,0,0)
+        Direction hFacing = bearing.level.getBlockState(mountPos).getValue(BlockStateProperties.HORIZONTAL_FACING);
+        net.minecraft.world.phys.Vec3 hVec = net.minecraft.world.phys.Vec3.atLowerCornerOf(hFacing.getNormal());
+        float initialYaw = (float) Math.toDegrees(Math.atan2(-hVec.x, hVec.z));
+
+        // Undo initialYaw: rotate direction by -initialYaw around Y
+        double cosIY = Math.cos(Math.toRadians(-initialYaw));
+        double sinIY = Math.sin(Math.toRadians(-initialYaw));
+        double rx = direction.x * cosIY + direction.z * sinIY;
+        double ry = direction.y;
+        double rz = -direction.x * sinIY + direction.z * cosIY;
+
+        // After undoing initialYaw, we have the (pitch→yaw) result.
+        // For pitchAxis=X: forward(0,0,1) → pitch → (0, sin(p), cos(p)) → yaw → (cos(p)*sin(y), sin(p), cos(p)*cos(y))
+        // yaw = atan2(rx, rz), pitch = asin(ry)
+        float nextYaw = (float) Math.toDegrees(Math.atan2(rx, rz));
+        float nextPitch = (float) Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, ry))));
+
+        float deltaYaw = Math.abs(nextYaw - bearing.yaw);
+        float deltaPitch = Math.abs(nextPitch - bearing.pitch);
+        if (deltaYaw > 180) deltaYaw = 360 - deltaYaw;
+        if (deltaYaw < 0.01f && deltaPitch < 0.01f) return;
         bearing.yaw = nextYaw;
         bearing.pitch = nextPitch;
-        if (bearing.movedContraption instanceof DecorationBearingContraptionEntity decoration)
-            decoration.setDecorationRotation(nextYaw, nextPitch);
+        if (bearing.movedContraption != null)
+            bearing.movedContraption.setDecorationRotation(nextYaw, nextPitch);
     }
 
     @Nullable
@@ -109,18 +144,50 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         }
         lastException = null;
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
+
+        // Match CBC: get the cannon's initialOrientation from the mount
         BlockPos mount = resolveMount();
-        BlockPos anchor = worldPosition.relative(facing);
         Direction verticalDir = level.getBlockState(mount).getValue(BlockStateProperties.VERTICAL_DIRECTION);
-        BlockPos trunnion = mount.relative(verticalDir, -2);
-        Vec3 pivotOffset = Vec3.atCenterOf(trunnion).subtract(Vec3.atLowerCornerOf(anchor));
-        movedContraption = DecorationBearingContraptionEntity.create(level, this, contraption, facing, pivotOffset);
-        movedContraption.setRotationAxis(facing.getAxis());
+        // CBC: cannonStartPos = mount.relative(verticalDir, -2)
+        BlockPos cannonStart = mount.relative(verticalDir, -2);
+        // CBC: initialOrientation = abstractMountedCannonContraption.initialOrientation()
+        // For a standard cannon mount, initialOrientation = verticalDirection (the direction the barrel points)
+        Direction initialOrientation = verticalDir;
+
+        // Create the entity — positioned at the trunnion (mount.relative(verticalDir, -2))
+        // This matches CBC's resetContraptionToOffset() pattern
+        movedContraption = DecorationBearingContraptionEntity.create(level, this, contraption, initialOrientation);
+
+        // Compute initial rotation from the cannon's current aim direction
+        Vec3 direction = CbcCompat.getAimDirection(level, mount, Direction.NORTH, 1.0f, false)
+                .orElse(null);
+        if (direction != null) {
+            // Get initialYaw from horizontal facing
+            Direction hFacing = level.getBlockState(mount).getValue(BlockStateProperties.HORIZONTAL_FACING);
+            net.minecraft.world.phys.Vec3 hVec = net.minecraft.world.phys.Vec3.atLowerCornerOf(hFacing.getNormal());
+            float initialYaw = (float) Math.toDegrees(Math.atan2(-hVec.x, hVec.z));
+
+            // Undo initialYaw to extract the (yaw, pitch) that applyRotation expects
+            double cosIY = Math.cos(Math.toRadians(-initialYaw));
+            double sinIY = Math.sin(Math.toRadians(-initialYaw));
+            double rx = direction.x * cosIY + direction.z * sinIY;
+            double ry = direction.y;
+            double rz = -direction.x * sinIY + direction.z * cosIY;
+
+            yaw = (float) Math.toDegrees(Math.atan2(rx, rz));
+            pitch = (float) Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, ry))));
+        } else {
+            yaw = 0;
+            pitch = 0;
+        }
+
+        // Position at trunnion (same as CBC: mount.relative(verticalDir, -2))
+        movedContraption.setPos(cannonStart.getX(), cannonStart.getY(), cannonStart.getZ());
+        movedContraption.setDecorationRotation(yaw, pitch);
+
         level.addFreshEntity(movedContraption);
         running = true;
         angle = 0;
-        if (movedContraption instanceof DecorationBearingContraptionEntity decoration)
-            decoration.setDecorationRotation(yaw, pitch);
         sendData();
         setChanged();
     }
@@ -129,8 +196,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         if (movedContraption != null) {
             yaw = 0;
             pitch = 0;
-            if (movedContraption instanceof DecorationBearingContraptionEntity decoration)
-                decoration.setDecorationRotation(0, 0);
+            movedContraption.setDecorationRotation(0, 0);
             movedContraption.disassemble();
         }
         movedContraption = null;
@@ -158,12 +224,19 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
     @Override
     public void attach(ControlledContraptionEntity entity) {
-        if (!(entity instanceof DecorationBearingContraptionEntity decoration)) return;
+        // Our entity doesn't extend ControlledContraptionEntity, so this method
+        // shouldn't be called directly. The attach is handled by the tick loop.
+    }
+
+    public void attach(DecorationBearingContraptionEntity decoration) {
         movedContraption = decoration;
-        Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
-        BlockPos anchor = worldPosition.relative(facing);
-        decoration.setPos(anchor.getX(), anchor.getY(), anchor.getZ());
-        decoration.setRotationAxis(facing.getAxis());
+        // Re-position at the trunnion (matches CBC pattern)
+        BlockPos mount = resolveMount();
+        if (mount != null) {
+            Direction verticalDir = level.getBlockState(mount).getValue(BlockStateProperties.VERTICAL_DIRECTION);
+            BlockPos trunnion = mount.relative(verticalDir, -2);
+            decoration.setPos(trunnion.getX(), trunnion.getY(), trunnion.getZ());
+        }
         running = true;
         setChanged();
     }
