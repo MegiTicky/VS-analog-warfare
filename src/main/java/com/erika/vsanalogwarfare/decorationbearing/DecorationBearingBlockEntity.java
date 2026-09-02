@@ -11,6 +11,7 @@ import com.simibubi.create.content.contraptions.bearing.BearingContraption;
 import com.simibubi.create.content.contraptions.bearing.IBearingBlockEntity;
 import com.simibubi.create.content.contraptions.IDisplayAssemblyExceptions;
 import com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity;
+import com.simibubi.create.foundation.utility.VecHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -20,11 +21,15 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.Vec3;
 
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
+
 import javax.annotation.Nullable;
 import java.util.List;
 
 public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         implements IBearingBlockEntity, IDisplayAssemblyExceptions {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private ScopeCannonLink linkedMount;
     private DecorationBearingContraptionEntity movedContraption;
     private float yaw;
@@ -63,39 +68,34 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         BlockPos mount = bearing.resolveMount();
         if (mount == null) return;
 
-        // Get the cannon's current aim direction in world space
+        // Get the cannon's current aim direction in local space (no ship transform)
         Vec3 direction = CbcCompat.getAimDirection(level, mount, Direction.NORTH, 1.0f, false)
                 .orElse(null);
         if (direction == null) return;
 
-        // Extract yaw/pitch that our applyRotation expects.
-        // Our applyRotation does: rotate(pitch, pitchAxis) → rotate(yaw, Y) → rotate(initialYaw, Y)
-        // For a cannon with horizontal facing H, CBC sets initialYaw = H.getVecF().yRot()
-        // and the cannon's world direction = applyRotation(forward, yaw, pitch, initialYaw).
-        //
-        // To invert: undo initialYaw first.
-        BlockPos mountPos = bearing.resolveMount();
-        Direction verticalDir = bearing.level.getBlockState(mountPos).getValue(BlockStateProperties.VERTICAL_DIRECTION);
-        BlockPos cannonStart = mountPos.relative(verticalDir, -2);
+        Direction hFacing = bearing.level.getBlockState(mount).getValue(BlockStateProperties.HORIZONTAL_FACING);
+        Direction initialOrientation = CbcCompat.getInitialOrientationFromCannon(level, mount);
+        if (initialOrientation == null) initialOrientation = hFacing;
 
-        // initialYaw = horizontalFacing.getVecF().yRot() — Direction.getVecF() doesn't exist in 1.20.1
-        // Use the vector components directly: NORTH=(0,0,-1), SOUTH=(0,0,1), EAST=(1,0,0), WEST=(-1,0,0)
-        Direction hFacing = bearing.level.getBlockState(mountPos).getValue(BlockStateProperties.HORIZONTAL_FACING);
-        net.minecraft.world.phys.Vec3 hVec = net.minecraft.world.phys.Vec3.atLowerCornerOf(hFacing.getNormal());
-        float initialYaw = (float) Math.toDegrees(Math.atan2(-hVec.x, hVec.z));
-
-        // Undo initialYaw: rotate direction by -initialYaw around Y
-        double cosIY = Math.cos(Math.toRadians(-initialYaw));
-        double sinIY = Math.sin(Math.toRadians(-initialYaw));
-        double rx = direction.x * cosIY + direction.z * sinIY;
-        double ry = direction.y;
-        double rz = -direction.x * sinIY + direction.z * cosIY;
-
-        // After undoing initialYaw, we have the (pitch→yaw) result.
-        // For pitchAxis=X: forward(0,0,1) → pitch → (0, sin(p), cos(p)) → yaw → (cos(p)*sin(y), sin(p), cos(p)*cos(y))
-        // yaw = atan2(rx, rz), pitch = asin(ry)
-        float nextYaw = (float) Math.toDegrees(Math.atan2(rx, rz));
-        float nextPitch = (float) Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, ry))));
+        Direction.Axis pitchAxis = initialOrientation.getAxis() == Direction.Axis.X
+                ? Direction.Axis.Z : Direction.Axis.X;
+        float nextYaw;
+        float nextPitch;
+        if (pitchAxis == Direction.Axis.X) {
+            nextYaw = (float) -Math.toDegrees(Math.atan2(direction.x, direction.z));
+            float pitchMagnitude = (float) Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, direction.y))));
+            nextPitch = initialOrientation == Direction.NORTH ? pitchMagnitude : -pitchMagnitude;
+        } else {
+            float initialYaw = initialOrientation.toYRot();
+            Vec3 localDirection = VecHelper.rotate(direction, -initialYaw, Direction.Axis.Y);
+            float axisSign = initialOrientation == Direction.EAST ? 1.0f : -1.0f;
+            float viewYaw = (float) Math.toDegrees(Math.atan2(
+                    -axisSign * localDirection.z,
+                    axisSign * localDirection.x));
+            nextYaw = -viewYaw;
+            nextPitch = (float) Math.toDegrees(Math.asin(
+                    Math.max(-1, Math.min(1, axisSign * localDirection.y))));
+        }
 
         float deltaYaw = Math.abs(nextYaw - bearing.yaw);
         float deltaPitch = Math.abs(nextPitch - bearing.pitch);
@@ -145,44 +145,68 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         lastException = null;
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
 
-        // Match CBC: get the cannon's initialOrientation from the mount
+        // Match CBC: initialOrientation comes from the cannon entity, not mount's HORIZONTAL_FACING
         BlockPos mount = resolveMount();
-        Direction verticalDir = level.getBlockState(mount).getValue(BlockStateProperties.VERTICAL_DIRECTION);
-        // CBC: cannonStartPos = mount.relative(verticalDir, -2)
-        BlockPos cannonStart = mount.relative(verticalDir, -2);
-        // CBC: initialOrientation = abstractMountedCannonContraption.initialOrientation()
-        // For a standard cannon mount, initialOrientation = verticalDirection (the direction the barrel points)
-        Direction initialOrientation = verticalDir;
+        Direction hFacing = level.getBlockState(mount).getValue(BlockStateProperties.HORIZONTAL_FACING);
+        // Read the cannon's actual initialOrientation via reflection (fallback to hFacing if unavailable)
+        Direction initialOrientation = CbcCompat.getInitialOrientationFromCannon(level, mount);
+        boolean usedFallback = initialOrientation == null;
+        if (usedFallback) {
+            initialOrientation = hFacing;
+        }
+
+        LOGGER.info("[VSAW_DECO] ASSEMBLE: mount={} hFacing={} initialOrientation={} (fallback={})",
+                mount, hFacing, initialOrientation, usedFallback);
 
         // Create the entity — positioned at the trunnion (mount.relative(verticalDir, -2))
-        // This matches CBC's resetContraptionToOffset() pattern
         movedContraption = DecorationBearingContraptionEntity.create(level, this, contraption, initialOrientation);
 
         // Compute initial rotation from the cannon's current aim direction
         Vec3 direction = CbcCompat.getAimDirection(level, mount, Direction.NORTH, 1.0f, false)
                 .orElse(null);
         if (direction != null) {
-            // Get initialYaw from horizontal facing
-            Direction hFacing = level.getBlockState(mount).getValue(BlockStateProperties.HORIZONTAL_FACING);
-            net.minecraft.world.phys.Vec3 hVec = net.minecraft.world.phys.Vec3.atLowerCornerOf(hFacing.getNormal());
-            float initialYaw = (float) Math.toDegrees(Math.atan2(-hVec.x, hVec.z));
+            // tryDirectionFromContraption returns applyRotation(initialOrientation_normal, pt)
+            // After R_Y(initialYaw) · initial_orientation_normal = (0,0,1), the result is
+            // R_Y(yaw) · R_pitchAxis(pitch) · (0,0,1).
+            //
+            // For non-X-axis (pitchAxis = X):
+            //   result = (cos(pitch)*sin(yaw), -sin(pitch), cos(pitch)*cos(yaw))
+            //   yaw = atan2(x, z), pitch = -asin(y)
+            //
+            // For X-axis (pitchAxis = Z):
+            //   result = (-sin(yaw), 0, cos(yaw))  [pitch has no effect on (0,0,1)]
+            //   yaw = atan2(-x, z), pitch = 0
+            Direction.Axis pitchAxis = initialOrientation.getAxis() == Direction.Axis.X
+                    ? Direction.Axis.Z : Direction.Axis.X;
+            if (pitchAxis == Direction.Axis.X) {
+                yaw = (float) -Math.toDegrees(Math.atan2(direction.x, direction.z));
+                float pitchMagnitude = (float) Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, direction.y))));
+                pitch = initialOrientation == Direction.NORTH ? pitchMagnitude : -pitchMagnitude;
+            } else {
+                float initialYaw = initialOrientation.toYRot();
+                Vec3 localDirection = VecHelper.rotate(direction, -initialYaw, Direction.Axis.Y);
+                float axisSign = initialOrientation == Direction.EAST ? 1.0f : -1.0f;
+                float viewYaw = (float) Math.toDegrees(Math.atan2(
+                        -axisSign * localDirection.z,
+                        axisSign * localDirection.x));
+                yaw = -viewYaw;
+                pitch = (float) Math.toDegrees(Math.asin(
+                        Math.max(-1, Math.min(1, axisSign * localDirection.y))));
+            }
 
-            // Undo initialYaw to extract the (yaw, pitch) that applyRotation expects
-            double cosIY = Math.cos(Math.toRadians(-initialYaw));
-            double sinIY = Math.sin(Math.toRadians(-initialYaw));
-            double rx = direction.x * cosIY + direction.z * sinIY;
-            double ry = direction.y;
-            double rz = -direction.x * sinIY + direction.z * cosIY;
-
-            yaw = (float) Math.toDegrees(Math.atan2(rx, rz));
-            pitch = (float) Math.toDegrees(Math.asin(Math.max(-1, Math.min(1, ry))));
+            LOGGER.info("[VSAW_DECO] ASMB_EXTRACT: aimDir={} pitchAxis={} -> pitch={} yaw={}",
+                    String.format("(%.4f,%.4f,%.4f)", direction.x, direction.y, direction.z),
+                    pitchAxis, String.format("%.2f", pitch), String.format("%.2f", yaw));
         } else {
             yaw = 0;
             pitch = 0;
+            LOGGER.info("[VSAW_DECO] ASSEMBLE: no aim direction, default yaw=0 pitch=0");
         }
 
-        // Position at trunnion (same as CBC: mount.relative(verticalDir, -2))
-        movedContraption.setPos(cannonStart.getX(), cannonStart.getY(), cannonStart.getZ());
+        // Position at trunnion, centered on the block
+        Direction verticalDirection = getBlockState().getValue(BlockStateProperties.FACING);
+        BlockPos cannonStart = mount.relative(verticalDirection, 2);
+        movedContraption.setPos(Vec3.atBottomCenterOf(cannonStart));
         movedContraption.setDecorationRotation(yaw, pitch);
 
         level.addFreshEntity(movedContraption);
@@ -230,12 +254,12 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
     public void attach(DecorationBearingContraptionEntity decoration) {
         movedContraption = decoration;
-        // Re-position at the trunnion (matches CBC pattern)
+        // Re-position at the trunnion
         BlockPos mount = resolveMount();
         if (mount != null) {
-            Direction verticalDir = level.getBlockState(mount).getValue(BlockStateProperties.VERTICAL_DIRECTION);
-            BlockPos trunnion = mount.relative(verticalDir, -2);
-            decoration.setPos(trunnion.getX(), trunnion.getY(), trunnion.getZ());
+            Direction verticalDirection = getBlockState().getValue(BlockStateProperties.FACING);
+            BlockPos trunnion = mount.relative(verticalDirection, 2);
+            decoration.setPos(Vec3.atBottomCenterOf(trunnion));
         }
         running = true;
         setChanged();

@@ -16,6 +16,8 @@ import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Optional;
 
+import javax.annotation.Nullable;
+
 public final class CbcCompat {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final String CANNON_MOUNT = "rbasamoyai.createbigcannons.cannon_control.cannon_mount.CannonMountBlockEntity";
@@ -379,20 +381,24 @@ public final class CbcCompat {
     }
 
     public static Optional<Vec3> getAimUpDirection(Level level, BlockPos mountPos, Direction fallbackFacing, Direction scopeUp, float partialTicks) {
+        return getAimUpDirection(level, mountPos, fallbackFacing, scopeUp, partialTicks, true);
+    }
+
+    public static Optional<Vec3> getAimUpDirection(Level level, BlockPos mountPos, Direction fallbackFacing, Direction scopeUp, float partialTicks, boolean applyShipTransform) {
         BlockEntity be = level.getBlockEntity(mountPos);
         Vec3 fallbackUp = Vec3.atLowerCornerOf(scopeUp.getNormal()).normalize();
         if (!isCannonMount(be)) {
-            return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, fallbackUp));
+            return Optional.of(applyShipTransform ? VsCompat.shipToWorldDirection(level, mountPos, fallbackUp) : fallbackUp);
         }
 
         Vec3 byContraption = tryUpFromContraption(be, fallbackUp, partialTicks).orElse(null);
         if (byContraption != null) {
-            return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, byContraption));
+            return Optional.of(applyShipTransform ? VsCompat.shipToWorldDirection(level, mountPos, byContraption) : byContraption);
         }
 
         Vec3 forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
         Vec3 projectedUp = projectUp(fallbackUp, forward);
-        return Optional.of(VsCompat.shipToWorldDirection(level, mountPos, projectedUp));
+        return Optional.of(applyShipTransform ? VsCompat.shipToWorldDirection(level, mountPos, projectedUp) : projectedUp);
     }
 
     private static Optional<Vec3> tryDirectionFromContraption(Object mount, float partialTicks) {
@@ -470,6 +476,92 @@ public final class CbcCompat {
         Method m = target.getClass().getMethod(method, float.class);
         Object value = m.invoke(target, partialTicks);
         return value instanceof Number n ? n.floatValue() : 0.0f;
+    }
+
+    public static Object invokeNoArg(Object target, String method) throws ReflectiveOperationException {
+        Method m = target.getClass().getMethod(method);
+        return m.invoke(target);
+    }
+
+    public static float invokeFloatNoArg(Object target, String method) throws ReflectiveOperationException {
+        Method m = target.getClass().getMethod(method);
+        Object value = m.invoke(target);
+        return value instanceof Number n ? n.floatValue() : 0.0f;
+    }
+
+    public static float invokeFloat(Object target, String method, float argument) throws ReflectiveOperationException {
+        Method m = target.getClass().getMethod(method, float.class);
+        Object value = m.invoke(target, argument);
+        return value instanceof Number n ? n.floatValue() : 0.0f;
+    }
+
+    /**
+     * Read initialOrientation from the CBC cannon's contraption via reflection.
+     * Returns the Direction from PitchOrientedContraptionEntity.getInitialOrientation(),
+     * or null if the cannon block is not a CBC mount or the reflection fails.
+     */
+    @Nullable
+    public static Direction getInitialOrientationFromCannon(Level level, BlockPos mount) {
+        try {
+            BlockEntity be = level.getBlockEntity(mount);
+            if (be == null) return null;
+            Object contraption = callNoArg(be, "getContraption");
+            if (contraption == null) return null;
+            Object initial = callNoArg(contraption, "getInitialOrientation");
+            if (initial instanceof Direction d) return d;
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * Read viewXRot (pitch) from a CBC PitchOrientedContraptionEntity via reflection.
+     * Returns the value of getViewXRot() or 0 on failure.
+     */
+    public static float getCbcViewXRot(Object entity, float partialTicks) {
+        try {
+            return invokeFloat(entity, "getViewXRot", partialTicks);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return 0.0f;
+        }
+    }
+
+    /**
+     * Read viewYRot (yaw) from a CBC PitchOrientedContraptionEntity via reflection.
+     * Returns the value of getViewYRot() or 0 on failure.
+     */
+    public static float getCbcViewYRot(Object entity, float partialTicks) {
+        try {
+            return invokeFloat(entity, "getViewYRot", partialTicks);
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return 0.0f;
+        }
+    }
+
+    /**
+     * Read initialYaw from a CBC PitchOrientedContraptionEntity via reflection.
+     * Returns the value of getInitialYaw() or 0 on failure.
+     */
+    public static float getCbcInitialYaw(Object entity) {
+        try {
+            return invokeFloatNoArg(entity, "getInitialYaw");
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return 0.0f;
+        }
+    }
+
+    /**
+     * Read the mounted cannon contraption entity from a cannon mount.
+     * The returned object is intentionally untyped so this remains optional CBC compatibility.
+     */
+    @Nullable
+    public static Object getCannonContraptionEntity(Level level, BlockPos mount) {
+        try {
+            BlockEntity be = level.getBlockEntity(mount);
+            return be == null ? null : callNoArg(be, "getContraption");
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return null;
+        }
     }
 
     public static Vec3 directionFromYawPitch(float yawDeg, float pitchDeg) {
