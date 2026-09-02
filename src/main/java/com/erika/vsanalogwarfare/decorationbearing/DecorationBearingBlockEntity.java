@@ -24,8 +24,12 @@ import net.minecraft.world.phys.Vec3;
 import com.mojang.logging.LogUtils;
 import org.slf4j.Logger;
 
+import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
+
 import javax.annotation.Nullable;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         implements IBearingBlockEntity, IDisplayAssemblyExceptions {
@@ -203,10 +207,26 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
             LOGGER.info("[VSAW_DECO] ASSEMBLE: no aim direction, default yaw=0 pitch=0");
         }
 
-        // Position at trunnion, centered on the block
-        Direction verticalDirection = getBlockState().getValue(BlockStateProperties.FACING);
-        BlockPos cannonStart = mount.relative(verticalDirection, 2);
-        movedContraption.setPos(Vec3.atBottomCenterOf(cannonStart));
+        // Cannon pivot: 2 blocks in the bearing's facing direction past the mount
+        BlockPos cannonPivot = mount.relative(facing, 2);
+
+        // Shift contraption blocks so they're relative to cannonPivot instead of worldPosition.
+        // This makes the entity (at cannonPivot) the correct rotation center.
+        BlockPos blockOffset = cannonPivot.subtract(worldPosition);
+        Map<BlockPos, StructureBlockInfo> blocks = contraption.getBlocks();
+        Map<BlockPos, StructureBlockInfo> shifted = new HashMap<>();
+        for (Map.Entry<BlockPos, StructureBlockInfo> entry : blocks.entrySet()) {
+            BlockPos newPos = entry.getKey().subtract(blockOffset);
+            StructureBlockInfo oldInfo = entry.getValue();
+            shifted.put(newPos, new StructureBlockInfo(newPos, oldInfo.state(), oldInfo.nbt()));
+        }
+        blocks.clear();
+        blocks.putAll(shifted);
+
+        LOGGER.info("[VSAW_DECO] ASSEMBLE: bearing={} cannonPivot={} blockOffset={} blocksShifted={}",
+                worldPosition, cannonPivot, blockOffset, shifted.size());
+
+        movedContraption.setPos(Vec3.atBottomCenterOf(cannonPivot));
         movedContraption.setDecorationRotation(yaw, pitch);
 
         level.addFreshEntity(movedContraption);
@@ -254,12 +274,12 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
     public void attach(DecorationBearingContraptionEntity decoration) {
         movedContraption = decoration;
-        // Re-position at the trunnion
+        // Re-position at the cannon pivot
         BlockPos mount = resolveMount();
         if (mount != null) {
-            Direction verticalDirection = getBlockState().getValue(BlockStateProperties.FACING);
-            BlockPos trunnion = mount.relative(verticalDirection, 2);
-            decoration.setPos(Vec3.atBottomCenterOf(trunnion));
+            Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
+            BlockPos cannonPivot = mount.relative(facing, 2);
+            decoration.setPos(Vec3.atBottomCenterOf(cannonPivot));
         }
         running = true;
         setChanged();
