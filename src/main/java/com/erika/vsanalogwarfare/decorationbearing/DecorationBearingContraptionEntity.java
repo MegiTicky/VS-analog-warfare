@@ -6,7 +6,6 @@ import com.simibubi.create.content.contraptions.OrientedContraptionEntity;
 import com.simibubi.create.foundation.collision.Matrix3d;
 import com.simibubi.create.foundation.utility.AngleHelper;
 import com.simibubi.create.foundation.utility.VecHelper;
-import com.mojang.logging.LogUtils;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.core.BlockPos;
@@ -18,7 +17,6 @@ import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
-import org.slf4j.Logger;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 
@@ -27,7 +25,6 @@ import net.minecraftforge.api.distmarker.OnlyIn;
  * owns yaw+pitch, disables Create's orientation updater, and syncs anchor every tick.
  */
 public class DecorationBearingContraptionEntity extends OrientedContraptionEntity {
-    private static final Logger LOGGER = LogUtils.getLogger();
     private static final EntityDataAccessor<Float> SYNCED_YAW = SynchedEntityData.defineId(
             DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> SYNCED_PITCH = SynchedEntityData.defineId(
@@ -125,14 +122,6 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         Vec3 rotated = VecHelper.rotate(vector, getInterpolatedPitch(partialTicks), pitchAxis);
         rotated = VecHelper.rotate(rotated, getInterpolatedYaw(partialTicks), Direction.Axis.Y);
         rotated = VecHelper.rotate(rotated, getInitialYaw(), Direction.Axis.Y);
-
-        if (vector.equals(new Vec3(0, 0, 1))) {
-            LOGGER.info("[VSAW_DECO] APPLY_ROT: forward(0,0,1) → {} (yaw={} pitch={} initialYaw={})",
-                    String.format("(%.3f,%.3f,%.3f)", rotated.x, rotated.y, rotated.z),
-                    String.format("%.2f", getInterpolatedYaw(partialTicks)),
-                    String.format("%.2f", getInterpolatedPitch(partialTicks)),
-                    String.format("%.2f", getInitialYaw()));
-        }
         return rotated;
     }
 
@@ -163,6 +152,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             matrixStack.mulPose(Axis.XP.rotationDegrees(viewPitch));
         }
         matrixStack.translate(-.5f, -.5f, -.5f);
+        matrixStack.translate(0, 1f, 0);
     }
 
     // --- Rotation state for collision/rendering (matches CBCContraptionRotationState) ---
@@ -217,15 +207,6 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
             float yawAdjust = isXAxis && !hasVerticalRotation() ? stateYaw + 180 : stateYaw;
             cachedMatrix.multiply(new Matrix3d().asYRotation(AngleHelper.rad(yawAdjust)));
-
-            Vec3 forward = cachedMatrix.transform(new Vec3(0, 0, 1));
-            LOGGER.info("[VSAW_DECO] ROT_STATE: entityYaw={} pitch={} initYaw={} isXAxis={} matrixYaw={} stateYawOffset={} forward={}",
-                    String.format("%.2f", entityYaw), String.format("%.2f", entityPitch),
-                    String.format("%.2f", getInitialYaw()), isXAxis,
-                    String.format("%.2f", stateYaw),
-                    String.format("%.2f", stateYawOffset),
-                    String.format("(%.3f,%.3f,%.3f)", forward.x, forward.y, forward.z));
-
             return cachedMatrix;
         }
 
@@ -263,24 +244,6 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         prevPitch = pitch;
 
         contraption.anchor = blockPosition();
-
-        // Debug: log entity state and compare with CBC
-        if (level() != null && !level().isClientSide) {
-            BlockPos controllerBlock = controllerPos;
-            if (controllerBlock != null) {
-                var be = level().getBlockEntity(controllerBlock);
-                if (be instanceof DecorationBearingBlockEntity bearing) {
-                    BlockPos mount = bearing.getLinkedMountPos();
-                    if (mount != null) {
-                    LOGGER.info("[VSAW_DECO] TICK: entity yaw={} pitch={} initialOrientation={} initialYaw={} "
-                                    + "controller={} mount={}",
-                                String.format("%.2f", yaw), String.format("%.2f", pitch),
-                                getInitialOrientation(), String.format("%.2f", getInitialYaw()),
-                                controllerBlock, mount);
-                    }
-                }
-            }
-        }
 
         // Re-attach to controller if needed (matches CBC pattern)
         if (controllerPos != null && level() != null) {

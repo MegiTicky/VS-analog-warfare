@@ -21,9 +21,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.Vec3;
 
-import com.mojang.logging.LogUtils;
-import org.slf4j.Logger;
-
 import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemplate.StructureBlockInfo;
 
 import javax.annotation.Nullable;
@@ -33,7 +30,6 @@ import java.util.Map;
 
 public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         implements IBearingBlockEntity, IDisplayAssemblyExceptions {
-    private static final Logger LOGGER = LogUtils.getLogger();
     private ScopeCannonLink linkedMount;
     private DecorationBearingContraptionEntity movedContraption;
     private float yaw;
@@ -154,13 +150,9 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         Direction hFacing = level.getBlockState(mount).getValue(BlockStateProperties.HORIZONTAL_FACING);
         // Read the cannon's actual initialOrientation via reflection (fallback to hFacing if unavailable)
         Direction initialOrientation = CbcCompat.getInitialOrientationFromCannon(level, mount);
-        boolean usedFallback = initialOrientation == null;
-        if (usedFallback) {
+        if (initialOrientation == null) {
             initialOrientation = hFacing;
         }
-
-        LOGGER.info("[VSAW_DECO] ASSEMBLE: mount={} hFacing={} initialOrientation={} (fallback={})",
-                mount, hFacing, initialOrientation, usedFallback);
 
         // Create the entity — positioned at the trunnion (mount.relative(verticalDir, -2))
         movedContraption = DecorationBearingContraptionEntity.create(level, this, contraption, initialOrientation);
@@ -197,14 +189,9 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
                 pitch = (float) Math.toDegrees(Math.asin(
                         Math.max(-1, Math.min(1, axisSign * localDirection.y))));
             }
-
-            LOGGER.info("[VSAW_DECO] ASMB_EXTRACT: aimDir={} pitchAxis={} -> pitch={} yaw={}",
-                    String.format("(%.4f,%.4f,%.4f)", direction.x, direction.y, direction.z),
-                    pitchAxis, String.format("%.2f", pitch), String.format("%.2f", yaw));
         } else {
             yaw = 0;
             pitch = 0;
-            LOGGER.info("[VSAW_DECO] ASSEMBLE: no aim direction, default yaw=0 pitch=0");
         }
 
         // Cannon pivot: 2 blocks in the bearing's facing direction past the mount
@@ -222,9 +209,6 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         }
         blocks.clear();
         blocks.putAll(shifted);
-
-        LOGGER.info("[VSAW_DECO] ASSEMBLE: bearing={} cannonPivot={} blockOffset={} blocksShifted={}",
-                worldPosition, cannonPivot, blockOffset, shifted.size());
 
         movedContraption.setPos(Vec3.atBottomCenterOf(cannonPivot));
         movedContraption.setDecorationRotation(yaw, pitch);
