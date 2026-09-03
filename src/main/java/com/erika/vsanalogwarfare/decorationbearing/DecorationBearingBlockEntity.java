@@ -156,6 +156,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
         // Create the entity — positioned at the trunnion (mount.relative(verticalDir, -2))
         movedContraption = DecorationBearingContraptionEntity.create(level, this, contraption, initialOrientation);
+        movedContraption.setCannonMountPos(mount);
 
         // Compute initial rotation from the cannon's current aim direction
         Vec3 direction = CbcCompat.getAimDirection(level, mount, Direction.NORTH, 1.0f, false)

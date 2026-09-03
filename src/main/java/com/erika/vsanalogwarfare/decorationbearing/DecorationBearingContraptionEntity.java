@@ -8,9 +8,11 @@ import com.simibubi.create.foundation.utility.AngleHelper;
 import com.simibubi.create.foundation.utility.VecHelper;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
+import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -31,6 +33,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
 
     private BlockPos controllerPos;
+    private BlockPos cannonMountPos;
 
     public DecorationBearingContraptionEntity(EntityType<?> type, Level level) {
         super(type, level);
@@ -71,6 +74,9 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     /**
      * CBC overrides this to prevent the parent's synched-data handler from overwriting
      * the rotation fields. We do the same: save yaw before super, restore after.
+     *
+     * When client-side direct read is active (cannonMountPos resolved), we skip
+     * the SynchedEntityData update to avoid overwriting the fresher values.
      */
     @Override
     public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
@@ -85,6 +91,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         this.prevPitch = savedPrevPitch;
 
         if (!level().isClientSide) return;
+        // Skip SynchedEntityData update when client-side direct read is active
+        if (cannonMountPos != null) return;
         if (key == SYNCED_YAW) {
             float val = entityData.get(SYNCED_YAW);
             this.prevYaw = this.yaw;
@@ -245,6 +253,15 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
         contraption.anchor = blockPosition();
 
+        // Client-side direct read from CBC entity (eliminates network delay)
+        if (level().isClientSide && cannonMountPos != null) {
+            Object cbcEntity = CbcCompat.getCannonContraptionEntity(level(), cannonMountPos);
+            if (cbcEntity != null) {
+                yaw = CbcCompat.getCbcViewYRot(cbcEntity, 1.0f);
+                pitch = CbcCompat.getCbcViewXRot(cbcEntity, 1.0f);
+            }
+        }
+
         // Re-attach to controller if needed (matches CBC pattern)
         if (controllerPos != null && level() != null) {
             if (!level().isClientSide) {
@@ -277,8 +294,11 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     protected void writeAdditional(CompoundTag tag, boolean clientPacket) {
         super.writeAdditional(tag, clientPacket);
         if (controllerPos != null) {
-            tag.put("ControllerRelative", net.minecraft.nbt.NbtUtils.writeBlockPos(
+            tag.put("ControllerRelative", NbtUtils.writeBlockPos(
                     controllerPos.subtract(blockPosition())));
+        }
+        if (cannonMountPos != null) {
+            tag.put("CannonMountPos", NbtUtils.writeBlockPos(cannonMountPos));
         }
     }
 
@@ -286,12 +306,24 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     protected void readAdditional(CompoundTag tag, boolean clientPacket) {
         super.readAdditional(tag, clientPacket);
         if (tag.contains("ControllerRelative")) {
-            controllerPos = net.minecraft.nbt.NbtUtils.readBlockPos(
+            controllerPos = NbtUtils.readBlockPos(
                     tag.getCompound("ControllerRelative")).offset(blockPosition());
+        }
+        if (tag.contains("CannonMountPos")) {
+            cannonMountPos = NbtUtils.readBlockPos(tag.getCompound("CannonMountPos"));
         }
     }
 
     public BlockPos getControllerPos() {
         return controllerPos;
+    }
+
+    public void setCannonMountPos(BlockPos pos) {
+        this.cannonMountPos = pos;
+    }
+
+    @javax.annotation.Nullable
+    public BlockPos getCannonMountPos() {
+        return cannonMountPos;
     }
 }
