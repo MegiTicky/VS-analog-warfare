@@ -564,6 +564,110 @@ public final class CbcCompat {
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Failure-aware CBC entity resolution and pose reading for DBC follower
+    // -----------------------------------------------------------------------
+
+    public record CbcPoseData(
+            float viewYaw,
+            float viewPitch,
+            float initialYaw,
+            Direction initialOrientation,
+            Vec3 anchorVec,
+            Vec3 prevAnchorVec,
+            int entityId
+    ) {}
+
+    /**
+     * Resolve the live CBC PitchOrientedContraptionEntity from a resolved mount position.
+     * Returns null if the mount is not present or getContraption() does not return an entity.
+     * Validates the returned object is a live entity (not removed, same level).
+     */
+    @Nullable
+    public static Object resolveLiveCbcEntity(Level level, BlockPos resolvedMount) {
+        if (resolvedMount == null || level == null) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: mount={} level={}", resolvedMount, level != null);
+            return null;
+        }
+        BlockEntity be = level.getBlockEntity(resolvedMount);
+        if (be == null) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: no block entity at {}", resolvedMount);
+            return null;
+        }
+        Object entity;
+        try {
+            entity = callNoArg(be, "getContraption");
+        } catch (ReflectiveOperationException | LinkageError e) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: getContraption failed on {}: {}", be.getClass().getSimpleName(), e.getClass().getSimpleName());
+            return null;
+        }
+        if (entity == null) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: getContraption() returned null on {}", be.getClass().getSimpleName());
+            return null;
+        }
+        if (!(entity instanceof net.minecraft.world.entity.Entity mcEntity)) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: getContraption() returned non-Entity: {}", entity.getClass().getName());
+            return null;
+        }
+        if (mcEntity.isRemoved()) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: entity is removed (id={})", mcEntity.getId());
+            return null;
+        }
+        if (mcEntity.level() != level) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: entity level mismatch");
+            return null;
+        }
+        return entity;
+    }
+
+    @Nullable
+    public static Object resolveLiveCbcEntityById(Level level, int entityId) {
+        if (level == null || entityId < 0) return null;
+        net.minecraft.world.entity.Entity entity = level.getEntity(entityId);
+        if (entity == null || entity.isRemoved()) return null;
+        return entity;
+    }
+
+    /**
+     * Read all DBC-relevant pose data from a live CBC entity in one atomic call.
+     * Returns null if any required accessor fails.
+     */
+    @Nullable
+    public static CbcPoseData readCbcPoseData(Object cbcEntity) {
+        if (cbcEntity == null) {
+            LOGGER.debug("[VSAW_DBC] readCbcPoseData: cbcEntity is null");
+            return null;
+        }
+        if (!(cbcEntity instanceof net.minecraft.world.entity.Entity mcEntity)) {
+            LOGGER.debug("[VSAW_DBC] readCbcPoseData: cbcEntity is not an Entity: {}", cbcEntity.getClass().getName());
+            return null;
+        }
+        try {
+            float viewYaw = invokeFloat(cbcEntity, "getViewYRot", 1.0f);
+            float viewPitch = invokeFloat(cbcEntity, "getViewXRot", 1.0f);
+            float initialYaw = invokeFloatNoArg(cbcEntity, "getInitialYaw");
+            Object initialObj = callNoArg(cbcEntity, "getInitialOrientation");
+            Direction initialOrientation = initialObj instanceof Direction d ? d : Direction.NORTH;
+            Method anchorMethod = cbcEntity.getClass().getMethod("getAnchorVec");
+            Method prevAnchorMethod = cbcEntity.getClass().getMethod("getPrevAnchorVec");
+            Object anchorObject = anchorMethod.invoke(cbcEntity);
+            Object prevAnchorObject = prevAnchorMethod.invoke(cbcEntity);
+            if (!(anchorObject instanceof Vec3 anchorVec) || !(prevAnchorObject instanceof Vec3 prevAnchorVec)) {
+                LOGGER.debug("[VSAW_DBC] readCbcPoseData: anchor methods returned non-Vec3: anchor={} prev={}",
+                        anchorObject != null ? anchorObject.getClass().getSimpleName() : "null",
+                        prevAnchorObject != null ? prevAnchorObject.getClass().getSimpleName() : "null");
+                return null;
+            }
+            int entityId = mcEntity.getId();
+            LOGGER.debug("[VSAW_DBC] readCbcPoseData: OK viewYaw={} viewPitch={} initialYaw={} anchor={} id={}",
+                    viewYaw, viewPitch, initialYaw, anchorVec, entityId);
+            return new CbcPoseData(viewYaw, viewPitch, initialYaw, initialOrientation, anchorVec, prevAnchorVec, entityId);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            LOGGER.debug("[VSAW_DBC] readCbcPoseData: FAILED - {}: {}", e.getClass().getSimpleName(), e.getMessage());
+            return null;
+        }
+    }
+
     public static Vec3 directionFromYawPitch(float yawDeg, float pitchDeg) {
         double yaw = Math.toRadians(yawDeg);
         double pitch = Math.toRadians(pitchDeg);
