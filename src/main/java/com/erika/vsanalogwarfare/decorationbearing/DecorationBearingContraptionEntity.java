@@ -22,6 +22,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import com.mojang.logging.LogUtils;
+import org.joml.Vector3f;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.api.distmarker.OnlyIn;
 import org.slf4j.Logger;
@@ -63,10 +64,20 @@ import javax.annotation.Nullable;
 public class DecorationBearingContraptionEntity extends OrientedContraptionEntity {
     private static final Logger LOGGER = LogUtils.getLogger();
 
+    /**
+     * Identifies this build in [VSAW_DBC] logs. Guards against debugging a
+     * stale jar: if this tag is absent from the assemble log, the deployed
+     * jar predates the yaw/pivot fix.
+     */
+    public static final String BUILD_TAG = "dbc-pose-fix2";
+
     private static final EntityDataAccessor<Float> SYNCED_YAW =
             SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> SYNCED_PITCH =
             SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
+    /** Live CBC entity position, synced for the client-side pivot debug render. */
+    private static final EntityDataAccessor<Vector3f> SYNCED_CBC_POS =
+            SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.VECTOR3);
 
     private BlockPos controllerPos;
     private int linkedCbcEntityId = -1;
@@ -103,6 +114,30 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         super.defineSynchedData();
         this.entityData.define(SYNCED_YAW, 0.0f);
         this.entityData.define(SYNCED_PITCH, 0.0f);
+        this.entityData.define(SYNCED_CBC_POS, new Vector3f());
+    }
+
+    /**
+     * Preserve the copied pose across synced-data updates: Create's
+     * {@code startAtInitialYaw()} runs on the client when INITIAL_ORIENTATION
+     * syncs and would otherwise clobber the pose mid-spawn.
+     */
+    @Override
+    public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
+        float prevYaw = this.yaw;
+        float prevPitch = this.pitch;
+        super.onSyncedDataUpdated(key);
+        this.yaw = prevYaw;
+        this.pitch = prevPitch;
+    }
+
+    /** Live CBC entity position as last synced by the server (0,0,0 if unknown). */
+    public Vec3 getCbcEntityPosSynced() {
+        Vector3f v = this.entityData.get(SYNCED_CBC_POS);
+        if (v == null || (v.x == 0.0f && v.y == 0.0f && v.z == 0.0f)) {
+            return Vec3.ZERO;
+        }
+        return new Vec3(v.x, v.y, v.z);
     }
 
     // -----------------------------------------------------------------------
@@ -152,8 +187,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         float interpPitch = getInterpolatedPitch(partialTicks);
 
         if (++renderLogCounter % 60 == 0) {
-            LOGGER.info("[VSAW_DBC] render: interpYaw={} interpPitch={} initialYaw={} pivotLocal={} entityPos={} axis={}",
-                    String.format("%.2f", interpYaw), String.format("%.2f", interpPitch),
+            LOGGER.info("[VSAW_DBC] render: build={} interpYaw={} interpPitch={} initialYaw={} pivotLocal={} entityPos={} axis={}",
+                    BUILD_TAG, String.format("%.2f", interpYaw), String.format("%.2f", interpPitch),
                     String.format("%.2f", initialYaw), pivotLocal, position(),
                     getInitialOrientation().getAxis());
         }
@@ -295,8 +330,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             yaw = this.entityData.get(SYNCED_YAW);
             pitch = this.entityData.get(SYNCED_PITCH);
             if (tickCount % 40 == 0) {
-                LOGGER.info("[VSAW_DBC] client tick: yaw={} pitch={} pos={} pivotLocal={}",
-                        yaw, pitch, position(), pivotLocal);
+                LOGGER.info("[VSAW_DBC] client tick: build={} yaw={} pitch={} pos={} pivotLocal={}",
+                        BUILD_TAG, yaw, pitch, position(), pivotLocal);
             }
         } else {
             Object cbcEntity = resolveLinkedCbcEntity();
@@ -349,9 +384,11 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
                     this.entityData.set(SYNCED_YAW, yaw);
                     this.entityData.set(SYNCED_PITCH, pitch);
+                    this.entityData.set(SYNCED_CBC_POS, new Vector3f(
+                            (float) pose.entityPos().x, (float) pose.entityPos().y, (float) pose.entityPos().z));
                     if (tickCount % 40 == 0) {
-                        LOGGER.info("[VSAW_DBC] tick: viewYaw={} pitch={} cbcEntityPos={} pos={} pivotLocal={} id={}",
-                                yaw, pitch, pose.entityPos(), position(), pivotLocal, linkedCbcEntityId);
+                        LOGGER.info("[VSAW_DBC] tick: build={} viewYaw={} pitch={} cbcEntityPos={} pos={} pivotLocal={} id={}",
+                                BUILD_TAG, yaw, pitch, pose.entityPos(), position(), pivotLocal, linkedCbcEntityId);
                     } else {
                         LOGGER.debug("[VSAW_DBC] tick: yaw={} pitch={} anchor={} id={}",
                                 yaw, pitch, pose.entityPos(), linkedCbcEntityId);

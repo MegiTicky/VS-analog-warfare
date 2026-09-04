@@ -182,7 +182,8 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
 
         level.addFreshEntity(movedContraption);
-        LOGGER.info("[VSAW_DBC] assemble: entity CREATED id={} pivotLocal={} renderOrigin={} mount={} fromLiveCbc={}",
+        LOGGER.info("[VSAW_DBC] assemble: build={} entity CREATED id={} pivotLocal={} renderOrigin={} mount={} fromLiveCbc={}",
+                DecorationBearingContraptionEntity.BUILD_TAG,
                 movedContraption.getId(), movedContraption.getPivotLocal(), renderOrigin, mount, pose != null);
         running = true;
         angle = 0;
