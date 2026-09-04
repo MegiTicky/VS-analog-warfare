@@ -116,6 +116,20 @@ public final class VsCompat {
         return transformed == null ? localPosition : new Vec3(transformed.x, transformed.y, transformed.z);
     }
 
+    /**
+     * Inverse of {@link #shipToWorldPosition(Level, BlockPos, Vec3)}: maps a
+     * world-space position into the ship-local frame of the ship managing
+     * {@code anchorPos}. Identity when no ship is found.
+     */
+    public static Vec3 worldToShipPosition(Level level, BlockPos anchorPos, Vec3 worldPosition) {
+        Object ship = findShip(level, anchorPos);
+        if (ship == null) {
+            return worldPosition;
+        }
+        Vector3d transformed = invokeInverseMatrixTransform(ship, worldPosition, true);
+        return transformed == null ? worldPosition : new Vec3(transformed.x, transformed.y, transformed.z);
+    }
+
     public static Vec3 shipToWorldDirection(Level level, BlockPos anchorPos, Vec3 localDirection) {
         if (isPlayerMountedToShip()) {
             return localDirection.normalize();

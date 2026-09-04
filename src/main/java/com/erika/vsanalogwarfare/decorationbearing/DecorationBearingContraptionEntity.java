@@ -10,6 +10,7 @@ import com.simibubi.create.foundation.utility.VecHelper;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
+import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -69,7 +70,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * stale jar: if this tag is absent from the assemble log, the deployed
      * jar predates the yaw/pivot fix.
      */
-    public static final String BUILD_TAG = "dbc-pose-fix2";
+    public static final String BUILD_TAG = "dbc-pose-fix3";
 
     private static final EntityDataAccessor<Float> SYNCED_YAW =
             SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
@@ -85,8 +86,17 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     /**
      * CBC entity position expressed in the assembly render frame (render
      * origin at assembly = Vec3.atBottomCenterOf(contraption.anchor)).
+     * Ship-local: the CBC entity's world position is mapped through
+     * worldToShipPosition before subtracting, so this offset is frame-consistent
+     * with the contraption's local block coordinates even when the ship's
+     * transform is not identity (moved ships).
      */
     private Vec3 pivotLocal = Vec3.ZERO;
+    /**
+     * The assembly render origin in ship-local coordinates (sentinel ZERO =
+     * unknown; fall back to the legacy position model).
+     */
+    private Vec3 renderOriginLocal = Vec3.ZERO;
     /** True once pivotLocal has been captured from the live CBC anchor. */
     private boolean pivotCaptured = false;
     /** Consecutive server ticks without a resolvable CBC pose (diagnostics). */
@@ -291,19 +301,23 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         // (E = entity pos; Rs = yaw-only rotation snapped to a multiple of 90°;
         // pitch cannot be expressed in a StructureTransform, so — like every
         // Create bearing — disassembly is yaw-only).
-        // StructureTransform places block b at: offset + Rs(b). Solve offset:
-        //   offset = W - Rs(b) = E - Rs(pivotLocal) + pivotLocal + (0, 0.5, 0) - c
+        // StructureTransform places block b at: offset + Rs(b). Solve in the
+        // ship-local frame around the render origin, then map through the ship
+        // transform (identity when not on a ship):
+        //   offset = renderOriginLocal - Rs(pivotLocal) + pivotLocal + (0, 0.5, 0) - c
         float angle = yaw + getInitialYaw();
         float snapped = (float) (Math.round(angle / 90.0) * 90);
 
         Vec3 rotatedPivot = VecHelper.rotate(pivotLocal, snapped, Direction.Axis.Y);
-        Vec3 offset = position()
+        Vec3 offsetLocal = renderOriginLocal != Vec3.ZERO ? renderOriginLocal : position();
+        Vec3 offset = offsetLocal
                 .subtract(rotatedPivot)
                 .add(pivotLocal)
                 .add(0.0, 0.5, 0.0)
                 .subtract(0.5, 0.5, 0.5);
+        Vec3 offsetWorld = VsCompat.shipToWorldPosition(level(), blockPosition(), offset);
 
-        return new StructureTransform(BlockPos.containing(offset.x, offset.y, offset.z), 0, snapped, 0);
+        return new StructureTransform(BlockPos.containing(offsetWorld.x, offsetWorld.y, offsetWorld.z), 0, snapped, 0);
     }
 
     // -----------------------------------------------------------------------
@@ -365,17 +379,29 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                     // now: the decoration stays put, the rotation center snaps
                     // to the exact CBC pivot.
                     if (!pivotCaptured) {
-                        pivotLocal = pose.entityPos().subtract(position());
+                        Vec3 cbcPosLocal = VsCompat.worldToShipPosition(level(), blockPosition(), pose.entityPos());
+                        pivotLocal = renderOriginLocal != Vec3.ZERO
+                                ? cbcPosLocal.subtract(renderOriginLocal)
+                                : cbcPosLocal.subtract(position());
                         pivotCaptured = true;
                         LOGGER.info("[VSAW_DBC] tick: pivot re-captured from live CBC entityPos={} pivotLocal={}",
                                 pose.entityPos(), pivotLocal);
                     }
 
-                    // Entity position = rotated-out assembly render origin.
-                    // Invariant: entityPos + pivotLocal == CBC entity position,
-                    // which places our render rotation center exactly on the
-                    // cannon's visual pivot.
-                    setPos(pose.entityPos().subtract(pivotLocal));
+                    // Entity position = the ship-transformed render origin.
+                    // renderOriginLocal is a fixed ship-local point; carrying it
+                    // through the ship transform keeps the decoration glued to
+                    // the ship under any ship translation/rotation. Using the
+                    // CBC entity's world position directly would mix the world
+                    // and ship-local frames and offset the whole contraption by
+                    // the ship's transform translation.
+                    if (renderOriginLocal != Vec3.ZERO) {
+                        Vec3 targetPos = VsCompat.shipToWorldPosition(level(), blockPosition(), renderOriginLocal);
+                        setPos(targetPos);
+                    } else {
+                        // Legacy fallback (entity saved before this field existed)
+                        setPos(pose.entityPos().subtract(pivotLocal));
+                    }
                     // Keep Create/VS actor positioning tracking the entity,
                     // matching CBC's own behavior.
                     if (contraption != null) {
@@ -387,8 +413,10 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                     this.entityData.set(SYNCED_CBC_POS, new Vector3f(
                             (float) pose.entityPos().x, (float) pose.entityPos().y, (float) pose.entityPos().z));
                     if (tickCount % 40 == 0) {
-                        LOGGER.info("[VSAW_DBC] tick: build={} viewYaw={} pitch={} cbcEntityPos={} pos={} pivotLocal={} id={}",
-                                BUILD_TAG, yaw, pitch, pose.entityPos(), position(), pivotLocal, linkedCbcEntityId);
+                        LOGGER.info("[VSAW_DBC] tick: build={} viewYaw={} pitch={} cbcEntityPos={} pos={} pivotLocal={} shipOffset={} id={}",
+                                BUILD_TAG, yaw, pitch, pose.entityPos(), position(), pivotLocal,
+                                renderOriginLocal != Vec3.ZERO ? position().subtract(renderOriginLocal) : "n/a",
+                                linkedCbcEntityId);
                     } else {
                         LOGGER.debug("[VSAW_DBC] tick: yaw={} pitch={} anchor={} id={}",
                                 yaw, pitch, pose.entityPos(), linkedCbcEntityId);
@@ -486,6 +514,9 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         tag.putFloat("PivotLocalX", (float) pivotLocal.x);
         tag.putFloat("PivotLocalY", (float) pivotLocal.y);
         tag.putFloat("PivotLocalZ", (float) pivotLocal.z);
+        tag.putFloat("RenderOriginX", (float) renderOriginLocal.x);
+        tag.putFloat("RenderOriginY", (float) renderOriginLocal.y);
+        tag.putFloat("RenderOriginZ", (float) renderOriginLocal.z);
         tag.putBoolean("PivotCaptured", pivotCaptured);
         tag.putFloat("SavedYaw", yaw);
         tag.putFloat("SavedPitch", pitch);
@@ -515,6 +546,12 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                     tag.getFloat("PivotOffsetX"),
                     tag.getFloat("PivotOffsetY"),
                     tag.getFloat("PivotOffsetZ"));
+        }
+        if (tag.contains("RenderOriginX")) {
+            renderOriginLocal = new Vec3(
+                    tag.getFloat("RenderOriginX"),
+                    tag.getFloat("RenderOriginY"),
+                    tag.getFloat("RenderOriginZ"));
         }
         pivotCaptured = tag.getBoolean("PivotCaptured");
         if (!clientPacket) {
@@ -556,10 +593,12 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
     /**
      * Capture the CBC entity position in the assembly render frame from the
-     * live CBC entity. Must be called before the entity is spawned.
+     * live CBC entity. The world position is mapped into the ship-local frame
+     * first so the pivot stays frame-consistent with the contraption blocks.
+     * Must be called before the entity is spawned.
      */
-    public void capturePivot(Vec3 cbcEntityPosAtAssembly, Vec3 renderOriginAtAssembly) {
-        capturePivot(cbcEntityPosAtAssembly, renderOriginAtAssembly, true);
+    public void capturePivot(Vec3 cbcEntityPosWorld, Vec3 renderOriginAtAssembly) {
+        capturePivot(cbcEntityPosWorld, renderOriginAtAssembly, true);
     }
 
     /**
@@ -567,13 +606,33 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * {@code fromLiveCbc} is false (approximate anchor), the pivot is
      * re-captured from the live CBC entity on the first successful pose tick.
      */
-    public void capturePivot(Vec3 cbcEntityPosAtAssembly, Vec3 renderOriginAtAssembly, boolean fromLiveCbc) {
-        this.pivotLocal = cbcEntityPosAtAssembly.subtract(renderOriginAtAssembly);
+    public void capturePivot(Vec3 cbcEntityPosWorld, Vec3 renderOriginAtAssembly, boolean fromLiveCbc) {
+        this.renderOriginLocal = renderOriginAtAssembly;
+        Vec3 cbcPosLocal = level() != null && controllerPos != null
+                ? VsCompat.worldToShipPosition(level(), controllerPos, cbcEntityPosWorld)
+                : cbcEntityPosWorld;
+        this.pivotLocal = cbcPosLocal.subtract(renderOriginAtAssembly);
         this.pivotCaptured = fromLiveCbc;
+    }
+
+    /**
+     * Fallback variant for approximate anchors that are already expressed in
+     * ship-local coordinates (no world→ship mapping applied). The pivot is
+     * re-captured from the live CBC entity on the first successful pose tick.
+     */
+    public void capturePivotLocal(Vec3 cbcEntityPosLocal, Vec3 renderOriginAtAssembly) {
+        this.renderOriginLocal = renderOriginAtAssembly;
+        this.pivotLocal = cbcEntityPosLocal.subtract(renderOriginAtAssembly);
+        this.pivotCaptured = false;
     }
 
     public Vec3 getPivotLocal() {
         return pivotLocal;
+    }
+
+    /** Ship-local assembly render origin (Vec3.ZERO when unknown). */
+    public Vec3 getRenderOriginLocal() {
+        return renderOriginLocal;
     }
 
     public boolean isPivotCaptured() {

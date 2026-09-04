@@ -1,6 +1,7 @@
 package com.erika.vsanalogwarfare.decorationbearing;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
+import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Minecraft;
@@ -22,20 +23,21 @@ import com.mojang.logging.LogUtils;
  *
  * <ul>
  *   <li>MAGENTA box + vertical axis line at the DBC's computed visual
- *       rotation pivot ({@code entityPos + pivotLocal + (0, 0.5, 0)}).</li>
+ *       rotation pivot (ship-transformed {@code renderOrigin + pivotLocal +
+ *       (0, 0.5, 0)}).</li>
  *   <li>YELLOW box at the linked CBC cannon's own visual pivot
- *       ({@code cbcEntityPos + (0, 0.5, 0)}). Magenta and yellow must
- *       coincide; any gap is the pivot error.</li>
+ *       ({@code cbcEntityPos + (0, 0.5, 0)}). Magenta and yellow should
+ *       coincide on identity-transformed ships; any gap is the pivot error.</li>
  *   <li>CYAN box at the DBC entity origin (render origin).</li>
  * </ul>
  *
- * Enabled by default in this debug build; flip {@link #ENABLED} to false to
- * turn it off.
+ * Off by default; flip {@link #ENABLED} to true to turn it back on while
+ * debugging.
  */
 @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class DebugPivotRenderer {
     private static final Logger LOGGER = LogUtils.getLogger();
-    public static boolean ENABLED = true;
+    public static boolean ENABLED = false;
     private static boolean announced;
 
     private DebugPivotRenderer() {
@@ -65,7 +67,13 @@ public final class DebugPivotRenderer {
                 continue;
             }
             Vec3 entityPos = entity.position();
-            Vec3 pivot = entityPos.add(dbc.getPivotLocal()).add(0.0, 0.5, 0.0);
+            Vec3 pivot;
+            if (dbc.getRenderOriginLocal() != Vec3.ZERO) {
+                pivot = VsCompat.shipToWorldPosition(mc.level, entity.blockPosition(),
+                        dbc.getRenderOriginLocal().add(dbc.getPivotLocal()).add(0.0, 0.5, 0.0));
+            } else {
+                pivot = entityPos.add(dbc.getPivotLocal()).add(0.0, 0.5, 0.0);
+            }
 
             // Our computed visual rotation pivot + rotation axis (magenta)
             drawBox(poseStack, lines, camera, pivot, 0.2f, 1.0f, 0.0f, 1.0f);

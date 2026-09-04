@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.decorationbearing;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.erika.vsanalogwarfare.scope.ScopeCannonLink;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
+import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.AssemblyException;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
@@ -168,16 +169,18 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
             // store it unmodified.
             movedContraption.setDecorationRotation(pose.viewYaw(), pose.viewPitch());
         } else {
-            // Approximate the POCE spawn position (atLowerCornerOf(mount - 2 along
-            // the vertical axis)); re-captured from the live entity on the first
-            // pose tick.
-            movedContraption.capturePivot(Vec3.atLowerCornerOf(mount.below(2)), renderOrigin, false);
+            // Approximate the POCE spawn position in ship-local coordinates
+            // (atLowerCornerOf(mount - 2 along the vertical axis)); re-captured
+            // from the live entity on the first pose tick.
+            movedContraption.capturePivotLocal(Vec3.atLowerCornerOf(mount.below(2)), renderOrigin);
             // Neutral pose in the internal convention: render applies
             // yaw + initialYaw, so -initialYaw yields identity.
             movedContraption.setDecorationRotation(-initialOrientation.toYRot(), 0.0f);
         }
 
-        movedContraption.setPos(renderOrigin);
+        // Spawn at the ship-transformed render origin (identity when not on a
+        // ship); the entity then keeps it through the ship transform per tick.
+        movedContraption.setPos(VsCompat.shipToWorldPosition(level, worldPosition, renderOrigin));
 
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
 
