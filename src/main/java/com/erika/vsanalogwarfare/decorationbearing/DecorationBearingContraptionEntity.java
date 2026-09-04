@@ -70,7 +70,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * stale jar: if this tag is absent from the assemble log, the deployed
      * jar predates the yaw/pivot fix.
      */
-    public static final String BUILD_TAG = "dbc-pose-fix3";
+    public static final String BUILD_TAG = "dbc-zero-lag";
 
     private static final EntityDataAccessor<Float> SYNCED_YAW =
             SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
@@ -341,11 +341,27 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         prevPitch = pitch;
 
         if (level().isClientSide) {
-            yaw = this.entityData.get(SYNCED_YAW);
-            pitch = this.entityData.get(SYNCED_PITCH);
+            // Read the live CBC entity directly on the client for zero-lag
+            // pose, eliminating the 1-tick server sync delay.  Fall back to
+            // synced entity data when the CBC entity is not yet available.
+            Object cbcEntity = resolveLinkedCbcEntity();
+            if (cbcEntity != null) {
+                CbcCompat.CbcPoseData livePose = CbcCompat.readCbcPoseData(cbcEntity);
+                if (livePose != null) {
+                    yaw = livePose.viewYaw();
+                    pitch = livePose.viewPitch();
+                    linkedCbcEntityId = livePose.entityId();
+                } else {
+                    yaw = this.entityData.get(SYNCED_YAW);
+                    pitch = this.entityData.get(SYNCED_PITCH);
+                }
+            } else {
+                yaw = this.entityData.get(SYNCED_YAW);
+                pitch = this.entityData.get(SYNCED_PITCH);
+            }
             if (tickCount % 40 == 0) {
-                LOGGER.info("[VSAW_DBC] client tick: build={} yaw={} pitch={} pos={} pivotLocal={}",
-                        BUILD_TAG, yaw, pitch, position(), pivotLocal);
+                LOGGER.info("[VSAW_DBC] client tick: build={} yaw={} pitch={} pos={} pivotLocal={} liveCbc={}",
+                        BUILD_TAG, yaw, pitch, position(), pivotLocal, cbcEntity != null);
             }
         } else {
             Object cbcEntity = resolveLinkedCbcEntity();
