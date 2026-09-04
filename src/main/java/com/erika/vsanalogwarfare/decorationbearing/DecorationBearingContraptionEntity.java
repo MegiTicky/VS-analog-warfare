@@ -139,20 +139,23 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         float interpPitch = getInterpolatedPitch(partialTicks);
 
         // Translate to render origin (block center convention for
-        // OrientedContraptionEntity; entity pos = atBottomCenterOf(contraption.anchor))
+        // OrientedContraptionEntity; entity pos = atBottomCenterOf(contraption.anchor)).
+        // The CBC POCE renderer (PitchOrientedContraptionEntityMixin) applies:
+        //   translate(-0.5, 0, -0.5) -> centre() -> R -> unCentre()
+        // where centre() = translate(0.5, 0.5, 0.5) rotates around the block center.
+        // Our pivot-aware variant replaces centre()/unCentre() with a
+        // translate around pivotLocal + (0.5, 0.5, 0.5) so that the rotation
+        // argument matches toGlobalVector's convention:
+        //   R * (v - (0.5, 0.5, 0.5) - pivotLocal)
         matrixStack.translate(-.5f, 0, -.5f);
-
-        // Pivot-aware rotation matching applyRotation():
-        //   vertex' = R(vertex - pivotLocal) + pivotLocal
-        // PoseStack applies right-to-left to vertices.
-        matrixStack.translate(pivotLocal.x, pivotLocal.y, pivotLocal.z);
+        matrixStack.translate(pivotLocal.x + 0.5, pivotLocal.y + 0.5, pivotLocal.z + 0.5);
         matrixStack.mulPose(Axis.YP.rotationDegrees(interpYaw + initialYaw));
         if (getInitialOrientation().getAxis() == Direction.Axis.X) {
             matrixStack.mulPose(Axis.ZP.rotationDegrees(interpPitch));
         } else {
             matrixStack.mulPose(Axis.XP.rotationDegrees(interpPitch));
         }
-        matrixStack.translate(-pivotLocal.x, -pivotLocal.y, -pivotLocal.z);
+        matrixStack.translate(-pivotLocal.x - 0.5, -pivotLocal.y - 0.5, -pivotLocal.z - 0.5);
     }
 
     // -----------------------------------------------------------------------
