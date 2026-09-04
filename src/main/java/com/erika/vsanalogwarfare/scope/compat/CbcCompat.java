@@ -645,6 +645,7 @@ public final class CbcCompat {
             Direction initialOrientation,
             Vec3 anchorVec,
             Vec3 prevAnchorVec,
+            Vec3 entityPos,
             int entityId
     ) {}
 
@@ -765,9 +766,10 @@ public final class CbcCompat {
                 return null;
             }
             int entityId = mcEntity.getId();
-            LOGGER.debug("[VSAW_DBC] readCbcPoseData: OK viewYaw={} viewPitch={} initialYaw={} anchor={} id={}",
-                    viewYaw, viewPitch, initialYaw, anchorVec, entityId);
-            return new CbcPoseData(viewYaw, viewPitch, initialYaw, initialOrientation, anchorVec, prevAnchorVec, entityId);
+            Vec3 entityPos = mcEntity.position();
+            LOGGER.debug("[VSAW_DBC] readCbcPoseData: OK viewYaw={} viewPitch={} initialYaw={} anchor={} entityPos={} id={}",
+                    viewYaw, viewPitch, initialYaw, anchorVec, entityPos, entityId);
+            return new CbcPoseData(viewYaw, viewPitch, initialYaw, initialOrientation, anchorVec, prevAnchorVec, entityPos, entityId);
         } catch (ReflectiveOperationException | LinkageError e) {
             LOGGER.debug("[VSAW_DBC] readCbcPoseData: FAILED for {} - {}: {}",
                     cbcEntity.getClass().getName(), e.getClass().getSimpleName(), e.getMessage());

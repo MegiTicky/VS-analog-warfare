@@ -35,10 +35,21 @@ import javax.annotation.Nullable;
  * anchor, i.e. ship space when mounted on a VS ship):
  *
  * <pre>
- * pivotLocal = CBC anchor at assembly - render origin at assembly
- * entityPos(t) = CBC anchor(t) - pivotLocal
+ * pivotLocal = CBC entity pos at assembly - render origin at assembly
+ * entityPos(t) = CBC entity pos(t) - pivotLocal
  * localPoint(t) = R(t) . (localPoint - pivotLocal) + pivotLocal
  * </pre>
+ *
+ * The invariant {@code entityPos + pivotLocal == CBC entity position} makes the
+ * render rotation center land exactly on the CBC cannon's own visual pivot
+ * ({@code cbcEntityPos + (0, 0.5, 0)}): CBC's renderer (PitchOrientedContraptionEntityMixin)
+ * rotates around the model point {@code (0.5, 0.5, 0.5)} after a
+ * {@code translate(-0.5, 0, -0.5)}, so its world pivot is
+ * {@code cbcEntityPos + (0, 0.5, 0)} — and so is ours once the invariant holds.
+ *
+ * Yaw convention: our {@code yaw} field stores exactly what CBC's
+ * {@code m_5675_(1.0f)} returns (the already-negated view yaw), so every
+ * consumer adds {@code yaw + initialYaw} the same way CBC's transforms do.
  *
  * The entity position is therefore the *rotated-out assembly render origin*,
  * never the CBC anchor itself, so the contraption's local block coordinates
@@ -61,14 +72,16 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     private int linkedCbcEntityId = -1;
 
     /**
-     * CBC pivot expressed in the assembly render frame (render origin at
-     * assembly = Vec3.atBottomCenterOf(contraption.anchor)).
+     * CBC entity position expressed in the assembly render frame (render
+     * origin at assembly = Vec3.atBottomCenterOf(contraption.anchor)).
      */
     private Vec3 pivotLocal = Vec3.ZERO;
     /** True once pivotLocal has been captured from the live CBC anchor. */
     private boolean pivotCaptured = false;
     /** Consecutive server ticks without a resolvable CBC pose (diagnostics). */
     private int unresolvedTicks = 0;
+    /** Render frame counter for periodic client-side diagnostics. */
+    private int renderLogCounter = 0;
 
     public DecorationBearingContraptionEntity(EntityType<?> type, Level level) {
         super(type, level);
@@ -138,6 +151,13 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         float interpYaw = getInterpolatedYaw(partialTicks);
         float interpPitch = getInterpolatedPitch(partialTicks);
 
+        if (++renderLogCounter % 60 == 0) {
+            LOGGER.info("[VSAW_DBC] render: interpYaw={} interpPitch={} initialYaw={} pivotLocal={} entityPos={} axis={}",
+                    String.format("%.2f", interpYaw), String.format("%.2f", interpPitch),
+                    String.format("%.2f", initialYaw), pivotLocal, position(),
+                    getInitialOrientation().getAxis());
+        }
+
         // Translate to render origin (block center convention for
         // OrientedContraptionEntity; entity pos = atBottomCenterOf(contraption.anchor)).
         // The CBC POCE renderer (PitchOrientedContraptionEntityMixin) applies:
@@ -163,49 +183,59 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     // -----------------------------------------------------------------------
 
     /**
-     * Custom rotation state that produces the correct matrix for VS collision
-     * and Create render compatibility. Continuous — no branch on zero angles.
+     * Rotation state for VS collision, mirroring CBC's
+     * {@code CBCContraptionRotationState} exactly (translated to our yaw
+     * convention: our {@code yaw} = −CBC's raw yaw field). Mirroring CBC keeps
+     * the decoration's ship-space collision identical to the cannon's.
      */
     private class DecorationRotationState extends AbstractContraptionEntity.ContraptionRotationState {
-        private final float entityYaw;
-        private final float entityPitch;
-        private final float stateYaw;
         private final boolean isXAxis;
+        private final boolean verticalBranch;
+        private final float stateYaw;
+        private final float yawOffsetValue;
+        private final float pitchValue;
         private Matrix3d cachedMatrix;
 
         DecorationRotationState() {
-            this.entityYaw = yaw;
-            this.entityPitch = pitch;
+            this.pitchValue = pitch;
             this.isXAxis = getInitialOrientation().getAxis() == Direction.Axis.X;
-            this.stateYaw = entityYaw + getInitialYaw();
+            this.verticalBranch = pitchValue != 0.0f && yaw != 0.0f;
+            if (verticalBranch) {
+                // CBC: yawOffset = entity.yaw (raw); state yaw = -entity.getYawOffset() (= -initialYaw)
+                this.yawOffsetValue = -yaw;
+                this.stateYaw = -getInitialYaw();
+            } else {
+                // CBC: state yaw = entity.yaw + initialYaw = -our yaw + initialYaw
+                this.yawOffsetValue = 0.0f;
+                this.stateYaw = -yaw + getInitialYaw();
+            }
         }
 
         @Override
         public Matrix3d asMatrix() {
             if (cachedMatrix != null) return cachedMatrix;
             cachedMatrix = new Matrix3d().asIdentity();
-
-            // Match applyRotation order: pitch first, then yaw+initialYaw
-            if (entityPitch != 0) {
+            boolean hasVertical = hasVerticalRotation();
+            if (hasVertical) {
                 if (isXAxis) {
-                    cachedMatrix.multiply(new Matrix3d().asZRotation(AngleHelper.rad(entityPitch)));
+                    cachedMatrix.multiply(new Matrix3d().asZRotation(AngleHelper.rad(-pitchValue)));
                 } else {
-                    cachedMatrix.multiply(new Matrix3d().asXRotation(AngleHelper.rad(entityPitch)));
+                    cachedMatrix.multiply(new Matrix3d().asXRotation(AngleHelper.rad(-pitchValue)));
                 }
             }
-
-            cachedMatrix.multiply(new Matrix3d().asYRotation(AngleHelper.rad(stateYaw)));
+            float yawAdjust = isXAxis && !hasVertical ? stateYaw + 180.0f : stateYaw;
+            cachedMatrix.multiply(new Matrix3d().asYRotation(AngleHelper.rad(yawAdjust)));
             return cachedMatrix;
         }
 
         @Override
         public boolean hasVerticalRotation() {
-            return entityPitch != 0;
+            return pitchValue != 0.0f;
         }
 
         @Override
         public float getYawOffset() {
-            return 0;
+            return -yawOffsetValue;
         }
     }
 
@@ -221,22 +251,22 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     @Override
     protected StructureTransform makeStructureTransform() {
         // Blocks must return to the world positions they currently occupy in
-        // render/collision space. Desired world center of local block b:
-        //   E + R(b + c - pivotLocal) + pivotLocal - h      (c = (.5,.5,.5), h = (.5,0,.5))
-        // StructureTransform places block b at:
-        //   offset + R90(b) + c
-        // with R90 the yaw-only rotation snapped to a multiple of 90°. Solve
-        // offset from the two expressions (pitch cannot be expressed in a
-        // StructureTransform, so — like every Create bearing — disassembly is
-        // yaw-only).
+        // render space. Rendered world center of local block b (block coords):
+        //   W = E + Rs(b - pivotLocal) + pivotLocal + (0, 0.5, 0)
+        // (E = entity pos; Rs = yaw-only rotation snapped to a multiple of 90°;
+        // pitch cannot be expressed in a StructureTransform, so — like every
+        // Create bearing — disassembly is yaw-only).
+        // StructureTransform places block b at: offset + Rs(b). Solve offset:
+        //   offset = W - Rs(b) = E - Rs(pivotLocal) + pivotLocal + (0, 0.5, 0) - c
         float angle = yaw + getInitialYaw();
         float snapped = (float) (Math.round(angle / 90.0) * 90);
 
-        Vec3 c = new Vec3(0.5, 0.5, 0.5);
-        Vec3 h = new Vec3(0.5, 0.0, 0.5);
-        Vec3 entityPos = position();
-        Vec3 rotatedC = VecHelper.rotate(c.subtract(pivotLocal), snapped, Direction.Axis.Y);
-        Vec3 offset = entityPos.add(pivotLocal).add(rotatedC).subtract(h).subtract(c);
+        Vec3 rotatedPivot = VecHelper.rotate(pivotLocal, snapped, Direction.Axis.Y);
+        Vec3 offset = position()
+                .subtract(rotatedPivot)
+                .add(pivotLocal)
+                .add(0.0, 0.5, 0.0)
+                .subtract(0.5, 0.5, 0.5);
 
         return new StructureTransform(BlockPos.containing(offset.x, offset.y, offset.z), 0, snapped, 0);
     }
@@ -264,6 +294,10 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         if (level().isClientSide) {
             yaw = this.entityData.get(SYNCED_YAW);
             pitch = this.entityData.get(SYNCED_PITCH);
+            if (tickCount % 40 == 0) {
+                LOGGER.info("[VSAW_DBC] client tick: yaw={} pitch={} pos={} pivotLocal={}",
+                        yaw, pitch, position(), pivotLocal);
+            }
         } else {
             Object cbcEntity = resolveLinkedCbcEntity();
             if (cbcEntity == null) {
@@ -283,30 +317,30 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                             cbcEntity.getClass().getSimpleName());
                 } else {
                     unresolvedTicks = 0;
-                    // CBC's getViewYRot(1.0f) returns the raw yaw field; Create's
-                    // rendering convention negates it (m_5675_ = -yaw). Our
-                    // applyRotation()/applyLocalTransforms() use the raw field,
-                    // so negate here to adopt CBC's orientation as ours.
-                    yaw = -pose.viewYaw();
+                    // pose.viewYaw() is CBC's m_5675_(1.0f) — the already-negated
+                    // view yaw. CBC's render and applyRotation add this value
+                    // (+ initialYaw) directly; our transform consumers do the
+                    // same, so store it unmodified.
+                    yaw = pose.viewYaw();
                     pitch = pose.viewPitch();
                     linkedCbcEntityId = pose.entityId();
 
                     // If assembly could not use the live CBC anchor (assembled
                     // before the cannon entity resolved), re-capture the pivot
                     // now: the decoration stays put, the rotation center snaps
-                    // to the exact CBC anchor.
+                    // to the exact CBC pivot.
                     if (!pivotCaptured) {
-                        pivotLocal = pose.anchorVec().subtract(position());
+                        pivotLocal = pose.entityPos().subtract(position());
                         pivotCaptured = true;
-                        LOGGER.info("[VSAW_DBC] tick: pivot re-captured from live CBC anchor={} pivotLocal={}",
-                                pose.anchorVec(), pivotLocal);
+                        LOGGER.info("[VSAW_DBC] tick: pivot re-captured from live CBC entityPos={} pivotLocal={}",
+                                pose.entityPos(), pivotLocal);
                     }
 
                     // Entity position = rotated-out assembly render origin.
-                    // pivotLocal is the CBC pivot in the assembly frame, so
-                    // anchoring the pivot to the CBC's live anchor positions
-                    // the whole contraption correctly under any rotation.
-                    setPos(pose.anchorVec().subtract(pivotLocal));
+                    // Invariant: entityPos + pivotLocal == CBC entity position,
+                    // which places our render rotation center exactly on the
+                    // cannon's visual pivot.
+                    setPos(pose.entityPos().subtract(pivotLocal));
                     // Keep Create/VS actor positioning tracking the entity,
                     // matching CBC's own behavior.
                     if (contraption != null) {
@@ -315,8 +349,13 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
                     this.entityData.set(SYNCED_YAW, yaw);
                     this.entityData.set(SYNCED_PITCH, pitch);
-                    LOGGER.debug("[VSAW_DBC] tick: yaw={} pitch={} anchor={} id={}",
-                            yaw, pitch, pose.anchorVec(), linkedCbcEntityId);
+                    if (tickCount % 40 == 0) {
+                        LOGGER.info("[VSAW_DBC] tick: viewYaw={} pitch={} cbcEntityPos={} pos={} pivotLocal={} id={}",
+                                yaw, pitch, pose.entityPos(), position(), pivotLocal, linkedCbcEntityId);
+                    } else {
+                        LOGGER.debug("[VSAW_DBC] tick: yaw={} pitch={} anchor={} id={}",
+                                yaw, pitch, pose.entityPos(), linkedCbcEntityId);
+                    }
                 }
             }
         }
@@ -466,8 +505,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
     /**
      * Set initial rotation from the block entity during assembly.
-     * Used until the first live CBC pose tick; must already use the internal
-     * yaw convention (negated CBC view yaw).
+     * Used until the first live CBC pose tick; must use the internal yaw
+     * convention (CBC's m_5675_ view yaw, already negated).
      */
     public void setDecorationRotation(float newYaw, float newPitch) {
         this.prevYaw = newYaw;
@@ -479,20 +518,20 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     }
 
     /**
-     * Capture the CBC pivot in the assembly render frame from the live CBC
-     * anchor. Must be called before the entity is spawned.
+     * Capture the CBC entity position in the assembly render frame from the
+     * live CBC entity. Must be called before the entity is spawned.
      */
-    public void capturePivot(Vec3 cbcAnchorAtAssembly, Vec3 renderOriginAtAssembly) {
-        capturePivot(cbcAnchorAtAssembly, renderOriginAtAssembly, true);
+    public void capturePivot(Vec3 cbcEntityPosAtAssembly, Vec3 renderOriginAtAssembly) {
+        capturePivot(cbcEntityPosAtAssembly, renderOriginAtAssembly, true);
     }
 
     /**
-     * Capture the CBC pivot in the assembly render frame. When
+     * Capture the CBC entity position in the assembly render frame. When
      * {@code fromLiveCbc} is false (approximate anchor), the pivot is
-     * re-captured from the live CBC anchor on the first successful pose tick.
+     * re-captured from the live CBC entity on the first successful pose tick.
      */
-    public void capturePivot(Vec3 cbcAnchorAtAssembly, Vec3 renderOriginAtAssembly, boolean fromLiveCbc) {
-        this.pivotLocal = cbcAnchorAtAssembly.subtract(renderOriginAtAssembly);
+    public void capturePivot(Vec3 cbcEntityPosAtAssembly, Vec3 renderOriginAtAssembly, boolean fromLiveCbc) {
+        this.pivotLocal = cbcEntityPosAtAssembly.subtract(renderOriginAtAssembly);
         this.pivotCaptured = fromLiveCbc;
     }
 

@@ -160,13 +160,21 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         // is where local block (0,0,0) renders from).
         Vec3 renderOrigin = Vec3.atBottomCenterOf(contraption.anchor);
         if (pose != null) {
-            movedContraption.capturePivot(pose.anchorVec(), renderOrigin);
-            // CBC's view yaw is rendered negated by Create (m_5675_ = -yaw);
-            // the entity stores the internal (negated) value.
-            movedContraption.setDecorationRotation(-pose.viewYaw(), pose.viewPitch());
+            // pivotLocal is relative to the CBC entity's raw position (not its
+            // anchorVec, which carries a +0.5 x/z offset) — that's what makes
+            // the render rotation center land on the cannon's visual pivot.
+            movedContraption.capturePivot(pose.entityPos(), renderOrigin);
+            // pose.viewYaw() is already CBC's m_5675_ (negated) convention;
+            // store it unmodified.
+            movedContraption.setDecorationRotation(pose.viewYaw(), pose.viewPitch());
         } else {
-            movedContraption.capturePivot(Vec3.atCenterOf(mount), renderOrigin, false);
-            movedContraption.setDecorationRotation(0, 0);
+            // Approximate the POCE spawn position (atLowerCornerOf(mount - 2 along
+            // the vertical axis)); re-captured from the live entity on the first
+            // pose tick.
+            movedContraption.capturePivot(Vec3.atLowerCornerOf(mount.below(2)), renderOrigin, false);
+            // Neutral pose in the internal convention: render applies
+            // yaw + initialYaw, so -initialYaw yields identity.
+            movedContraption.setDecorationRotation(-initialOrientation.toYRot(), 0.0f);
         }
 
         movedContraption.setPos(renderOrigin);
