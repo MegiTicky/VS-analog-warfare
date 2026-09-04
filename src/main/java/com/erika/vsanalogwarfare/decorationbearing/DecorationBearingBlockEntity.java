@@ -18,12 +18,15 @@ import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.Vec3;
+import com.mojang.logging.LogUtils;
+import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.List;
 
 public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         implements IBearingBlockEntity, IDisplayAssemblyExceptions {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private ScopeCannonLink linkedMount;
     private DecorationBearingContraptionEntity movedContraption;
     private boolean running;
@@ -46,10 +49,14 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
                 if (bearing.movedContraption != null && !bearing.movedContraption.isStalled()) {
                     // already running, do nothing
                 } else {
+                    LOGGER.info("[VSAW_DBC] tick: disassembling (running={}, stalled={})",
+                            bearing.running, bearing.movedContraption != null && bearing.movedContraption.isStalled());
                     bearing.disassemble();
                 }
             } else {
                 if (bearing.getSpeed() == 0) return;
+                LOGGER.info("[VSAW_DBC] tick: assembling (speed={}, linkedMount={}, pos={})",
+                        bearing.getSpeed(), bearing.linkedMount, pos);
                 bearing.assemble();
             }
         }
@@ -104,51 +111,71 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     }
 
     public void assemble() {
-        if (level == null || level.isClientSide || running || resolveMount() == null) return;
+        if (level == null || level.isClientSide || running || resolveMount() == null) {
+            LOGGER.info("[VSAW_DBC] assemble: SKIPPED (level={}, clientSide={}, running={}, mount={})",
+                    level != null, level != null && level.isClientSide, running, resolveMount());
+            return;
+        }
         Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
         BearingContraption contraption = new BearingContraption(false, facing);
+        boolean assembled;
         try {
-            if (!contraption.assemble(level, worldPosition)) return;
+            assembled = contraption.assemble(level, worldPosition);
         } catch (AssemblyException e) {
+            LOGGER.info("[VSAW_DBC] assemble: AssemblyException at {}", worldPosition, e);
             lastException = e;
             sendData();
             return;
         }
+        if (!assembled) {
+            LOGGER.info("[VSAW_DBC] assemble: contraption.assemble() returned false at {}", worldPosition);
+            return;
+        }
         lastException = null;
-        contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
-
+        // Resolve the live CBC entity for the initial pose and pivot. When it
+        // is not yet resolvable (cannon not assembled yet, chunk race, etc.)
+        // fall back to an approximate pivot and zero pose — the entity
+        // re-captures the exact pivot from the live CBC anchor on the first
+        // successful pose tick.
         BlockPos mount = resolveMount();
+        Object cbcEntity = CbcCompat.resolveLiveCbcEntity(level, mount);
+        CbcCompat.CbcPoseData pose = cbcEntity != null ? CbcCompat.readCbcPoseData(cbcEntity) : null;
+        if (pose == null) {
+            LOGGER.info("[VSAW_DBC] assemble: live CBC entity unavailable at {} (mount={}, mountBE={}, reason={})",
+                    worldPosition, mount,
+                    mount != null ? level.getBlockEntity(mount) : null,
+                    CbcCompat.describeResolutionFailure(level, mount));
+        }
+
         Direction initialOrientation = CbcCompat.getInitialOrientationFromCannon(level, mount);
         if (initialOrientation == null) {
             Direction hFacing = level.getBlockState(mount).getValue(BlockStateProperties.HORIZONTAL_FACING);
             initialOrientation = hFacing;
         }
 
-        // Resolve the live CBC entity for initial pose
-        Object cbcEntity = CbcCompat.resolveLiveCbcEntity(level, mount);
-        Direction finalInitialOrientation = initialOrientation;
-
-        // Create the entity — positioned at the assembly origin (worldPosition)
         movedContraption = DecorationBearingContraptionEntity.create(level, this, contraption, initialOrientation);
 
-        // Compute pivot offset: the CBC cannon trunnion is at mount.relative(facing, 2).
-        // In contraption-local coords, this is (cannonPivot - worldPosition).
-        BlockPos cannonPivot = mount.relative(facing, 2);
-        Vec3 pivotLocal = Vec3.atLowerCornerOf(cannonPivot.subtract(worldPosition));
-        movedContraption.setPivotOffset(pivotLocal);
-
-        // Initialize rotation from CBC if available
-        if (cbcEntity != null) {
-            CbcCompat.CbcPoseData pose = CbcCompat.readCbcPoseData(cbcEntity);
-            if (pose != null) {
-                movedContraption.setDecorationRotation(pose.viewYaw(), pose.viewPitch());
-            }
+        // Render origin = bottom-center of the contraption's own anchor block
+        // (BearingContraption anchors at bearingPos.relative(facing), so this
+        // is where local block (0,0,0) renders from).
+        Vec3 renderOrigin = Vec3.atBottomCenterOf(contraption.anchor);
+        if (pose != null) {
+            movedContraption.capturePivot(pose.anchorVec(), renderOrigin);
+            // CBC's view yaw is rendered negated by Create (m_5675_ = -yaw);
+            // the entity stores the internal (negated) value.
+            movedContraption.setDecorationRotation(-pose.viewYaw(), pose.viewPitch());
+        } else {
+            movedContraption.capturePivot(Vec3.atCenterOf(mount), renderOrigin, false);
+            movedContraption.setDecorationRotation(0, 0);
         }
 
-        // Position entity at the assembly origin (NOT at the cannon pivot)
-        movedContraption.setPos(Vec3.atBottomCenterOf(worldPosition));
+        movedContraption.setPos(renderOrigin);
+
+        contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
 
         level.addFreshEntity(movedContraption);
+        LOGGER.info("[VSAW_DBC] assemble: entity CREATED id={} pivotLocal={} renderOrigin={} mount={} fromLiveCbc={}",
+                movedContraption.getId(), movedContraption.getPivotLocal(), renderOrigin, mount, pose != null);
         running = true;
         angle = 0;
         sendData();
@@ -156,6 +183,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     }
 
     public void disassemble() {
+        LOGGER.info("[VSAW_DBC] disassemble: entity={}", movedContraption);
         if (movedContraption != null) {
             movedContraption.disassemble();
             if (!movedContraption.isRemoved()) movedContraption.discard();

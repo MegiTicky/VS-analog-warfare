@@ -14,7 +14,11 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import com.mojang.logging.LogUtils;
@@ -27,23 +31,44 @@ import javax.annotation.Nullable;
 /**
  * Full Create contraption that follows a linked CBC cannon's pose.
  * <p>
- * The BearingContraption coordinate frame is never mutated. Rotation is applied
- * around a local pivot offset from the original assembly anchor. The canonical
- * transform is shared by rendering, collision, ray-trace, and disassembly.
+ * Pose model (all vectors in the same coordinate space as the CBC entity's
+ * anchor, i.e. ship space when mounted on a VS ship):
+ *
+ * <pre>
+ * pivotLocal = CBC anchor at assembly - render origin at assembly
+ * entityPos(t) = CBC anchor(t) - pivotLocal
+ * localPoint(t) = R(t) . (localPoint - pivotLocal) + pivotLocal
+ * </pre>
+ *
+ * The entity position is therefore the *rotated-out assembly render origin*,
+ * never the CBC anchor itself, so the contraption's local block coordinates
+ * (relative to {@code contraption.anchor}) stay valid for rendering, actors,
+ * collision and disassembly.
+ * <p>
+ * The server is authoritative for the pose; yaw/pitch reach the client through
+ * vanilla synced entity data, so the client never needs to resolve the CBC
+ * entity.
  */
 public class DecorationBearingContraptionEntity extends OrientedContraptionEntity {
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    private static final EntityDataAccessor<Float> SYNCED_YAW =
+            SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Float> SYNCED_PITCH =
+            SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
+
     private BlockPos controllerPos;
     private int linkedCbcEntityId = -1;
-    private int prevLinkedCbcEntityId = -1;
 
-    // Local pivot offset from the original assembly anchor (in contraption-local coords).
-    // The DBC rotates around assemblyAnchor + pivotOffset, NOT around assemblyAnchor.
-    private Vec3 pivotOffset = Vec3.ZERO;
-
-    // Current and previous CBC pose snapshots for interpolation.
-    private Vec3 currentCbcAnchor = null;
-    private Vec3 previousCbcAnchor = null;
+    /**
+     * CBC pivot expressed in the assembly render frame (render origin at
+     * assembly = Vec3.atBottomCenterOf(contraption.anchor)).
+     */
+    private Vec3 pivotLocal = Vec3.ZERO;
+    /** True once pivotLocal has been captured from the live CBC anchor. */
+    private boolean pivotCaptured = false;
+    /** Consecutive server ticks without a resolvable CBC pose (diagnostics). */
+    private int unresolvedTicks = 0;
 
     public DecorationBearingContraptionEntity(EntityType<?> type, Level level) {
         super(type, level);
@@ -60,6 +85,13 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         return entity;
     }
 
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(SYNCED_YAW, 0.0f);
+        this.entityData.define(SYNCED_PITCH, 0.0f);
+    }
+
     // -----------------------------------------------------------------------
     // Canonical transform: one source of truth for all transform consumers
     // -----------------------------------------------------------------------
@@ -68,8 +100,9 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * Apply the canonical decoration rotation to a local-space vector.
      * Matches CBC's rotation chain:
      *   1. Pitch around Z (X-axis initial) or X (other axes)
-     *   2. View yaw around Y
-     *   3. Initial yaw around Y
+     *   2. View yaw + initial yaw around Y
+     * Rotation happens around pivotLocal; translation is carried by the
+     * entity position (see class doc).
      */
     @Override
     public Vec3 applyRotation(Vec3 vector, float partialTicks) {
@@ -77,7 +110,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     }
 
     private Vec3 rotateAroundPivot(Vec3 vector, float partialTicks, boolean reverse) {
-        Vec3 centered = vector.subtract(pivotOffset);
+        Vec3 centered = vector.subtract(pivotLocal);
         Direction.Axis pitchAxis = getInitialOrientation().getAxis() == Direction.Axis.X
                 ? Direction.Axis.Z : Direction.Axis.X;
         Vec3 rotated;
@@ -90,7 +123,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             rotated = VecHelper.rotate(centered, getInterpolatedPitch(partialTicks), pitchAxis);
             rotated = VecHelper.rotate(rotated, getInterpolatedYaw(partialTicks) + getInitialYaw(), Direction.Axis.Y);
         }
-        return rotated.add(pivotOffset);
+        return rotated.add(pivotLocal);
     }
 
     @Override
@@ -105,33 +138,21 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         float interpYaw = getInterpolatedYaw(partialTicks);
         float interpPitch = getInterpolatedPitch(partialTicks);
 
-        // Translate to render origin (block center convention for OrientedContraptionEntity)
+        // Translate to render origin (block center convention for
+        // OrientedContraptionEntity; entity pos = atBottomCenterOf(contraption.anchor))
         matrixStack.translate(-.5f, 0, -.5f);
 
-        // Apply pivot-aware rotation matching applyRotation():
-        //   vertex' = R(vertex + pivotOffset) where R = Ryaw+initial * Rpitch
-        // PoseStack applies right-to-left to vertices, so:
-        //   translate(pivotOffset) * Ryaw * Rpitch * translate(-pivotOffset)
-        // But renderer already centers at block origin, so pivot is in block-local coords.
-
-        // Move pivot to origin
-        matrixStack.translate(pivotOffset.x, pivotOffset.y, pivotOffset.z);
-
-        // Apply yaw+initialYaw (Y axis)
+        // Pivot-aware rotation matching applyRotation():
+        //   vertex' = R(vertex - pivotLocal) + pivotLocal
+        // PoseStack applies right-to-left to vertices.
+        matrixStack.translate(pivotLocal.x, pivotLocal.y, pivotLocal.z);
         matrixStack.mulPose(Axis.YP.rotationDegrees(interpYaw + initialYaw));
-
-        // Apply pitch (Z axis for X-axis orientation, X axis otherwise)
         if (getInitialOrientation().getAxis() == Direction.Axis.X) {
             matrixStack.mulPose(Axis.ZP.rotationDegrees(interpPitch));
         } else {
             matrixStack.mulPose(Axis.XP.rotationDegrees(interpPitch));
         }
-
-        // Move pivot back
-        matrixStack.translate(-pivotOffset.x, -pivotOffset.y, -pivotOffset.z);
-
-        // Vertical offset to match OrientedContraptionEntity render convention
-        matrixStack.translate(0, 1f, 0);
+        matrixStack.translate(-pivotLocal.x, -pivotLocal.y, -pivotLocal.z);
     }
 
     // -----------------------------------------------------------------------
@@ -190,25 +211,31 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         return new DecorationRotationState();
     }
 
+    // -----------------------------------------------------------------------
+    // Disassembly
+    // -----------------------------------------------------------------------
+
     @Override
     protected StructureTransform makeStructureTransform() {
-        // During disassembly, blocks (stored in assembly frame) must be placed back
-        // at the correct world positions. The StructureTransform applies:
-        //   worldPos = rotateCentered(localPos) + offset
-        //
-        // The pivot is the cannon trunnion in assembly-local coords. We need the
-        // offset to be the pivot's world position at disassembly time, accounting
-        // for the fact that rotateCentered rotates around the block center of the offset.
-        //
-        // Since the DBC entity position follows the CBC anchor, and blocks were
-        // assembled relative to controllerPos, use controllerPos as the base.
-        // The pivot offset from assembly origin determines the disassembly anchor.
-        BlockPos basePos = controllerPos != null ? controllerPos : blockPosition();
-        BlockPos offset = BlockPos.containing(
-                basePos.getX() + pivotOffset.x,
-                basePos.getY() + pivotOffset.y,
-                basePos.getZ() + pivotOffset.z);
-        return new StructureTransform(offset, 0, -yaw + getInitialYaw(), 0);
+        // Blocks must return to the world positions they currently occupy in
+        // render/collision space. Desired world center of local block b:
+        //   E + R(b + c - pivotLocal) + pivotLocal - h      (c = (.5,.5,.5), h = (.5,0,.5))
+        // StructureTransform places block b at:
+        //   offset + R90(b) + c
+        // with R90 the yaw-only rotation snapped to a multiple of 90°. Solve
+        // offset from the two expressions (pitch cannot be expressed in a
+        // StructureTransform, so — like every Create bearing — disassembly is
+        // yaw-only).
+        float angle = yaw + getInitialYaw();
+        float snapped = (float) (Math.round(angle / 90.0) * 90);
+
+        Vec3 c = new Vec3(0.5, 0.5, 0.5);
+        Vec3 h = new Vec3(0.5, 0.0, 0.5);
+        Vec3 entityPos = position();
+        Vec3 rotatedC = VecHelper.rotate(c.subtract(pivotLocal), snapped, Direction.Axis.Y);
+        Vec3 offset = entityPos.add(pivotLocal).add(rotatedC).subtract(h).subtract(c);
+
+        return new StructureTransform(BlockPos.containing(offset.x, offset.y, offset.z), 0, snapped, 0);
     }
 
     // -----------------------------------------------------------------------
@@ -222,51 +249,82 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     }
 
     // -----------------------------------------------------------------------
-    // Tick: sync CBC state BEFORE super processes transforms
+    // Tick: server copies CBC pose; client reads synced entity data
     // -----------------------------------------------------------------------
 
     @Override
     protected void tickContraption() {
-        // Snapshot previous values before copying new CBC state
+        // Snapshot previous values before copying new state
         prevYaw = yaw;
         prevPitch = pitch;
-        previousCbcAnchor = currentCbcAnchor;
-        prevLinkedCbcEntityId = linkedCbcEntityId;
 
-        // Synchronize from linked CBC entity
-        if (level() != null) {
+        if (level().isClientSide) {
+            yaw = this.entityData.get(SYNCED_YAW);
+            pitch = this.entityData.get(SYNCED_PITCH);
+        } else {
             Object cbcEntity = resolveLinkedCbcEntity();
             if (cbcEntity == null) {
-                LOGGER.debug("[VSAW_DBC] tick: no CBC entity (controllerPos={}, linkedId={}, client={})",
-                        controllerPos, linkedCbcEntityId, level().isClientSide);
+                unresolvedTicks++;
+                if (unresolvedTicks % 60 == 1) {
+                    LOGGER.info("[VSAW_DBC] tick: no CBC entity (controllerPos={}, linkedId={}, failures={})",
+                            controllerPos, linkedCbcEntityId, unresolvedTicks);
+                } else {
+                    LOGGER.debug("[VSAW_DBC] tick: no CBC entity (controllerPos={}, linkedId={}, failures={})",
+                            controllerPos, linkedCbcEntityId, unresolvedTicks);
+                }
             } else {
                 CbcCompat.CbcPoseData pose = CbcCompat.readCbcPoseData(cbcEntity);
                 if (pose == null) {
+                    unresolvedTicks++;
                     LOGGER.debug("[VSAW_DBC] tick: readCbcPoseData returned null for {}",
                             cbcEntity.getClass().getSimpleName());
                 } else {
-                    // CBC's m_5675_() (getViewYRot) negates the yaw for rendering.
-                    // At partialTicks=1.0 it short-circuits to the raw yaw field.
-                    // Our applyRotation() uses the raw field directly (no negation),
-                    // so we negate here to match CBC's rotation convention.
+                    unresolvedTicks = 0;
+                    // CBC's getViewYRot(1.0f) returns the raw yaw field; Create's
+                    // rendering convention negates it (m_5675_ = -yaw). Our
+                    // applyRotation()/applyLocalTransforms() use the raw field,
+                    // so negate here to adopt CBC's orientation as ours.
                     yaw = -pose.viewYaw();
                     pitch = pose.viewPitch();
-                    previousCbcAnchor = pose.prevAnchorVec();
-                    currentCbcAnchor = pose.anchorVec();
                     linkedCbcEntityId = pose.entityId();
-                    setPos(currentCbcAnchor);
-                    LOGGER.debug("[VSAW_DBC] tick: yaw={} pitch={} anchor={} id={} client={}",
-                            yaw, pitch, currentCbcAnchor, linkedCbcEntityId, level().isClientSide);
+
+                    // If assembly could not use the live CBC anchor (assembled
+                    // before the cannon entity resolved), re-capture the pivot
+                    // now: the decoration stays put, the rotation center snaps
+                    // to the exact CBC anchor.
+                    if (!pivotCaptured) {
+                        pivotLocal = pose.anchorVec().subtract(position());
+                        pivotCaptured = true;
+                        LOGGER.info("[VSAW_DBC] tick: pivot re-captured from live CBC anchor={} pivotLocal={}",
+                                pose.anchorVec(), pivotLocal);
+                    }
+
+                    // Entity position = rotated-out assembly render origin.
+                    // pivotLocal is the CBC pivot in the assembly frame, so
+                    // anchoring the pivot to the CBC's live anchor positions
+                    // the whole contraption correctly under any rotation.
+                    setPos(pose.anchorVec().subtract(pivotLocal));
+                    // Keep Create/VS actor positioning tracking the entity,
+                    // matching CBC's own behavior.
+                    if (contraption != null) {
+                        contraption.anchor = blockPosition();
+                    }
+
+                    this.entityData.set(SYNCED_YAW, yaw);
+                    this.entityData.set(SYNCED_PITCH, pitch);
+                    LOGGER.debug("[VSAW_DBC] tick: yaw={} pitch={} anchor={} id={}",
+                            yaw, pitch, pose.anchorVec(), linkedCbcEntityId);
                 }
             }
         }
 
-        // Do NOT update contraption.anchor — it must remain at the original assembly
-        // position for correct block coordinate mapping during disassembly.
-        // The entity position (getAnchorVec) follows the CBC; the contraption block
-        // map and anchor stay in the original assembly frame.
-
+        // Create's OrientedContraptionEntity.tickContraption() early-returns
+        // when the entity has no vehicle (this one never has one), which would
+        // skip actor ticking entirely — tick actors explicitly instead.
         super.tickContraption();
+        if (getVehicle() == null) {
+            tickActors();
+        }
 
         // Re-attach to controller if needed
         if (controllerPos != null && level() != null && !level().isClientSide) {
@@ -282,17 +340,16 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     @Nullable
     private Object resolveLinkedCbcEntity() {
         if (controllerPos == null || level() == null) {
-            LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: controllerPos={} level={}", controllerPos, level() != null);
             return null;
         }
         var be = level().getBlockEntity(controllerPos);
         if (!(be instanceof DecorationBearingBlockEntity bearing)) {
-            LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: controller BE at {} is {}", controllerPos, be != null ? be.getClass().getSimpleName() : "null");
+            LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: controller BE at {} is {}",
+                    controllerPos, be != null ? be.getClass().getSimpleName() : "null");
             return null;
         }
         Object byId = CbcCompat.resolveLiveCbcEntityById(level(), linkedCbcEntityId);
         if (byId != null) {
-            LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: found CBC by entity ID {}", linkedCbcEntityId);
             return byId;
         }
         BlockPos mount = bearing.getLinkedMountPos();
@@ -322,7 +379,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     }
 
     // -----------------------------------------------------------------------
-    // Stalled angle
+    // Stalled angle — this entity is never driven by Create's stall packet
+    // path; a stall packet must not freeze the copied pose.
     // -----------------------------------------------------------------------
 
     @Override
@@ -332,8 +390,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
     @Override
     protected void handleStallInformation(double x, double y, double z, float angle) {
-        this.yaw = angle;
-        this.prevYaw = angle;
+        // No-op: pose authority is the linked CBC entity, not stall packets.
     }
 
     // -----------------------------------------------------------------------
@@ -343,14 +400,16 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     @Override
     protected void writeAdditional(CompoundTag tag, boolean clientPacket) {
         super.writeAdditional(tag, clientPacket);
-        // Save controllerPos as absolute — the entity position moves to follow CBC,
-        // so a relative offset would become stale.
+        // controllerPos is absolute; the entity position moves with the CBC.
         if (controllerPos != null) {
             tag.put("ControllerAbsolute", NbtUtils.writeBlockPos(controllerPos));
         }
-        tag.putFloat("PivotOffsetX", (float) pivotOffset.x);
-        tag.putFloat("PivotOffsetY", (float) pivotOffset.y);
-        tag.putFloat("PivotOffsetZ", (float) pivotOffset.z);
+        tag.putFloat("PivotLocalX", (float) pivotLocal.x);
+        tag.putFloat("PivotLocalY", (float) pivotLocal.y);
+        tag.putFloat("PivotLocalZ", (float) pivotLocal.z);
+        tag.putBoolean("PivotCaptured", pivotCaptured);
+        tag.putFloat("SavedYaw", yaw);
+        tag.putFloat("SavedPitch", pitch);
         if (linkedCbcEntityId >= 0) {
             tag.putInt("LinkedCbcEntityId", linkedCbcEntityId);
         }
@@ -366,11 +425,28 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             controllerPos = NbtUtils.readBlockPos(
                     tag.getCompound("ControllerRelative")).offset(blockPosition());
         }
-        if (tag.contains("PivotOffsetX")) {
-            pivotOffset = new Vec3(
+        if (tag.contains("PivotLocalX")) {
+            pivotLocal = new Vec3(
+                    tag.getFloat("PivotLocalX"),
+                    tag.getFloat("PivotLocalY"),
+                    tag.getFloat("PivotLocalZ"));
+        } else if (tag.contains("PivotOffsetX")) {
+            // Legacy key from the approximate block-space pivot
+            pivotLocal = new Vec3(
                     tag.getFloat("PivotOffsetX"),
                     tag.getFloat("PivotOffsetY"),
                     tag.getFloat("PivotOffsetZ"));
+        }
+        pivotCaptured = tag.getBoolean("PivotCaptured");
+        if (!clientPacket) {
+            // Spawn packets come before the first pose tick; restoring yaw
+            // here would fight the synced entity data on the client.
+            yaw = tag.getFloat("SavedYaw");
+            pitch = tag.getFloat("SavedPitch");
+            prevYaw = yaw;
+            prevPitch = pitch;
+            this.entityData.set(SYNCED_YAW, yaw);
+            this.entityData.set(SYNCED_PITCH, pitch);
         }
         if (tag.contains("LinkedCbcEntityId")) {
             linkedCbcEntityId = tag.getInt("LinkedCbcEntityId");
@@ -387,21 +463,42 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
     /**
      * Set initial rotation from the block entity during assembly.
-     * This is NOT used at runtime — tickContraption() copies CBC state directly.
+     * Used until the first live CBC pose tick; must already use the internal
+     * yaw convention (negated CBC view yaw).
      */
     public void setDecorationRotation(float newYaw, float newPitch) {
         this.prevYaw = newYaw;
         this.yaw = newYaw;
         this.prevPitch = newPitch;
         this.pitch = newPitch;
+        this.entityData.set(SYNCED_YAW, newYaw);
+        this.entityData.set(SYNCED_PITCH, newPitch);
     }
 
-    public void setPivotOffset(Vec3 offset) {
-        this.pivotOffset = offset;
+    /**
+     * Capture the CBC pivot in the assembly render frame from the live CBC
+     * anchor. Must be called before the entity is spawned.
+     */
+    public void capturePivot(Vec3 cbcAnchorAtAssembly, Vec3 renderOriginAtAssembly) {
+        capturePivot(cbcAnchorAtAssembly, renderOriginAtAssembly, true);
     }
 
-    public Vec3 getPivotOffset() {
-        return pivotOffset;
+    /**
+     * Capture the CBC pivot in the assembly render frame. When
+     * {@code fromLiveCbc} is false (approximate anchor), the pivot is
+     * re-captured from the live CBC anchor on the first successful pose tick.
+     */
+    public void capturePivot(Vec3 cbcAnchorAtAssembly, Vec3 renderOriginAtAssembly, boolean fromLiveCbc) {
+        this.pivotLocal = cbcAnchorAtAssembly.subtract(renderOriginAtAssembly);
+        this.pivotCaptured = fromLiveCbc;
+    }
+
+    public Vec3 getPivotLocal() {
+        return pivotLocal;
+    }
+
+    public boolean isPivotCaptured() {
+        return pivotCaptured;
     }
 
     public int getLinkedCbcEntityId() {

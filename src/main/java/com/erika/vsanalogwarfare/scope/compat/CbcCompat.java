@@ -629,6 +629,30 @@ public final class CbcCompat {
     }
 
     /**
+     * Diagnostics: explain why {@link #resolveLiveCbcEntity} would fail right
+     * now. Never throws; returns a short human-readable reason.
+     */
+    public static String describeResolutionFailure(Level level, BlockPos resolvedMount) {
+        if (resolvedMount == null) return "mount is null";
+        if (level == null) return "level is null";
+        BlockEntity be = level.getBlockEntity(resolvedMount);
+        if (be == null) return "no block entity at mount";
+        Object entity;
+        try {
+            entity = callNoArg(be, "getContraption");
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return "getContraption failed: " + e.getClass().getSimpleName();
+        }
+        if (entity == null) return "getContraption() returned null (cannon contraption not assembled?)";
+        if (!(entity instanceof net.minecraft.world.entity.Entity mcEntity)) {
+            return "getContraption() returned non-Entity: " + entity.getClass().getName();
+        }
+        if (mcEntity.isRemoved()) return "cannon entity is removed (id=" + mcEntity.getId() + ")";
+        if (mcEntity.level() != level) return "cannon entity level mismatch";
+        return "resolved OK (failure was in readCbcPoseData)";
+    }
+
+    /**
      * Read all DBC-relevant pose data from a live CBC entity in one atomic call.
      * Returns null if any required accessor fails.
      */
