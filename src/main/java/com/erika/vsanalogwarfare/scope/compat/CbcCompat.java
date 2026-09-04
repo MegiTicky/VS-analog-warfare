@@ -496,6 +496,72 @@ public final class CbcCompat {
     }
 
     /**
+     * Invoke a float accessor whose name changes between the mapped development
+     * environment and the obfuscated Forge runtime.
+     */
+    private static float invokeFloatWithAliases(Object target, String logicalName, float argument,
+                                                 String... methodNames) throws ReflectiveOperationException {
+        NoSuchMethodException lastMissing = null;
+        for (String methodName : methodNames) {
+            try {
+                float value = invokeFloat(target, methodName, argument);
+                if (!methodName.equals(methodNames[0])) {
+                    LOGGER.debug("[VSAW_DBC] {} using runtime method alias {} on {}",
+                            logicalName, methodName, target.getClass().getName());
+                }
+                return value;
+            } catch (NoSuchMethodException e) {
+                lastMissing = e;
+            }
+        }
+
+        NoSuchMethodException failure = new NoSuchMethodException(
+                logicalName + " unavailable; tried " + String.join(", ", methodNames));
+        if (lastMissing != null) {
+            failure.addSuppressed(lastMissing);
+        }
+        throw failure;
+    }
+
+    private static boolean hasCbcPoseApi(Object entity) {
+        if (!(entity instanceof net.minecraft.world.entity.Entity)) {
+            return false;
+        }
+        try {
+            findFloatMethod(entity, "view yaw", "getViewYRot", "m_5675_");
+            findFloatMethod(entity, "view pitch", "getViewXRot", "m_5686_");
+            entity.getClass().getMethod("getInitialYaw");
+            entity.getClass().getMethod("getInitialOrientation");
+            entity.getClass().getMethod("getAnchorVec");
+            entity.getClass().getMethod("getPrevAnchorVec");
+            return true;
+        } catch (ReflectiveOperationException | LinkageError e) {
+            LOGGER.debug("[VSAW_DBC] CBC pose API unavailable on {}: {} ({})",
+                    entity.getClass().getName(), e.getClass().getSimpleName(), e.getMessage());
+            return false;
+        }
+    }
+
+    private static Method findFloatMethod(Object target, String logicalName, String... methodNames)
+            throws ReflectiveOperationException {
+        NoSuchMethodException lastMissing = null;
+        for (String methodName : methodNames) {
+            try {
+                return target.getClass().getMethod(methodName, float.class);
+            } catch (NoSuchMethodException e) {
+                lastMissing = e;
+            }
+        }
+
+        NoSuchMethodException failure = new NoSuchMethodException(
+                logicalName + " accessor unavailable; tried " + String.join(", ", methodNames));
+        if (lastMissing != null) {
+            failure.addSuppressed(lastMissing);
+        }
+        throw failure;
+    }
+
+    /**
      * Read initialOrientation from the CBC cannon's contraption via reflection.
      * Returns the Direction from PitchOrientedContraptionEntity.getInitialOrientation(),
      * or null if the cannon block is not a CBC mount or the reflection fails.
@@ -520,8 +586,10 @@ public final class CbcCompat {
      */
     public static float getCbcViewXRot(Object entity, float partialTicks) {
         try {
-            return invokeFloat(entity, "getViewXRot", partialTicks);
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return invokeFloatWithAliases(entity, "view pitch", partialTicks, "getViewXRot", "m_5686_");
+        } catch (ReflectiveOperationException | LinkageError e) {
+            LOGGER.debug("[VSAW_DBC] getCbcViewXRot failed on {}: {} ({})",
+                    entity != null ? entity.getClass().getName() : "null", e.getClass().getSimpleName(), e.getMessage());
             return 0.0f;
         }
     }
@@ -532,8 +600,10 @@ public final class CbcCompat {
      */
     public static float getCbcViewYRot(Object entity, float partialTicks) {
         try {
-            return invokeFloat(entity, "getViewYRot", partialTicks);
-        } catch (ReflectiveOperationException | LinkageError ignored) {
+            return invokeFloatWithAliases(entity, "view yaw", partialTicks, "getViewYRot", "m_5675_");
+        } catch (ReflectiveOperationException | LinkageError e) {
+            LOGGER.debug("[VSAW_DBC] getCbcViewYRot failed on {}: {} ({})",
+                    entity != null ? entity.getClass().getName() : "null", e.getClass().getSimpleName(), e.getMessage());
             return 0.0f;
         }
     }
@@ -617,6 +687,11 @@ public final class CbcCompat {
             LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: entity level mismatch");
             return null;
         }
+        if (!hasCbcPoseApi(entity)) {
+            LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntity: entity {} does not expose CBC pose API",
+                    entity.getClass().getName());
+            return null;
+        }
         return entity;
     }
 
@@ -624,7 +699,13 @@ public final class CbcCompat {
     public static Object resolveLiveCbcEntityById(Level level, int entityId) {
         if (level == null || entityId < 0) return null;
         net.minecraft.world.entity.Entity entity = level.getEntity(entityId);
-        if (entity == null || entity.isRemoved()) return null;
+        if (entity == null || entity.isRemoved() || !hasCbcPoseApi(entity)) {
+            if (entity != null && !entity.isRemoved()) {
+                LOGGER.debug("[VSAW_DBC] resolveLiveCbcEntityById: entity id={} is not a CBC pose entity ({})",
+                        entityId, entity.getClass().getName());
+            }
+            return null;
+        }
         return entity;
     }
 
@@ -649,6 +730,7 @@ public final class CbcCompat {
         }
         if (mcEntity.isRemoved()) return "cannon entity is removed (id=" + mcEntity.getId() + ")";
         if (mcEntity.level() != level) return "cannon entity level mismatch";
+        if (!hasCbcPoseApi(entity)) return "cannon entity lacks CBC pose API: " + entity.getClass().getName();
         return "resolved OK (failure was in readCbcPoseData)";
     }
 
@@ -667,8 +749,8 @@ public final class CbcCompat {
             return null;
         }
         try {
-            float viewYaw = invokeFloat(cbcEntity, "getViewYRot", 1.0f);
-            float viewPitch = invokeFloat(cbcEntity, "getViewXRot", 1.0f);
+            float viewYaw = invokeFloatWithAliases(cbcEntity, "view yaw", 1.0f, "getViewYRot", "m_5675_");
+            float viewPitch = invokeFloatWithAliases(cbcEntity, "view pitch", 1.0f, "getViewXRot", "m_5686_");
             float initialYaw = invokeFloatNoArg(cbcEntity, "getInitialYaw");
             Object initialObj = callNoArg(cbcEntity, "getInitialOrientation");
             Direction initialOrientation = initialObj instanceof Direction d ? d : Direction.NORTH;
@@ -687,7 +769,8 @@ public final class CbcCompat {
                     viewYaw, viewPitch, initialYaw, anchorVec, entityId);
             return new CbcPoseData(viewYaw, viewPitch, initialYaw, initialOrientation, anchorVec, prevAnchorVec, entityId);
         } catch (ReflectiveOperationException | LinkageError e) {
-            LOGGER.debug("[VSAW_DBC] readCbcPoseData: FAILED - {}: {}", e.getClass().getSimpleName(), e.getMessage());
+            LOGGER.debug("[VSAW_DBC] readCbcPoseData: FAILED for {} - {}: {}",
+                    cbcEntity.getClass().getName(), e.getClass().getSimpleName(), e.getMessage());
             return null;
         }
     }
