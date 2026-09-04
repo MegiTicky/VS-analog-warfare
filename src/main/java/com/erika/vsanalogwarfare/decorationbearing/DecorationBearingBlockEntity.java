@@ -3,7 +3,6 @@ package com.erika.vsanalogwarfare.decorationbearing;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.erika.vsanalogwarfare.scope.ScopeCannonLink;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
-import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.AssemblyException;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
@@ -169,8 +168,8 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
             // store it unmodified.
             movedContraption.setDecorationRotation(pose.viewYaw(), pose.viewPitch());
         } else {
-            // Approximate the POCE spawn position in ship-local coordinates
-            // (atLowerCornerOf(mount - 2 along the vertical axis)); re-captured
+            // Approximate the POCE spawn position in the Create/VS shipyard
+            // frame (atLowerCornerOf(mount - 2 along the vertical axis));
             // from the live entity on the first pose tick.
             movedContraption.capturePivotLocal(Vec3.atLowerCornerOf(mount.below(2)), renderOrigin);
             // Neutral pose in the internal convention: render applies
@@ -178,9 +177,9 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
             movedContraption.setDecorationRotation(-initialOrientation.toYRot(), 0.0f);
         }
 
-        // Spawn at the ship-transformed render origin (identity when not on a
-        // ship); the entity then keeps it through the ship transform per tick.
-        movedContraption.setPos(VsCompat.shipToWorldPosition(level, worldPosition, renderOrigin));
+        // Spawn in Create/VS shipyard space. VS's generic contraption mixin
+        // handles the ship-to-world conversion for this entity.
+        movedContraption.setPos(renderOrigin);
 
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
 

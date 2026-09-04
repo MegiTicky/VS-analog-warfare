@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.MultiBufferSource;
@@ -23,8 +24,7 @@ import com.mojang.logging.LogUtils;
  *
  * <ul>
  *   <li>MAGENTA box + vertical axis line at the DBC's computed visual
- *       rotation pivot (ship-transformed {@code renderOrigin + pivotLocal +
- *       (0, 0.5, 0)}).</li>
+ *       rotation pivot (mapped from Create/VS shipyard space).</li>
  *   <li>YELLOW box at the linked CBC cannon's own visual pivot
  *       ({@code cbcEntityPos + (0, 0.5, 0)}). Magenta and yellow should
  *       coincide on identity-transformed ships; any gap is the pivot error.</li>
@@ -66,14 +66,15 @@ public final class DebugPivotRenderer {
             if (!(entity instanceof DecorationBearingContraptionEntity dbc)) {
                 continue;
             }
-            Vec3 entityPos = entity.position();
-            Vec3 pivot;
-            if (dbc.getRenderOriginLocal() != Vec3.ZERO) {
-                pivot = VsCompat.shipToWorldPosition(mc.level, entity.blockPosition(),
-                        dbc.getRenderOriginLocal().add(dbc.getPivotLocal()).add(0.0, 0.5, 0.0));
-            } else {
-                pivot = entityPos.add(dbc.getPivotLocal()).add(0.0, 0.5, 0.0);
-            }
+            Vec3 entityPosLocal = entity.position();
+            BlockPos controllerPos = dbc.getControllerPos();
+            Vec3 entityPos = controllerPos == null
+                    ? entityPosLocal
+                    : VsCompat.shipToWorldPosition(mc.level, controllerPos, entityPosLocal);
+            Vec3 pivotLocal = dbc.getRenderOriginLocal().add(dbc.getPivotLocal()).add(0.0, 0.5, 0.0);
+            Vec3 pivot = controllerPos == null
+                    ? entityPosLocal.add(dbc.getPivotLocal()).add(0.0, 0.5, 0.0)
+                    : VsCompat.shipToWorldPosition(mc.level, controllerPos, pivotLocal);
 
             // Our computed visual rotation pivot + rotation axis (magenta)
             drawBox(poseStack, lines, camera, pivot, 0.2f, 1.0f, 0.0f, 1.0f);
@@ -84,7 +85,11 @@ public final class DebugPivotRenderer {
             // CBC cannon's own visual pivot (yellow) — should coincide with magenta
             Vec3 cbcPos = dbc.getCbcEntityPosSynced();
             if (cbcPos != Vec3.ZERO && cbcPos.lengthSqr() > 1.0e-4) {
-                drawBox(poseStack, lines, camera, cbcPos.add(0.0, 0.5, 0.0), 0.2f, 1.0f, 1.0f, 0.0f);
+                Vec3 cbcPivot = cbcPos.add(0.0, 0.5, 0.0);
+                if (controllerPos != null) {
+                    cbcPivot = VsCompat.shipToWorldPosition(mc.level, controllerPos, cbcPivot);
+                }
+                drawBox(poseStack, lines, camera, cbcPivot, 0.2f, 1.0f, 1.0f, 0.0f);
             }
         }
         buffers.endBatch(RenderType.lines());

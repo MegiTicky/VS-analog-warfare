@@ -10,7 +10,6 @@ import com.simibubi.create.foundation.utility.VecHelper;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
-import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -33,8 +32,7 @@ import javax.annotation.Nullable;
 /**
  * Full Create contraption that follows a linked CBC cannon's pose.
  * <p>
- * Pose model (all vectors in the same coordinate space as the CBC entity's
- * anchor, i.e. ship space when mounted on a VS ship):
+ * Pose model (all vectors in Create/VS shipyard coordinate space):
  *
  * <pre>
  * pivotLocal = CBC entity pos at assembly - render origin at assembly
@@ -59,8 +57,8 @@ import javax.annotation.Nullable;
  * collision and disassembly.
  * <p>
  * The server is authoritative for the pose; yaw/pitch reach the client through
- * vanilla synced entity data, so the client never needs to resolve the CBC
- * entity.
+ * vanilla synced entity data, with a direct CBC read used when available to
+ * remove the sync tick of visual latency.
  */
 public class DecorationBearingContraptionEntity extends OrientedContraptionEntity {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -70,7 +68,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * stale jar: if this tag is absent from the assemble log, the deployed
      * jar predates the yaw/pivot fix.
      */
-    public static final String BUILD_TAG = "dbc-zero-lag";
+    public static final String BUILD_TAG = "dbc-shipyard-space";
 
     private static final EntityDataAccessor<Float> SYNCED_YAW =
             SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
@@ -85,16 +83,13 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
     /**
      * CBC entity position expressed in the assembly render frame (render
-     * origin at assembly = Vec3.atBottomCenterOf(contraption.anchor)).
-     * Ship-local: the CBC entity's world position is mapped through
-     * worldToShipPosition before subtracting, so this offset is frame-consistent
-     * with the contraption's local block coordinates even when the ship's
-     * transform is not identity (moved ships).
+     * origin at assembly = Vec3.atBottomCenterOf(contraption.anchor)). This
+     * stays in Create/VS shipyard space, matching ordinary CBC contraptions.
      */
     private Vec3 pivotLocal = Vec3.ZERO;
     /**
-     * The assembly render origin in ship-local coordinates (sentinel ZERO =
-     * unknown; fall back to the legacy position model).
+     * The assembly render origin in Create/VS shipyard coordinates (sentinel
+     * ZERO = unknown; fall back to the legacy position model).
      */
     private Vec3 renderOriginLocal = Vec3.ZERO;
     /** True once pivotLocal has been captured from the live CBC anchor. */
@@ -301,9 +296,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         // (E = entity pos; Rs = yaw-only rotation snapped to a multiple of 90°;
         // pitch cannot be expressed in a StructureTransform, so — like every
         // Create bearing — disassembly is yaw-only).
-        // StructureTransform places block b at: offset + Rs(b). Solve in the
-        // ship-local frame around the render origin, then map through the ship
-        // transform (identity when not on a ship):
+        // StructureTransform operates in the same Create/VS shipyard frame as
+        // the contraption anchor. VS applies the ship transform separately.
         //   offset = renderOriginLocal - Rs(pivotLocal) + pivotLocal + (0, 0.5, 0) - c
         float angle = yaw + getInitialYaw();
         float snapped = (float) (Math.round(angle / 90.0) * 90);
@@ -315,9 +309,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                 .add(pivotLocal)
                 .add(0.0, 0.5, 0.0)
                 .subtract(0.5, 0.5, 0.5);
-        Vec3 offsetWorld = VsCompat.shipToWorldPosition(level(), blockPosition(), offset);
-
-        return new StructureTransform(BlockPos.containing(offsetWorld.x, offsetWorld.y, offsetWorld.z), 0, snapped, 0);
+        return new StructureTransform(BlockPos.containing(offset.x, offset.y, offset.z), 0, snapped, 0);
     }
 
     // -----------------------------------------------------------------------
@@ -395,7 +387,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                     // now: the decoration stays put, the rotation center snaps
                     // to the exact CBC pivot.
                     if (!pivotCaptured) {
-                        Vec3 cbcPosLocal = VsCompat.worldToShipPosition(level(), blockPosition(), pose.entityPos());
+                        Vec3 cbcPosLocal = pose.entityPos();
                         pivotLocal = renderOriginLocal != Vec3.ZERO
                                 ? cbcPosLocal.subtract(renderOriginLocal)
                                 : cbcPosLocal.subtract(position());
@@ -404,16 +396,12 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                                 pose.entityPos(), pivotLocal);
                     }
 
-                    // Entity position = the ship-transformed render origin.
-                    // renderOriginLocal is a fixed ship-local point; carrying it
-                    // through the ship transform keeps the decoration glued to
-                    // the ship under any ship translation/rotation. Using the
-                    // CBC entity's world position directly would mix the world
-                    // and ship-local frames and offset the whole contraption by
-                    // the ship's transform translation.
+                    // Keep the entity in Create/VS shipyard space. VS's generic
+                    // AbstractContraptionEntity mixin owns the ship-to-world
+                    // conversion for contraption entities, just as it does for
+                    // CBC's own PitchOrientedContraptionEntity.
                     if (renderOriginLocal != Vec3.ZERO) {
-                        Vec3 targetPos = VsCompat.shipToWorldPosition(level(), blockPosition(), renderOriginLocal);
-                        setPos(targetPos);
+                        setPos(renderOriginLocal);
                     } else {
                         // Legacy fallback (entity saved before this field existed)
                         setPos(pose.entityPos().subtract(pivotLocal));
@@ -609,8 +597,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
 
     /**
      * Capture the CBC entity position in the assembly render frame from the
-     * live CBC entity. The world position is mapped into the ship-local frame
-     * first so the pivot stays frame-consistent with the contraption blocks.
+     * live CBC entity. CBC and Create already use the same Create/VS shipyard
+     * frame, so no world-to-ship conversion is needed.
      * Must be called before the entity is spawned.
      */
     public void capturePivot(Vec3 cbcEntityPosWorld, Vec3 renderOriginAtAssembly) {
@@ -621,20 +609,20 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * Capture the CBC entity position in the assembly render frame. When
      * {@code fromLiveCbc} is false (approximate anchor), the pivot is
      * re-captured from the live CBC entity on the first successful pose tick.
+     * CBC and Create already use the same shipyard frame, so no additional ship
+     * transform is applied here.
      */
     public void capturePivot(Vec3 cbcEntityPosWorld, Vec3 renderOriginAtAssembly, boolean fromLiveCbc) {
         this.renderOriginLocal = renderOriginAtAssembly;
-        Vec3 cbcPosLocal = level() != null && controllerPos != null
-                ? VsCompat.worldToShipPosition(level(), controllerPos, cbcEntityPosWorld)
-                : cbcEntityPosWorld;
-        this.pivotLocal = cbcPosLocal.subtract(renderOriginAtAssembly);
+        this.pivotLocal = cbcEntityPosWorld.subtract(renderOriginAtAssembly);
         this.pivotCaptured = fromLiveCbc;
     }
 
+
     /**
      * Fallback variant for approximate anchors that are already expressed in
-     * ship-local coordinates (no world→ship mapping applied). The pivot is
-     * re-captured from the live CBC entity on the first successful pose tick.
+     * Create/VS shipyard coordinates. The pivot is re-captured from the live CBC
+     * entity on the first successful pose tick.
      */
     public void capturePivotLocal(Vec3 cbcEntityPosLocal, Vec3 renderOriginAtAssembly) {
         this.renderOriginLocal = renderOriginAtAssembly;
@@ -646,7 +634,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         return pivotLocal;
     }
 
-    /** Ship-local assembly render origin (Vec3.ZERO when unknown). */
+    /** Create/VS shipyard assembly render origin (Vec3.ZERO when unknown). */
     public Vec3 getRenderOriginLocal() {
         return renderOriginLocal;
     }
