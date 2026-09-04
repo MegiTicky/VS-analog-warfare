@@ -72,10 +72,21 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
         BlockPos mount = bearing.resolveMount();
         if (mount == null) {
-            // Linked mount no longer valid — disassemble
-            bearing.disassemble();
-            return;
+            // The link may be stale from a VMod schematic paste (old ship id /
+            // fallback position). Try to re-link to the nearest CBC mount;
+            // allow several cooldown-gated scan windows before tearing the
+            // bearing down, so a freshly pasted DBC survives while the scan
+            // is still recovering the link.
+            if (!bearing.tryRepairStaleMount() && bearing.mountRepairFailures < 3) {
+                return;
+            }
+            mount = bearing.resolveMount();
+            if (mount == null) {
+                bearing.disassemble();
+                return;
+            }
         }
+        bearing.mountRepairFailures = 0;
 
         // Validate the live CBC entity still exists
         Object cbcEntity = CbcCompat.resolveLiveCbcEntity(level, mount);
@@ -104,6 +115,51 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     @Nullable
     public BlockPos getLinkedMountPos() {
         return resolveMount();
+    }
+
+    /**
+     * Re-link to a mount found after the saved link went stale — a VMod
+     * schematic paste copies the bearing with a {@link ScopeCannonLink} that
+     * still references the ORIGINAL ship (old ship id / fallback position),
+     * which can never resolve on the pasted ship.
+     */
+    public void relinkMount(BlockPos newMount) {
+        if (level == null || level.isClientSide) return;
+        if (!CbcCompat.isCannonMount(level.getBlockEntity(newMount))) return;
+        linkedMount = ScopeCannonLink.fromTarget(level, newMount);
+        LOGGER.info("[VSAW_DBC] bearing at {} re-linked to mount at {} (shipId={}, offset={})",
+                worldPosition, newMount, linkedMount.shipId(), linkedMount.shipOffset());
+        mountRepairCooldown = 100;
+        mountRepairFailures = 0;
+        setChanged();
+    }
+
+    /** Cooldown (ticks) between nearest-mount repair scans. */
+    private int mountRepairCooldown;
+    /** Failed nearest-mount repair scan windows; disassemble after 3. */
+    private int mountRepairFailures;
+
+    /**
+     * Attempt to recover a stale mount link by scanning for the nearest CBC
+     * cannon mount. Cooldown-gated because the scan is a block search.
+     * Returns true if the link now resolves.
+     */
+    public boolean tryRepairStaleMount() {
+        if (level == null || level.isClientSide) return false;
+        if (mountRepairCooldown > 0) {
+            mountRepairCooldown--;
+            return false;
+        }
+        mountRepairCooldown = 40;
+        BlockPos found = CbcCompat.findNearestMount(level, worldPosition, 16).orElse(null);
+        if (found == null) {
+            mountRepairFailures++;
+            LOGGER.info("[VSAW_DBC] bearing at {}: nearest-mount scan found nothing (attempt {})",
+                    worldPosition, mountRepairFailures);
+            return false;
+        }
+        relinkMount(found);
+        return resolveMount() != null;
     }
 
     public boolean isRunning() {

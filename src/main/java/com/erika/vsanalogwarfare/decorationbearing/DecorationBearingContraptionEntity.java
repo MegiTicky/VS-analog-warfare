@@ -4,6 +4,7 @@ import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.Contraption;
 import com.simibubi.create.content.contraptions.OrientedContraptionEntity;
 import com.simibubi.create.content.contraptions.StructureTransform;
+import com.simibubi.create.content.contraptions.bearing.BearingContraption;
 import com.simibubi.create.foundation.collision.Matrix3d;
 import com.simibubi.create.foundation.utility.AngleHelper;
 import com.simibubi.create.foundation.utility.VecHelper;
@@ -68,7 +69,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * stale jar: if this tag is absent from the assemble log, the deployed
      * jar predates the yaw/pivot fix.
      */
-    public static final String BUILD_TAG = "dbc-shipyard-space";
+    public static final String BUILD_TAG = "dbc-facing-pivot";
 
     private static final EntityDataAccessor<Float> SYNCED_YAW =
             SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.FLOAT);
@@ -464,15 +465,41 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             return byId;
         }
         BlockPos mount = bearing.getLinkedMountPos();
-        if (mount == null) {
-            LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: linkedMount is null on bearing at {}", controllerPos);
-            return null;
+        if (mount != null) {
+            Object resolved = CbcCompat.resolveLiveCbcEntity(level(), mount);
+            if (resolved != null) {
+                return resolved;
+            }
+        } else if (unresolvedTicks % 40 == 0 && repairStaleMountLink(bearing)) {
+            mount = bearing.getLinkedMountPos();
+            if (mount != null) {
+                Object resolved = CbcCompat.resolveLiveCbcEntity(level(), mount);
+                if (resolved != null) {
+                    return resolved;
+                }
+            }
         }
-        Object resolved = CbcCompat.resolveLiveCbcEntity(level(), mount);
-        if (resolved == null) {
-            LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: resolveLiveCbcEntity returned null for mount={}", mount);
+        LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: no live CBC entity (bearing at {}, mount={})",
+                controllerPos, mount);
+        return null;
+    }
+
+    /**
+     * Recover a mount link that a VMod schematic paste left pointing at the
+     * ORIGINAL ship: the pasted bearing's {@link ScopeCannonLink} still holds
+     * the old ship id / fallback position, so it never resolves on the pasted
+     * ship. Find the nearest CBC cannon mount to the bearing's current
+     * position and re-link to it.
+     */
+    private boolean repairStaleMountLink(DecorationBearingBlockEntity bearing) {
+        BlockPos found = CbcCompat.findNearestMount(level(), bearing.getBlockPosition(), 16).orElse(null);
+        if (found == null) {
+            return false;
         }
-        return resolved;
+        LOGGER.info("[VSAW_DBC] stale mount link on bearing at {} — re-linking to nearest CBC mount at {}",
+                bearing.getBlockPosition(), found);
+        bearing.relinkMount(found);
+        return true;
     }
 
     // -----------------------------------------------------------------------
@@ -571,6 +598,80 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         if (tag.contains("LinkedCbcEntityId")) {
             linkedCbcEntityId = tag.getInt("LinkedCbcEntityId");
         }
+        if (!clientPacket && level() != null && !level().isClientSide) {
+            repairStaleNbt();
+        }
+    }
+
+    /**
+     * Repair NBT that a VMod ship-schematic save/paste left stale. VMod
+     * captures every {@code AbstractContraptionEntity} and remaps only the
+     * vanilla {@code Pos} and Create's {@code Contraption.Anchor} /
+     * {@code ControllerRelative} to the paste location; our absolute fields
+     * ({@code ControllerAbsolute}, {@code RenderOrigin*}, CBC entity id)
+     * still point at the ORIGINAL ship. On the pasted ship they drag the
+     * entity back to the old assembly position and attach it to the old
+     * bearing.
+     * <p>
+     * Detection: on a normal chunk reload {@code position()} equals
+     * {@code renderOriginLocal} exactly (we {@code setPos(renderOriginLocal)}
+     * every pose tick and before save). A mismatch therefore means the
+     * entity was re-created at a remapped {@code Pos} — i.e. schematic
+     * paste — while the stored render origin was not remapped.
+     */
+    private void repairStaleNbt() {
+        if (renderOriginLocal == Vec3.ZERO) {
+            return; // legacy entity: tick falls back to position()-relative math
+        }
+        if (renderOriginLocal.distanceToSqr(position()) <= 1.0e-4) {
+            return; // consistent — normal save/load
+        }
+        Vec3 oldRenderOrigin = renderOriginLocal;
+        BlockPos oldController = controllerPos;
+
+        // The remapped contraption anchor is the authoritative render-origin
+        // frame: VMod remaps Pos and Contraption.Anchor with slightly
+        // different rounding (toInt truncation on negative coords), so prefer
+        // atBottomCenterOf(anchor) over position().
+        if (contraption != null) {
+            renderOriginLocal = Vec3.atBottomCenterOf(contraption.anchor);
+        } else {
+            renderOriginLocal = position();
+        }
+        pivotCaptured = false; // re-capture from the live CBC on the next pose tick
+        linkedCbcEntityId = -1; // entity ids do not survive schematic paste
+        controllerPos = deriveControllerPosFromContraption();
+
+        LOGGER.info("[VSAW_DBC] repaired stale schematic NBT: renderOrigin {} -> {}, controllerPos {} -> {} (anchor={}, facing={})",
+                oldRenderOrigin, renderOriginLocal, oldController, controllerPos,
+                contraption != null ? contraption.anchor : null,
+                contraption instanceof BearingContraption bearing ? bearing.getFacing() : null);
+    }
+
+    /**
+     * Locate the assembly bearing in shipyard coordinates from the DBC's own
+     * (remapped) contraption. Create's BearingContraption anchors at
+     * {@code bearing.relative(facing)}, so the bearing is exactly one step
+     * against the contraption's stored facing — that facing is persisted in
+     * the contraption NBT and remapped coherently with the blocks by VMod's
+     * schematic paste. The contraption's block map must NOT be scanned: the
+     * assembly bearing itself is never part of it (Create keeps that block in
+     * the world), but decorative bearing blocks stored on the decoration can
+     * be, and matching one of those yields the wrong controller.
+     */
+    private BlockPos deriveControllerPosFromContraption() {
+        if (contraption == null) {
+            return controllerPos;
+        }
+        BlockPos anchor = contraption.anchor;
+        if (contraption instanceof BearingContraption bearing) {
+            return anchor.relative(bearing.getFacing().getOpposite());
+        }
+        Direction initial = getInitialOrientation();
+        if (initial != null) {
+            return anchor.relative(initial.getOpposite());
+        }
+        return controllerPos;
     }
 
     // -----------------------------------------------------------------------
