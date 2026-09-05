@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.stabilizer;
 
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.config.CommonConfig;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
 import net.minecraft.core.BlockPos;
@@ -10,7 +11,10 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4dc;
 
 import javax.annotation.Nullable;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -21,14 +25,21 @@ import java.util.concurrent.ConcurrentHashMap;
  * the player rotates the gun (shaft input, mouse aim, scroll adjustment) the
  * held world elevation continuously re-captures to the gun's current elevation,
  * so the stabilizer is transparent during input. The moment input stops, the
- * current world elevation is frozen as the target and a PI controller with
- * ship-rotation feedforward drives CBC's pitch advance so the gun keeps that
- * elevation in world space regardless of ship pitch and roll.
+ * current world elevation is frozen as the target.
+ *
+ * The servo is a deadbeat <b>position</b> controller: every tick it computes
+ * the exact relative cannon pitch that places the aim direction at the held
+ * world elevation (one Newton step through the elevation/pitch Jacobian) and
+ * commands that, slew-limited by {@code maxCompensationDegPerTick}. Because the
+ * command is a position rather than a rate, the hold cannot degrade: a gun
+ * railed against a mechanical limit keeps its original target and returns the
+ * moment geometry allows, and there is no integral to wind up and no drift
+ * rate to estimate.
  *
  * VS physics runs at 60 TPS (3 subticks per game tick) but the control loop
- * runs at the 20 TPS mount tick: the feedforward term uses the ship's
- * continuous rotation rate (synced omega, finite-difference fallback), which is
- * exact between ticks, while the PI terms correct residual drift per game tick.
+ * runs at the 20 TPS mount tick; per-frame smoothness comes from CBC's
+ * {@code getPitchOffset} render extrapolation, which the mixin feeds with the
+ * offset produced this tick (see {@link #renderOffsetFor}).
  */
 public final class StabilizerController {
 
@@ -37,39 +48,52 @@ public final class StabilizerController {
 
     /**
      * A per-tick pitch change deviating from the predicted advance (base speed
-     * + previous stabilizer offset) by more than this many degrees means an
-     * external writer moved the gun (mouse aim, scroll, CBC seat drag, block
-     * entity sync replacing the pitch) — treat it as player input and
-     * re-capture the held elevation instead of fighting it.
+     * + previous stabilizer offset, after CBC's degree wrap and elevation-limit
+     * clamp) by more than this many degrees may mean an external writer moved
+     * the gun (mouse aim, scroll step, CBC seat drag, block entity sync).
      */
     private static final float EXTERNAL_STEP_THRESHOLD_DEG = 0.3f;
 
-    /** Low-pass factor for the client-side feedforward rate (bursty sync). */
-    private static final double CLIENT_RATE_SMOOTHING = 0.5;
+    /** Consecutive mismatched ticks required to declare external input; absorbs recoil kicks. */
+    private static final int EXTERNAL_STEP_DEBOUNCE_TICKS = 2;
+
+    /**
+     * If the mount's pitch advance loop did not run for this many ticks (seat
+     * gunner control or a multi-tick stall — the mixin is not invoked then),
+     * the held target is re-captured once on resume instead of fighting
+     * whoever drove the gun meanwhile.
+     */
+    private static final int SUSPEND_RECAPTURE_TICKS = 2;
 
     /** Server: mount pos -> stabilizer pos. Client: mount pos -> synced stabilizer pos. */
     private static final Map<Long, BlockPos> MOUNT_LINKS = new ConcurrentHashMap<>();
     /** Per-mount servo state, one per side. */
     private static final Map<Long, MountState> STATES = new ConcurrentHashMap<>();
 
+    /** Cached {@code mountedContraption} fields, keyed by mount BE class. */
+    private static final Map<Class<?>, Optional<Field>> CONTRAPTION_FIELDS = new ConcurrentHashMap<>();
+    /** Cached elevation-limit accessors, keyed by {@code class#method}. */
+    private static final Map<String, Method> LIMIT_METHODS = new ConcurrentHashMap<>();
+
     public static final class MountState {
         public double targetElevDeg;
         public boolean targetValid;
         public boolean inputActive;
-        public double integral;
-        public long lastExternalInputGameTime = Long.MIN_VALUE;
         public boolean dirty;
+        public long lastExternalInputGameTime = Long.MIN_VALUE;
         /** Bookkeeping for local external-input detection. */
         public float prevCannonPitch;
         public float prevBaseSpeed;
         public float prevOffset;
         public boolean bookkeepingValid;
-        /** Low-pass state for the client feedforward rate. */
-        public double smoothedElevRatePerTick;
+        public int mismatchStreak;
+        /** Last game tick the pitch advance path ran (suspension detection). */
+        public long lastRunGameTime = Long.MIN_VALUE;
+        /** Offset the tick path produced this tick; consumed by the render path. */
+        public float renderOffset;
 
         void reset() {
             targetValid = false;
-            integral = 0.0;
             dirty = true;
         }
     }
@@ -154,17 +178,37 @@ public final class StabilizerController {
             offset = 0.0f;
         }
         // Bookkeeping runs on every path so next tick's external-input
-        // prediction stays valid even when compensation is inactive.
+        // prediction and suspension detection stay valid even when
+        // compensation is inactive.
         if (mountBe instanceof BlockEntity be && be.getLevel() != null) {
             MountState state = STATES.get(be.getBlockPos().asLong());
             if (state != null) {
                 state.prevCannonPitch = cannonPitch;
                 state.prevBaseSpeed = baseSpeed;
                 state.prevOffset = offset;
+                state.lastRunGameTime = be.getLevel().getGameTime();
+                state.renderOffset = offset;
                 state.bookkeepingValid = true;
             }
         }
         return offset;
+    }
+
+    /**
+     * The offset the tick path produced this game tick, for CBC's client render
+     * extrapolation: {@code getPitchOffset} re-derives the per-tick angular
+     * speed from the shaft alone and would otherwise under-project every step
+     * the stabilizer commands (visible as a 20 Hz snap in the zoomed scope).
+     * Read-only; safe to call from the render thread path.
+     */
+    public static float renderOffsetFor(Object mountBe) {
+        if (mountBe instanceof BlockEntity be) {
+            MountState state = STATES.get(be.getBlockPos().asLong());
+            if (state != null) {
+                return state.renderOffset;
+            }
+        }
+        return 0.0f;
     }
 
     private static float computeOffsetSpeedInner(Object mountBe, float cannonPitch) {
@@ -203,7 +247,6 @@ public final class StabilizerController {
         if (rotation == null) {
             return 0.0f;
         }
-        Matrix4dc prevRotation = StabilizerMath.getPrevTickShipToWorld(ship);
         Vec3 axisShip = StabilizerMath.pitchAxisShipLocal(holder.initialOrientation);
         float sgn = StabilizerMath.cbcPitchSign(holder.initialOrientation);
 
@@ -227,20 +270,45 @@ public final class StabilizerController {
             }
         }
 
+        // --- Suspension: the advance loop was paused (seat gunner, stall)
+        boolean suspendRecapture = state.bookkeepingValid
+                && state.lastRunGameTime != Long.MIN_VALUE
+                && level.getGameTime() - state.lastRunGameTime > SUSPEND_RECAPTURE_TICKS;
+        if (suspendRecapture) {
+            state.targetElevDeg = elevDeg;
+            state.targetValid = true;
+            state.dirty = true;
+            state.renderOffset = 0.0f;
+        }
+
         // --- Input detection: hold-on-release ---------------------------
         // Local detection: did the pitch advance match what we predicted from
-        // last tick's (base speed + stabilizer offset)? A mismatch means an
-        // external writer moved the gun — mouse aim, scroll step, CBC seat
-        // drag, or a block-entity sync replacing the pitch wholesale. This
-        // works identically on server and client with no packet lag.
-        boolean externalStep = false;
+        // last tick's (base speed + stabilizer offset), folded through CBC's
+        // own degree wrap and elevation-limit clamp exactly like
+        // CannonMountBlockEntity.tick does? A clamp-eaten advance (gun railed
+        // against a limit) predicts to zero delta and is NOT external input.
+        // A persistent mismatch means an external writer is moving the gun.
+        boolean railedByLimit = false;
         if (state.bookkeepingValid) {
-            float actualDelta = cannonPitch - state.prevCannonPitch;
-            float predictedDelta = (state.prevBaseSpeed + state.prevOffset) * sgn;
-            if (Math.abs(actualDelta - predictedDelta) > EXTERNAL_STEP_THRESHOLD_DEG) {
-                externalStep = true;
+            float predicted = state.prevCannonPitch + (state.prevBaseSpeed + state.prevOffset) * sgn;
+            predicted %= 360.0f;
+            float[] limits = mountPitchLimits(be);
+            if (limits != null) {
+                float clamped = Math.max(-limits[0], Math.min(limits[1], predicted));
+                railedByLimit = clamped != predicted;
+                predicted = clamped;
             }
+            float predictedDelta = predicted - state.prevCannonPitch;
+            float actualDelta = cannonPitch - state.prevCannonPitch;
+            if (Math.abs(actualDelta - predictedDelta) > EXTERNAL_STEP_THRESHOLD_DEG) {
+                state.mismatchStreak++;
+            } else {
+                state.mismatchStreak = 0;
+            }
+        } else {
+            state.mismatchStreak = 0;
         }
+        boolean externalStep = state.mismatchStreak >= EXTERNAL_STEP_DEBOUNCE_TICKS;
         if (externalStep) {
             state.lastExternalInputGameTime = level.getGameTime();
         }
@@ -251,7 +319,6 @@ public final class StabilizerController {
         if (inputActive) {
             state.targetElevDeg = elevDeg;
             state.targetValid = true;
-            state.integral = 0.0;
             if (clientSide) {
                 ClientStabilizerState.set(mountPos, true, elevDeg, level.getGameTime());
             }
@@ -271,51 +338,34 @@ public final class StabilizerController {
 
         if (Math.abs(jacobian) < 1.0e-3) {
             // Pitch axis cannot influence world elevation here (gimbal lock);
-            // freeze the target so the gun does not wind up.
-            state.targetElevDeg = elevDeg;
-            state.integral = 0.0;
+            // hold output and keep the target so the servo resumes unchanged.
             return 0.0f;
         }
 
-        // --- Feedforward: cancel this tick's ship-induced elevation drift
-        double elevRateDegPerTick = StabilizerMath.elevationRatePerTick(ship, rotation, prevRotation, aimShip, aimWorld);
-        if (clientSide) {
-            // Client ship transforms arrive in bursts, so the raw rate
-            // alternates zero/double; low-pass it to keep the injected speed
-            // steady between sync packets.
-            state.smoothedElevRatePerTick += (elevRateDegPerTick - state.smoothedElevRatePerTick)
-                    * CLIENT_RATE_SMOOTHING;
-            elevRateDegPerTick = state.smoothedElevRatePerTick;
-        }
-
-        // --- PI feedback on the held elevation --------------------------
+        // --- Position servo: command the exact pitch that achieves the target
         double errorDeg = state.targetElevDeg - elevDeg;
-        if (Math.abs(errorDeg) > CommonConfig.stabilizerRecaptureThresholdDeg()) {
-            // Error beyond anything the servo should correct: an external
-            // writer is slowly slewing the gun (per-tick steps under the
-            // detection threshold) or the gun rails at a mechanical limit.
-            // Follow it instead of fighting: re-capture the held elevation.
-            state.targetElevDeg = elevDeg;
-            state.integral = 0.0;
-            errorDeg = 0.0;
-        }
         if (Math.abs(errorDeg) < CommonConfig.stabilizerDeadZoneDeg()) {
             errorDeg = 0.0;
         }
-        state.integral += errorDeg;
-        double integralLimit = CommonConfig.stabilizerIntegralLimit();
-        state.integral = Math.max(-integralLimit, Math.min(integralLimit, state.integral));
-
-        double correctionDeg = CommonConfig.stabilizerProportionalGain() * errorDeg
-                + CommonConfig.stabilizerIntegralGain() * state.integral
-                - CommonConfig.stabilizerFeedforwardGain() * elevRateDegPerTick;
 
         // Convert the desired world-elevation correction into a ship-space
-        // pitch change, then back into CBC pre-sign pitchSpeed units.
-        double deltaPitch = correctionDeg / jacobian;
+        // pitch change, then back into CBC pre-sign pitchSpeed units; the
+        // slew limit keeps large corrections looking like a deliberate slew.
+        double deltaPitch = errorDeg / jacobian;
         float offset = (float) (deltaPitch / sgn);
         float maxRate = (float) CommonConfig.stabilizerMaxDegPerTick();
-        return Math.max(-maxRate, Math.min(maxRate, offset));
+        offset = Math.max(-maxRate, Math.min(maxRate, offset));
+
+        if (!clientSide && CommonConfig.stabilizerDebug() && level.getGameTime() % 20 == 0) {
+            VSAnalogWarfare.LOGGER.info(
+                    "[VSAW Stabilizer] {} elev={} target={} offset={} input={} ext={} railed={} suspend={}",
+                    mountPos.toShortString(),
+                    String.format("%.2f", elevDeg),
+                    String.format("%.2f", state.targetElevDeg),
+                    String.format("%.3f", offset),
+                    inputActive, externalStep, railedByLimit, suspendRecapture);
+        }
+        return offset;
     }
 
     public static boolean isShaftDriving(Object mountBe) {
@@ -333,6 +383,85 @@ public final class StabilizerController {
     private static boolean isExternalInputRecent(Level level, MountState state) {
         return state.lastExternalInputGameTime != Long.MIN_VALUE
                 && level.getGameTime() - state.lastExternalInputGameTime <= EXTERNAL_INPUT_MEMORY_TICKS;
+    }
+
+    // ------------------------------------------------------------------
+    // Elevation limits (reflection; per-concrete-class caches)
+    // ------------------------------------------------------------------
+
+    /**
+     * {@code [maxDepress, maxElevate]} of the mounted cannon in CBC pitch
+     * degrees, or null when unavailable (fall back to an unclamped prediction).
+     * Read via reflection so the compile classpath stays free of CBC classes.
+     * Methods are cached per concrete class: server and client ship different
+     * classes in one JVM (the integrated-server lesson from the link crash).
+     */
+    @Nullable
+    private static float[] mountPitchLimits(Object mountBe) {
+        try {
+            if (!(mountBe instanceof BlockEntity be)) {
+                return null;
+            }
+            Field field = contraptionField(be.getClass());
+            if (field == null) {
+                return null;
+            }
+            Object contraption = field.get(be);
+            if (contraption == null) {
+                return null;
+            }
+            Class<?> cls = contraption.getClass();
+            Method depression = methodFor(cls, "maximumDepression");
+            Method elevation = methodFor(cls, "maximumElevation");
+            if (depression == null || elevation == null) {
+                return null;
+            }
+            return new float[] {(float) depression.invoke(contraption), (float) elevation.invoke(contraption)};
+        } catch (RuntimeException | ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static Field contraptionField(Class<?> mountClass) {
+        Optional<Field> cached = CONTRAPTION_FIELDS.get(mountClass);
+        if (cached == null) {
+            cached = Optional.ofNullable(findDeclaredField(mountClass, "mountedContraption"));
+            CONTRAPTION_FIELDS.put(mountClass, cached);
+        }
+        return cached.orElse(null);
+    }
+
+    @Nullable
+    private static Field findDeclaredField(Class<?> cls, String name) {
+        for (Class<?> c = cls; c != null && c != Object.class; c = c.getSuperclass()) {
+            try {
+                Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f;
+            } catch (NoSuchFieldException ignored) {
+                // walk up to the declaring superclass
+            } catch (RuntimeException | LinkageError e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static Method methodFor(Class<?> cls, String name) {
+        String key = cls.getName() + '#' + name;
+        Method cached = LIMIT_METHODS.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            Method m = cls.getMethod(name);
+            LIMIT_METHODS.put(key, m);
+            return m;
+        } catch (RuntimeException | ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
     }
 
     /** Cached reflection result for the contraption's initial orientation. */

@@ -38,4 +38,28 @@ public class CannonMountBlockEntityMixin {
         }
         return original + offset;
     }
+
+    /**
+     * Feeds the stabilizer's offset into CBC's client render extrapolation.
+     * {@code getPitchOffset} re-derives the per-tick angular speed from the
+     * shaft alone, so without this the drawn gun under-projects every step the
+     * stabilizer commands and snaps at each tick boundary (visible as a 20 Hz
+     * stutter in the zoomed scope). Read-only: reuses the offset the tick path
+     * computed this game tick.
+     */
+    @ModifyExpressionValue(
+            method = "getPitchOffset(F)F",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lrbasamoyai/createbigcannons/cannon_control/cannon_mount/CannonMountBlockEntity;getAngularSpeed(FF)F",
+                    ordinal = 0,
+                    remap = false),
+            remap = false)
+    private float vsaw$renderPitchOffset(float original) {
+        float renderOffset = StabilizerController.renderOffsetFor((Object) this);
+        if (renderOffset == 0.0f) {
+            return original;
+        }
+        return original + renderOffset;
+    }
 }

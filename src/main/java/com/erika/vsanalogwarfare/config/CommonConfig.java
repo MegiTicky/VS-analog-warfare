@@ -12,14 +12,10 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.BooleanValue DISABLE_CONTRAPTION_ENTITY_COLLISION;
 
     public static final ForgeConfigSpec.BooleanValue STABILIZER_ENABLED;
-    public static final ForgeConfigSpec.DoubleValue STABILIZER_PROPORTIONAL_GAIN;
-    public static final ForgeConfigSpec.DoubleValue STABILIZER_INTEGRAL_GAIN;
-    public static final ForgeConfigSpec.DoubleValue STABILIZER_FEEDFORWARD_GAIN;
     public static final ForgeConfigSpec.DoubleValue STABILIZER_MAX_DEG_PER_TICK;
-    public static final ForgeConfigSpec.DoubleValue STABILIZER_INTEGRAL_LIMIT;
     public static final ForgeConfigSpec.DoubleValue STABILIZER_DEAD_ZONE_DEG;
-    public static final ForgeConfigSpec.DoubleValue STABILIZER_RECAPTURE_THRESHOLD_DEG;
     public static final ForgeConfigSpec.DoubleValue STABILIZER_LINK_RANGE;
+    public static final ForgeConfigSpec.BooleanValue STABILIZER_DEBUG;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -55,33 +51,19 @@ public final class CommonConfig {
         STABILIZER_ENABLED = builder
                 .comment("Master switch for the gyro stabilizer block.")
                 .define("enabled", true);
-        STABILIZER_PROPORTIONAL_GAIN = builder
-                .comment("Pitch correction (deg) per degree of world-elevation error, applied per game tick. "
-                        + "Keep below 1.0; higher values react faster but can oscillate.")
-                .defineInRange("proportionalGain", 0.4D, 0.0D, 1.0D);
-        STABILIZER_INTEGRAL_GAIN = builder
-                .comment("Slow drift correction gain applied to the accumulated elevation error.")
-                .defineInRange("integralGain", 0.02D, 0.0D, 1.0D);
-        STABILIZER_FEEDFORWARD_GAIN = builder
-                .comment("How much of the predicted ship-rotation elevation drift is cancelled before it happens. "
-                        + "1.0 fully cancels constant-rate ship motion.")
-                .defineInRange("feedforwardGain", 1.0D, 0.0D, 2.0D);
         STABILIZER_MAX_DEG_PER_TICK = builder
-                .comment("Maximum compensating pitch speed the stabilizer may add, in degrees per game tick.")
+                .comment("Maximum compensating pitch speed the stabilizer may command, in degrees per game tick. "
+                        + "Also the slew rate for large corrections.")
                 .defineInRange("maxCompensationDegPerTick", 4.0D, 0.0D, 45.0D);
-        STABILIZER_INTEGRAL_LIMIT = builder
-                .comment("Anti-windup clamp for the accumulated elevation error, in degree-ticks.")
-                .defineInRange("integralLimit", 400.0D, 0.0D, 10000.0D);
         STABILIZER_DEAD_ZONE_DEG = builder
                 .comment("World-elevation errors smaller than this (degrees) are not corrected, preventing dither.")
                 .defineInRange("deadZoneDeg", 0.02D, 0.0D, 5.0D);
-        STABILIZER_RECAPTURE_THRESHOLD_DEG = builder
-                .comment("Errors larger than this (degrees) are treated as external input (slow slewing, mechanical "
-                        + "limits): the stabilizer re-captures the current elevation instead of correcting.")
-                .defineInRange("recaptureThresholdDeg", 2.0D, 0.1D, 45.0D);
         STABILIZER_LINK_RANGE = builder
                 .comment("Maximum block distance between a stabilizer and its cannon mount.")
                 .defineInRange("linkRange", 24.0D, 2.0D, 256.0D);
+        STABILIZER_DEBUG = builder
+                .comment("Log stabilizer servo state once per second per linked mount to the server log.")
+                .define("debug", false);
         builder.pop();
 
         SPEC = builder.build();
@@ -100,12 +82,8 @@ public final class CommonConfig {
     public static boolean disableContraptionEntityCollision() { return DISABLE_CONTRAPTION_ENTITY_COLLISION.get(); }
 
     public static boolean stabilizerEnabled() { return STABILIZER_ENABLED.get(); }
-    public static double stabilizerProportionalGain() { return STABILIZER_PROPORTIONAL_GAIN.get(); }
-    public static double stabilizerIntegralGain() { return STABILIZER_INTEGRAL_GAIN.get(); }
-    public static double stabilizerFeedforwardGain() { return STABILIZER_FEEDFORWARD_GAIN.get(); }
     public static double stabilizerMaxDegPerTick() { return STABILIZER_MAX_DEG_PER_TICK.get(); }
-    public static double stabilizerIntegralLimit() { return STABILIZER_INTEGRAL_LIMIT.get(); }
     public static double stabilizerDeadZoneDeg() { return STABILIZER_DEAD_ZONE_DEG.get(); }
-    public static double stabilizerRecaptureThresholdDeg() { return STABILIZER_RECAPTURE_THRESHOLD_DEG.get(); }
     public static double stabilizerLinkRange() { return STABILIZER_LINK_RANGE.get(); }
+    public static boolean stabilizerDebug() { return STABILIZER_DEBUG.get(); }
 }

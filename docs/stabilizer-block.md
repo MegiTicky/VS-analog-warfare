@@ -37,52 +37,55 @@ stabilizer injects a compensating speed into exactly that advance:
   - **Measure**: ship tick transform (`Ship.getShipToWorld()`), ship-local aim
     direction (`CbcCompat.getAimDirection(..., applyShipTransform=false)`),
     world elevation of the bore.
-  - **Feedforward**: elevation drift caused by ship rotation this tick —
-    `((ω × d)·ŷ)/cos(elev)` from `Ship.getOmega()` (world frame, rad/s →
-    ×0.05 per tick), falling back to a finite difference between
-    `getTransform()` and `getPrevTickTransform()`. This is what makes 20 TPS
-    control good enough against 60 TPS physics: the rate term is continuous
-    and subtick-exact for constant rotation.
-  - **Convert**: desired elevation correction → ship-space pitch via the
-    Jacobian `∂elev/∂p = sgn·ŷ·(a_w × d_w)/cos(elev)` where `a` is the
-    contraption pitch axis (X-facing → ship Z, else ship X) and `sgn` is CBC's
-    orientation sign. Division by `sgn` returns CBC pre-sign speed units.
-  - **Feedback**: `Kp·error + Ki·∫error` with dead zone, anti-windup clamp,
-    and a hard `maxCompensationDegPerTick` output clamp. Gimbal-lock
-    (`|Jacobian| ≈ 0`) freezes the target instead of winding up.
-- VS render transform is a plain `createFromSlerp(prev, curr, partialTick)` in
-  this build (no velocity extrapolation — verified in
-  `DefaultClientShipTransformProvider`), so ship rotation and the injected
-  constant pitch rate interpolate consistently across the same tick boundary:
-  world aim is constant to second order → frame-stable in the scope.
+  - **Position servo (deadbeat)**: the offset commands the *exact* relative
+    pitch that places the bore at the held elevation —
+    `offset = clamp((target − elev) / J / sgn, ±maxCompensationDegPerTick)`.
+    One Newton step converges within the slew limit; no integral, no windup,
+    no drift-rate estimation. Because the command is a position, not a rate,
+    the hold cannot degrade: a gun railed at a mechanical limit keeps its
+    original target and returns the moment geometry allows. (An earlier
+    feedforward + PI + error-recapture design adopted drift whenever its
+    commanded advance got clipped — the velocity-servo lesson that motivated
+    this rewrite.)
+  - **Convert**: elevation error → ship-space pitch via the Jacobian
+    `∂elev/∂p = sgn·ŷ·(a_w × d_w)/cos(elev)` where `a` is the contraption
+    pitch axis (X-facing → ship Z, else ship X) and `sgn` is CBC's orientation
+    sign. Division by `sgn` returns CBC pre-sign speed units. Gimbal lock
+    (`|Jacobian| ≈ 0`) holds the output and keeps the target.
+- Frame smoothness: the gun only ever moves in 20 TPS steps (stock CBC
+  included); smoothness comes from per-frame extrapolation. A second
+  `@ModifyExpressionValue` in the same mixin feeds the tick's offset into
+  `getPitchOffset(partialTicks)` (CBC's render extrapolation otherwise
+  re-derives the speed from the shaft alone and under-projects every
+  stabilizer step — a 20 Hz snap in the zoomed scope). VS render transform is
+  a plain `createFromSlerp(prev, curr, partialTick)` in this build, so ship
+  rotation and the constant pitch step interpolate consistently.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
-  with a 100-tick TTL. During input the client chases locally (same rule as
-  the server), so slewing looks identical on both sides.
-- Anti-stutter measures (added after first playtest): input detection is
-  fully local on both sides — each tick the controller predicts the pitch
-  advance from last tick's base speed plus its own offset, and any deviation
-  beyond 0.3° (mouse aim steps, scroll steps, CBC seat drag, BE sync
-  replacing the pitch) re-captures the held elevation instantly, so the
-  client never fights the server between sync packets. The client-side
-  feedforward rate is low-passed (alpha 0.5) because synced ship transforms
-  arrive in bursts. Large persistent errors (> `recaptureThresholdDeg`) also
-  re-capture, covering slow slews and elevation-limit railing.
+  with a 100-tick TTL. The client runs the same servo with the synced target,
+  so slewing looks identical on both sides.
+- Input detection (fully local on both sides, no packet lag): each tick the
+  controller predicts the pitch advance from last tick's base speed plus its
+  own offset, folded through CBC's `% 360` wrap and
+  `maximumDepression()/maximumElevation()` clamp exactly like CBC's tick does
+  (limits read by reflection from `mountedContraption`, per-concrete-class
+  caches). A clamp-eaten advance — the gun railed — predicts to zero delta
+  and is **not** external input. A persistent mismatch (> 0.3° for 2
+  consecutive ticks, debounce absorbs recoil kicks) re-captures the held
+  elevation. If the advance loop was suspended > 2 ticks (seat gunner control
+  or stall — the mixin is not invoked then), the target re-captures once on
+  resume instead of fighting whoever drove the gun.
 
 ## Config (`common` config, `stabilizer` section)
 
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled` | `true` | Master switch |
-| `proportionalGain` | `0.4` | Deg pitch per deg error per tick (keep < 1) |
-| `integralGain` | `0.02` | Slow drift correction |
-| `feedforwardGain` | `1.0` | 1.0 fully cancels constant ship rotation |
-| `maxCompensationDegPerTick` | `4.0` | Output clamp |
-| `integralLimit` | `400` | Anti-windup clamp (deg·ticks) |
+| `maxCompensationDegPerTick` | `4.0` | Output clamp and slew rate for large corrections (80°/s at 4.0) |
 | `deadZoneDeg` | `0.02` | Errors below this are ignored (no dither) |
-| `recaptureThresholdDeg` | `2.0` | Errors above this are treated as external input (slow slew / mechanical rail): target re-captures instead of correcting |
 | `linkRange` | `24` | Max stabilizer→mount distance (blocks) |
+| `debug` | `false` | Log servo state (elev/target/offset/input/ext/railed/suspend) once per second per linked mount to the server log |
 
 ## Files
 
@@ -99,10 +102,18 @@ stabilizer injects a compensating speed into exactly that advance:
 
 1. Spawn the test ship in waves, mount a cannon, link a stabilizer.
 2. Point at ~20° elevation, release input: the gun should freeze against the
-   horizon through the scope (8x). Slow reticle creep = raise
-   `proportionalGain` slightly or check `feedforwardGain` is 1.0.
-3. Oscillation around the hold = lower `proportionalGain` toward 0.25.
-4. Recoil should kick and recover quickly; long bias after recoil = raise
-   `integralGain`.
-5. Elevation/depression rails: the gun parks at CBC's mechanical limit, the
-   target re-captures there automatically (no windup).
+   horizon through the scope (8x). Any residual dither = the `deadZoneDeg` is
+   fine; check `debug` log lines show `input=false` while holding.
+3. Climb a hill until the gun rails at its depression limit, then level out:
+   the gun must return to the held elevation. If it adopts the drifted
+   elevation, check the debug line for `railed=true` while holding — the
+   clamp-aware prediction should keep `ext=false` there.
+4. Recoil kicks and recovers within a tick or two (the 2-tick input debounce
+   deliberately ignores single-tick recoil steps).
+5. Post-release correction slew speed = `maxCompensationDegPerTick`
+   (4.0 ≈ 80°/s); lower for a heavier feel.
+6. Seat gunner aiming: while a seat operator drives the gun the stabilizer is
+   transparent; on release the held elevation re-captures (suspension
+   detection), it must not snap back to the pre-seat target.
+7. `debug=true` in the config prints one server-log line per second per mount:
+   `elev/target/offset/input/ext/railed/suspend` for diagnosing any report.
