@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.client.VehicleMountSelectionScreen;
 import com.erika.vsanalogwarfare.client.VehicleSetupEditorScreen;
 import com.erika.vsanalogwarfare.client.ScopeLinkScreen;
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.Level;
 
 public final class ClientNetworkHandlers {
     private ClientNetworkHandlers() {
@@ -42,5 +43,18 @@ public final class ClientNetworkHandlers {
 
     public static void openScopeLinks(ScopeLinkPacket.Open packet) {
         Minecraft.getInstance().setScreen(new ScopeLinkScreen(packet.scope(), packet.revision(), packet.primary(), packet.secondary()));
+    }
+
+    public static void handleStabilizerState(StabilizerStatePacket packet) {
+        if (packet.mountPos() == null || !packet.active() || Double.isNaN(packet.targetElevDeg())) {
+            if (packet.mountPos() != null) {
+                com.erika.vsanalogwarfare.stabilizer.ClientStabilizerState.clear(packet.mountPos());
+            }
+            return;
+        }
+        Level level = Minecraft.getInstance().level;
+        long gameTime = level == null ? 0L : level.getGameTime();
+        com.erika.vsanalogwarfare.stabilizer.ClientStabilizerState.set(
+                packet.mountPos(), packet.active(), packet.targetElevDeg(), gameTime);
     }
 }

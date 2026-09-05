@@ -7,6 +7,7 @@
   "refmap": "vs_analog_warfare.mixins.refmap.json",
   "mixins": [
     "AbstractContraptionEntityMixin",
+    "CannonMountBlockEntityMixin",
     "MountedDualCannonContraptionMixin"
   ],
   "client": [

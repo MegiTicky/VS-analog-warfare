@@ -78,6 +78,7 @@ public final class MouseAimController {
         writeYawPitch(mount, nextYaw, nextPitch);
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
     }
 
     /** Set a linked cannon to the requested world-space bore direction. */
@@ -97,6 +98,7 @@ public final class MouseAimController {
         writeYawPitch(mount, desired.yaw(), pitch);
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
     }
 
     private static float clampPitchToMount(Object mount, float pitch) {
@@ -242,5 +244,6 @@ public final class MouseAimController {
         writeYawPitch(mount, currentYaw, nextPitch);
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
     }
 }

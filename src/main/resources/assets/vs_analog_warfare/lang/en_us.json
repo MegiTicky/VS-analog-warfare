@@ -2,9 +2,9 @@
   "block.vs_analog_warfare.vehicle_setup": "Setup Block",
   "block.vs_analog_warfare.ground_collision_disabler": "Collision Disabler",
   "item.vs_analog_warfare.analog_screwdriver": "Analog Screwdriver",
-    "block.vs_analog_warfare.scope_block": "Analog Cannon Scope",
-    "block.vs_analog_warfare.mouse_aim_block": "Mouse Aim Controller",
-    "entity.vs_analog_warfare.scope_camera": "Scope Camera",
+  "block.vs_analog_warfare.scope_block": "Analog Cannon Scope",
+  "block.vs_analog_warfare.mouse_aim_block": "Mouse Aim Controller",
+  "entity.vs_analog_warfare.scope_camera": "Scope Camera",
   "key.categories.vs_analog_warfare": "VS Analog Warfare",
   "key.vs_analog_warfare.scope_zoom": "Toggle Scope Zoom",
   "key.vs_analog_warfare.scope_freelook": "Toggle Scope Free Look",
@@ -31,5 +31,6 @@
   "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_1": "Blocks that were recorded can also be marked for removal. Sneak and scroll to switch the Screwdriver to removal mode.",
   "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_2": "Right-click the Setup Block to begin marking.",
   "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_3": "Right-click a recorded block to mark it for removal, such as this Black Wool.",
-  "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_4": "Right-click the Setup Block again to stop marking. Marked blocks are removed the next time the setup runs."
+  "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_4": "Right-click the Setup Block again to stop marking. Marked blocks are removed the next time the setup runs.",
+  "block.vs_analog_warfare.stabilizer": "Gyro Stabilizer"
 }

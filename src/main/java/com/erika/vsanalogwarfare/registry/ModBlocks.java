@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.registry;
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimBlock;
 import com.erika.vsanalogwarfare.scope.ScopeBlock;
+import com.erika.vsanalogwarfare.stabilizer.StabilizerBlock;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlock;
 import com.erika.vsanalogwarfare.vehiclesetup.GroundCollisionDisablerBlock;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlock;
@@ -48,6 +49,10 @@ public final class ModBlocks {
 
     public static final RegistryObject<Block> DECORATION_BEARING = BLOCKS.register("decoration_bearing",
             () -> new DecorationBearingBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.METAL).strength(1.5f, 6.0f).noOcclusion()));
+
+    public static final RegistryObject<Block> STABILIZER = BLOCKS.register("stabilizer",
+            () -> new StabilizerBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL).strength(1.5f, 6.0f).noOcclusion()));
 
     private ModBlocks() {

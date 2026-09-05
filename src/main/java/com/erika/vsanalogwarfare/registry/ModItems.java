@@ -34,6 +34,9 @@ public final class ModItems {
     public static final RegistryObject<Item> DECORATION_BEARING = ITEMS.register("decoration_bearing",
             () -> new BlockItem(ModBlocks.DECORATION_BEARING.get(), new Item.Properties()));
 
+    public static final RegistryObject<Item> STABILIZER = ITEMS.register("stabilizer",
+            () -> new BlockItem(ModBlocks.STABILIZER.get(), new Item.Properties()));
+
     public static final RegistryObject<Item> ANALOG_SCREWDRIVER = ITEMS.register("analog_screwdriver",
             () -> new AnalogScrewdriverItem(new Item.Properties().stacksTo(1)));
 
@@ -51,6 +54,7 @@ public final class ModItems {
                 event.accept(GROUND_COLLISION_DISABLER);
                 event.accept(VEHICLE_MOUNT_HANDLE);
                 event.accept(DECORATION_BEARING);
+                event.accept(STABILIZER);
                 event.accept(ANALOG_SCREWDRIVER);
             }
         }

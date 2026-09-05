@@ -1,0 +1,41 @@
+package com.erika.vsanalogwarfare.mixin;
+
+import com.erika.vsanalogwarfare.stabilizer.StabilizerController;
+import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+
+/**
+ * Injects the gyro stabilizer's compensating pitch speed into CBC's cannon
+ * mount tick. The targeted call is the <b>pitch</b> {@code getAngularSpeed}
+ * (ordinal 0 is yaw), inside the block that advances {@code cannonPitch};
+ * CBC only reaches it when the mount is running and not stalled, and the
+ * result still flows through CBC's own sequenced-angle-limit clamping and
+ * elevation/depression limits.
+ *
+ * Runs on both server (authoritative) and client (smooth visuals); CBC's
+ * {@code clientPitchDiff} chase absorbs any residual divergence.
+ */
+@Mixin(targets = "rbasamoyai.createbigcannons.cannon_control.cannon_mount.CannonMountBlockEntity", remap = false)
+public class CannonMountBlockEntityMixin {
+
+    @Shadow
+    private float cannonPitch;
+
+    @ModifyExpressionValue(
+            method = "tick()V",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lrbasamoyai/createbigcannons/cannon_control/cannon_mount/CannonMountBlockEntity;getAngularSpeed(FF)F",
+                    ordinal = 1,
+                    remap = false),
+            remap = false)
+    private float vsaw$stabilizerPitchSpeed(float original) {
+        float offset = StabilizerController.computeOffsetSpeed((Object) this, this.cannonPitch);
+        if (offset == 0.0f) {
+            return original;
+        }
+        return original + offset;
+    }
+}

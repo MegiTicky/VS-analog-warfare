@@ -82,6 +82,9 @@ public final class ClientForgeEvents {
         }
         Minecraft mc = Minecraft.getInstance();
         AnalogScrewdriverOverlay.tick();
+        if (mc.level != null) {
+            com.erika.vsanalogwarfare.stabilizer.ClientStabilizerState.tick(mc.level.getGameTime());
+        }
         if (!mc.options.keyAttack.isDown()) {
             vehicleHandleAttackHeld = false;
         }

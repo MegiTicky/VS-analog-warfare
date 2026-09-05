@@ -23,6 +23,7 @@ public class AnalogScrewdriverItem extends Item {
     private static final String ENDER_PAIR_SOURCE = "VSAWEnderPairSource";
     private static final String REMOVAL_MODE = "VSAWRemovalMode";
     private static final String MODE = "VSAWScrewdriverMode";
+    private static final String STABILIZER_SOURCE = "VSAWStabilizerSource";
     public static final int REGULAR_MODE = 0;
     public static final int REMOVAL_MODE_VALUE = 1;
     public static final int TRANSMITTER_MODE = 2;
@@ -84,6 +85,31 @@ public class AnalogScrewdriverItem extends Item {
                 return error == null ? InteractionResult.CONSUME : InteractionResult.FAIL;
             }
             return fail(player, "Sneak-right-click an Ender transmitter first to select it for pairing.");
+        }
+        if (level.getBlockEntity(clicked) instanceof com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity stabilizer) {
+            if (player.isShiftKeyDown()) {
+                stabilizer.unlink();
+                recorder.getOrCreateTag().remove(STABILIZER_SOURCE);
+                player.displayClientMessage(Component.literal("Stabilizer unlinked."), true);
+                return InteractionResult.CONSUME;
+            }
+            recorder.getOrCreateTag().putLong(STABILIZER_SOURCE, clicked.asLong());
+            player.displayClientMessage(Component.literal(
+                    "Stabilizer selected. Right-click a cannon mount to link it (sneak-right-click the stabilizer to unlink)."), true);
+            return InteractionResult.CONSUME;
+        }
+        if (recorder.getOrCreateTag().contains(STABILIZER_SOURCE)
+                && com.erika.vsanalogwarfare.scope.compat.CbcCompat.isCannonMount(level.getBlockEntity(clicked))) {
+            BlockPos source = BlockPos.of(recorder.getOrCreateTag().getLong(STABILIZER_SOURCE));
+            recorder.getOrCreateTag().remove(STABILIZER_SOURCE);
+            if (level.getBlockEntity(source) instanceof com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity stabilizer) {
+                String error = stabilizer.linkMount(clicked);
+                player.displayClientMessage(Component.literal(error == null
+                        ? "Stabilizer linked. It will hold the cannon's world elevation when you stop rotating."
+                        : "Stabilizer link failed: " + error), true);
+                return error == null ? InteractionResult.CONSUME : InteractionResult.FAIL;
+            }
+            return fail(player, "Stabilizer link failed: the selected stabilizer block is gone.");
         }
         return InteractionResult.PASS;
     }
