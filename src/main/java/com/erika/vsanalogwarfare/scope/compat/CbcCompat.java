@@ -397,7 +397,7 @@ public final class CbcCompat {
         }
 
         Vec3 forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(Vec3.atLowerCornerOf(fallbackFacing.getNormal()).normalize());
-        Vec3 projectedUp = projectUp(fallbackUp, forward);
+        Vec3 projectedUp = projectedUp(fallbackUp, forward);
         return Optional.of(applyShipTransform ? VsCompat.shipToWorldDirection(level, mountPos, projectedUp) : projectedUp);
     }
 
@@ -462,8 +462,49 @@ public final class CbcCompat {
             LOGGER.debug("[VSAW_SCOPE] tryDirectionFromMountOffsets: baseDir={} yaw={} pitch={}", baseDir, yaw, pitch);
             return Optional.of(directionFromYawPitch(baseDir.toYRot() + yaw, pitch));
         } catch (ReflectiveOperationException | LinkageError e) {
-            LOGGER.debug("[VSAW_SCOPE] tryDirectionFromMountOffsets: exception - {}", e.getClass().getSimpleName(), e);
+            LOGGER.debug("[VSAW_SCOPE] tryDirectionFromMountOffsets: exception - {}", e.getClass().getSimpleName());
             return Optional.empty();
+        }
+    }
+
+    /** Base compass yaw of the mount's contraption direction (fallback NORTH). */
+    private static float contraptionBaseYaw(Object mount) throws ReflectiveOperationException {
+        Object direction = callNoArg(mount, "getContraptionDirection");
+        if (direction instanceof Direction d) {
+            return d.toYRot();
+        }
+        return Direction.NORTH.toYRot();
+    }
+
+    /**
+     * Ship-space bore direction from the mount's render offsets with an
+     * <b>explicit</b> pitch. The render-lock solve uses this so it never
+     * re-enters {@code getPitchOffset} (it runs from inside that method).
+     * Null when the mount does not expose the offsets.
+     */
+    @Nullable
+    public static Vec3 directionFromMountOffsets(Object mount, float partialTicks, float pitchDeg) {
+        try {
+            float yaw = callFloat(mount, "getYawOffset", partialTicks);
+            return directionFromYawPitch(contraptionBaseYaw(mount) + yaw, pitchDeg);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+    }
+
+    /**
+     * Ship-space bore direction exactly as CBC renders it at
+     * {@code partialTicks}: velocity-extrapolated yaw and pitch (the pitch
+     * passes through the stabilizer's render lock when active), the same
+     * frame the drawn barrel uses. Null when the offsets are unavailable.
+     */
+    @Nullable
+    public static Vec3 renderedBoreDirection(Object mount, float partialTicks) {
+        try {
+            float pitch = callFloat(mount, "getPitchOffset", partialTicks);
+            return directionFromMountOffsets(mount, partialTicks, pitch);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
         }
     }
 
@@ -786,7 +827,13 @@ public final class CbcCompat {
         return new Vec3(x, y, z).normalize();
     }
 
-    private static Vec3 projectUp(Vec3 up, Vec3 forward) {
+    /**
+     * {@code up} projected into the plane perpendicular to {@code forward}
+     * (the assembly-up a pitch-only cannon ends up with). Public because the
+     * stabilized scope frame rebuilds the up vector from the smooth bore
+     * direction.
+     */
+    public static Vec3 projectedUp(Vec3 up, Vec3 forward) {
         Vec3 f = forward.normalize();
         Vec3 projected = up.subtract(f.scale(up.dot(f)));
         if (projected.lengthSqr() < 1.0e-8) {

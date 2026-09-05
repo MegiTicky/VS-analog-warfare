@@ -70,10 +70,13 @@ public final class StabilizerController {
     /** Reuse the last found ship for this many ticks when the position query blinks. */
     private static final int SHIP_LOOKUP_GRACE_TICKS = 5;
 
-    /** Render lock: hard cap on the visual correction away from CBC's rendered pitch. */
-    private static final float RENDER_LOCK_MAX_CORRECTION_DEG = 2.0f;
-    /** Render lock: per-frame low-pass factor for the correction. */
-    private static final float RENDER_LOCK_SMOOTHING = 0.4f;
+    /**
+     * Render lock: hard cap on the visual correction away from CBC's rendered
+     * pitch. Steady rocking needs well under 2°; a larger cap only engages
+     * during violent transients, where the residual servo lag stays honestly
+     * visible instead of the view silently lying about where shots go.
+     */
+    private static final float RENDER_LOCK_MAX_CORRECTION_DEG = 6.0f;
 
     /** Server: mount pos -> stabilizer pos. Client: mount pos -> synced stabilizer pos. */
     private static final Map<Long, BlockPos> MOUNT_LINKS = new ConcurrentHashMap<>();
@@ -461,73 +464,115 @@ public final class StabilizerController {
     }
 
     /**
-     * Render-time pitch lock (client, per frame): solve for the ship-space
-     * pitch that places the bore exactly on the held world elevation under
-     * this frame's interpolated ship transform — the same transform the hull
-     * is drawn with — so the rendered gun has no 20 TPS component at all.
-     * The correction is Newton-stepped from CBC's own extrapolated value,
-     * clamped to a couple of degrees so the visual can never meaningfully
-     * diverge from the logical pitch the shot uses. Passes through during
-     * player input. Guarded: the render path must never throw.
+     * Render-time pitch lock (client, per frame): re-solve the drawn pitch so
+     * the bore sits exactly on the held world elevation <b>at this frame's
+     * partialTick</b>, under this frame's interpolated ship render transform —
+     * the same transform the hull is drawn with. Solving against the drawn
+     * value (not the tick value) makes the lock exact at every point within
+     * the frame, so CBC's one-tick extrapolation lead and the 20 TPS quantized
+     * velocity changes are both absorbed instead of leaking into the view.
+     * No smoothing: every input is per-frame continuous, and a low-pass would
+     * only add phase lag while rocking. The correction is clamped so the
+     * visual can never meaningfully diverge from the logical shot pitch.
+     * Passes through during player input. Guarded: the render path must never
+     * throw.
      */
-    public static float computeRenderPitchOffset(Object mountBe, float originalRenderPitch) {
+    public static float computeRenderPitchOffset(Object mountBe, float partialTicks, float originalRenderPitch) {
         try {
-            return computeRenderPitchOffsetInner(mountBe, originalRenderPitch);
+            return computeRenderPitchOffsetInner(mountBe, partialTicks, originalRenderPitch);
         } catch (RuntimeException | LinkageError e) {
             return originalRenderPitch;
         }
     }
 
-    private static float computeRenderPitchOffsetInner(Object mountBe, float originalRenderPitch) {
-        if (CommonConfig.stabilizerRenderLock() && mountBe instanceof BlockEntity be
-                && be.getLevel() != null && be.getLevel().isClientSide) {
-            Level level = be.getLevel();
-            BlockPos mountPos = be.getBlockPos();
-            MountState state = STATES.get(mountPos.asLong());
-            if (state == null || !state.targetValid || state.inputActive) {
-                return originalRenderPitch;
-            }
-            Object ship = StabilizerMath.shipManaging(level, mountPos);
-            if (ship == null) {
-                return originalRenderPitch;
-            }
-            DirectionHolder holder = DirectionHolder.of(be, level, mountPos);
-            if (holder == null) {
-                return originalRenderPitch;
-            }
-            Matrix4dc renderRotation = StabilizerMath.getRenderShipToWorld(ship);
-            if (renderRotation == null) {
-                return originalRenderPitch;
-            }
-            Vec3 aimShip = CbcCompat.getAimDirection(level, mountPos, holder.initialOrientation, 1.0f, false)
-                    .orElse(null);
+    private static float computeRenderPitchOffsetInner(Object mountBe, float partialTicks, float originalRenderPitch) {
+        if (!CommonConfig.stabilizerRenderLock() || !(mountBe instanceof BlockEntity be)
+                || be.getLevel() == null || !be.getLevel().isClientSide) {
+            return originalRenderPitch;
+        }
+        // MouseAimController reads getPitchOffset(1.0f) as logical control
+        // feedback; only real render frames (partialTick < 1) get the lock.
+        if (partialTicks >= 1.0f) {
+            return originalRenderPitch;
+        }
+        Level level = be.getLevel();
+        BlockPos mountPos = be.getBlockPos();
+        MountState state = STATES.get(mountPos.asLong());
+        if (state == null || !state.targetValid || state.inputActive) {
+            return originalRenderPitch;
+        }
+        Object ship = StabilizerMath.shipManaging(level, mountPos);
+        if (ship == null) {
+            return originalRenderPitch;
+        }
+        DirectionHolder holder = DirectionHolder.of(be, level, mountPos);
+        if (holder == null) {
+            return originalRenderPitch;
+        }
+        Matrix4dc renderRotation = StabilizerMath.getRenderShipToWorld(ship);
+        if (renderRotation == null) {
+            return originalRenderPitch;
+        }
+        Vec3 axisShip = StabilizerMath.pitchAxisShipLocal(holder.initialOrientation);
+        float sgn = StabilizerMath.cbcPitchSign(holder.initialOrientation);
+        // getPitchOffset returns pitch * modifier (modifier -1 for DOWN-facing
+        // cannons), so the solve runs in drawn units and multiplies by modifier.
+        float modifier = holder.initialOrientation == Direction.DOWN ? -1.0f : 1.0f;
+        float correction = 0.0f;
+        for (int iteration = 0; iteration < 2; iteration++) {
+            Vec3 aimShip = CbcCompat.directionFromMountOffsets(mountBe, partialTicks,
+                    originalRenderPitch + correction);
             if (aimShip == null || aimShip.lengthSqr() < 1.0e-6) {
                 return originalRenderPitch;
             }
-
-            Vec3 axisShip = StabilizerMath.pitchAxisShipLocal(holder.initialOrientation);
-            float sgn = StabilizerMath.cbcPitchSign(holder.initialOrientation);
             Vec3 aimWorld = StabilizerMath.transformDirection(renderRotation, aimShip);
             double elevNowDeg = StabilizerMath.elevationDeg(aimWorld);
             double errorDeg = state.targetElevDeg - elevNowDeg;
             if (Math.abs(errorDeg) < CommonConfig.stabilizerDeadZoneDeg()) {
-                return originalRenderPitch;
+                break;
             }
             double jacobian = StabilizerMath.pitchToElevationJacobian(renderRotation, aimShip, axisShip, sgn,
                     Math.toRadians(elevNowDeg));
             if (Math.abs(jacobian) < 1.0e-3) {
                 return originalRenderPitch;
             }
-            // Jacobian gives d(world elevation)/d(cannonPitch); getPitchOffset
-            // returns pitch * modifier (modifier -1 for DOWN-facing cannons).
-            float modifier = holder.initialOrientation == Direction.DOWN ? -1.0f : 1.0f;
-            float correction = (float) (errorDeg / jacobian) * modifier;
-            correction = Math.max(-RENDER_LOCK_MAX_CORRECTION_DEG,
-                    Math.min(RENDER_LOCK_MAX_CORRECTION_DEG, correction));
-            state.renderLockCorrection += (correction - state.renderLockCorrection) * RENDER_LOCK_SMOOTHING;
-            return originalRenderPitch + state.renderLockCorrection;
+            correction += (float) (errorDeg / jacobian) * modifier;
         }
-        return originalRenderPitch;
+        correction = Math.max(-RENDER_LOCK_MAX_CORRECTION_DEG,
+                Math.min(RENDER_LOCK_MAX_CORRECTION_DEG, correction));
+        state.renderLockCorrection = correction;
+        return originalRenderPitch + correction;
+    }
+
+    /**
+     * Ship-space {@code {aim, up}} for the scope camera, built from the same
+     * velocity-extrapolated (and render-locked) offsets CBC's cannon renderer
+     * draws with — never from CBC's one-tick-behind contraption lerp — so the
+     * scoped view cannot step at 20 TPS or lag behind the drawn barrel. The
+     * up vector is the assembly-up recomputed from the smooth bore direction
+     * (identical to CBC's construction for a pitch-only mount). Returns null
+     * when the mount has no active stabilizer state; the caller keeps its
+     * legacy path. Client-only.
+     */
+    @Nullable
+    public static Vec3[] stabilizedScopeFrame(Level level, BlockPos mountPos, float partialTicks) {
+        if (!CommonConfig.stabilizerRenderLock() || !level.isClientSide) {
+            return null;
+        }
+        MountState state = STATES.get(mountPos.asLong());
+        if (state == null || !state.targetValid) {
+            return null;
+        }
+        BlockEntity be = level.getBlockEntity(mountPos);
+        if (be == null) {
+            return null;
+        }
+        Vec3 aim = CbcCompat.renderedBoreDirection(be, partialTicks);
+        if (aim == null || aim.lengthSqr() < 1.0e-6) {
+            return null;
+        }
+        Vec3 up = CbcCompat.projectedUp(new Vec3(0.0, 1.0, 0.0), aim);
+        return new Vec3[]{aim.normalize(), up};
     }
 
     public static boolean isShaftDriving(Object mountBe) {

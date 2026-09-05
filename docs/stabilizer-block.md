@@ -65,13 +65,29 @@ stabilizer injects a compensating speed into exactly that advance:
   So while holding, a `@ModifyReturnValue` on `getPitchOffset` re-solves the
   rendered pitch **per frame** against the ship's interpolated render
   transform (`ClientShip.getRenderTransform()` — the same slerp the hull is
-  drawn with): one Newton step through the elevation/pitch Jacobian puts the
-  bore exactly on the held elevation for this frame. The correction is
-  low-passed (0.4/frame) and capped at ±2° from CBC's value, so the visual
-  can never meaningfully diverge from the logical pitch the shot uses.
-  Passes through during player input, on the server, and wherever no
-  stabilizer state exists. The rendered gun is therefore exactly as smooth
-  as the hull itself — no 20 TPS component at all.
+  drawn with): two Newton iterations put the bore exactly on the held
+  elevation **at this frame's partialTick**, measured against the drawn
+  value itself. Solving at the rendered partialTick (not the tick value)
+  means CBC's one-tick extrapolation lead and the 20 TPS velocity
+  quantization are both absorbed exactly, so there is no low-pass and no
+  phase lag while rocking. The correction is capped at ±6° from CBC's value
+  so the visual can never meaningfully diverge from the logical pitch the
+  shot uses (normal rocking needs under 2°; a saturated cap during violent
+  transients keeps the residual servo lag honestly visible). Passes through
+  during player input, on the server, at `partialTicks >= 1.0` (mouse aim
+  reads `getPitchOffset(1.0f)` as logical feedback), and wherever no
+  stabilizer state exists. The rendered gun is exactly as smooth as the
+  hull itself — no 20 TPS component at all.
+- **Stabilized scope frame**: the scope camera direction used to come from
+  CBC's `PitchOrientedContraptionEntity.applyRotation`, which lerps the raw
+  20 TPS synced pitch (`prevPitch -> pitch`) with no extrapolation and no
+  render lock — the view stepped and lagged a full tick even with the model
+  locked. When the mount has an active stabilizer state,
+  `FixedCoaxScopeRig` now builds the aim/up frame from the mount's own
+  render offsets (`getYawOffset`/`getPitchOffset` — the exact frame the
+  drawn barrel uses), with the up vector recomputed from the smooth bore
+  direction (identical construction to CBC's assembly-up). Non-stabilized
+  cannons keep the legacy paths.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
