@@ -60,6 +60,18 @@ stabilizer injects a compensating speed into exactly that advance:
   stabilizer step — a 20 Hz snap in the zoomed scope). VS render transform is
   a plain `createFromSlerp(prev, curr, partialTick)` in this build, so ship
   rotation and the constant pitch step interpolate consistently.
+- **Render-time pitch lock** (`renderLock` config, default on): extrapolation
+  alone still shows 20 TPS stepping whenever the correction rate changes.
+  So while holding, a `@ModifyReturnValue` on `getPitchOffset` re-solves the
+  rendered pitch **per frame** against the ship's interpolated render
+  transform (`ClientShip.getRenderTransform()` — the same slerp the hull is
+  drawn with): one Newton step through the elevation/pitch Jacobian puts the
+  bore exactly on the held elevation for this frame. The correction is
+  low-passed (0.4/frame) and capped at ±2° from CBC's value, so the visual
+  can never meaningfully diverge from the logical pitch the shot uses.
+  Passes through during player input, on the server, and wherever no
+  stabilizer state exists. The rendered gun is therefore exactly as smooth
+  as the hull itself — no 20 TPS component at all.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
@@ -113,6 +125,7 @@ stabilizer injects a compensating speed into exactly that advance:
 | `deadZoneDeg` | `0.02` | Errors below this are ignored (no dither) |
 | `linkRange` | `24` | Max stabilizer→mount distance (blocks) |
 | `debug` | `false` | Log servo state (elev/target/offset/input/ext/railed/suspend) once per second per linked mount to the server log |
+| `renderLock` | `true` | Per-frame render-time pitch lock while holding (removes 20 TPS scope stepping; visual only) |
 
 ## Files
 

@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.mixin;
 
 import com.erika.vsanalogwarfare.stabilizer.StabilizerController;
 import com.llamalad7.mixinextras.injector.ModifyExpressionValue;
+import com.llamalad7.mixinextras.injector.ModifyReturnValue;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
@@ -61,5 +62,18 @@ public class CannonMountBlockEntityMixin {
             return original;
         }
         return original + renderOffset;
+    }
+
+    /**
+     * Render-time world-elevation lock: while the stabilizer is holding, the
+     * rendered pitch is re-solved per frame against the ship's interpolated
+     * render transform, so the gun is as smooth as the hull itself with no
+     * 20 TPS stepping in the zoomed scope. Client-only, hold-state-gated, and
+     * capped at a couple of degrees from CBC's own value; passes through
+     * everywhere else (server, input, no stabilizer, schematic previews).
+     */
+    @ModifyReturnValue(method = "getPitchOffset(F)F", at = @At("RETURN"), remap = false)
+    private float vsaw$renderPitchLock(float original) {
+        return StabilizerController.computeRenderPitchOffset((Object) this, original);
     }
 }

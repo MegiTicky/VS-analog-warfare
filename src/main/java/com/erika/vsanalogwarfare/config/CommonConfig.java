@@ -16,6 +16,7 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.DoubleValue STABILIZER_DEAD_ZONE_DEG;
     public static final ForgeConfigSpec.DoubleValue STABILIZER_LINK_RANGE;
     public static final ForgeConfigSpec.BooleanValue STABILIZER_DEBUG;
+    public static final ForgeConfigSpec.BooleanValue STABILIZER_RENDER_LOCK;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -64,6 +65,11 @@ public final class CommonConfig {
         STABILIZER_DEBUG = builder
                 .comment("Log stabilizer servo state once per second per linked mount to the server log.")
                 .define("debug", false);
+        STABILIZER_RENDER_LOCK = builder
+                .comment("Re-solve the rendered gun pitch per frame against the ship's interpolated "
+                        + "render transform while holding, removing 20 TPS stepping in the zoomed scope. "
+                        + "Visual only; capped at 2 degrees from the logical pitch.")
+                .define("renderLock", true);
         builder.pop();
 
         SPEC = builder.build();
@@ -86,4 +92,5 @@ public final class CommonConfig {
     public static double stabilizerDeadZoneDeg() { return STABILIZER_DEAD_ZONE_DEG.get(); }
     public static double stabilizerLinkRange() { return STABILIZER_LINK_RANGE.get(); }
     public static boolean stabilizerDebug() { return STABILIZER_DEBUG.get(); }
+    public static boolean stabilizerRenderLock() { return STABILIZER_RENDER_LOCK.get(); }
 }

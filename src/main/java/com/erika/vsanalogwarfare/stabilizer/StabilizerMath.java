@@ -77,6 +77,33 @@ public final class StabilizerMath {
         }
     }
 
+    /**
+     * Ship-to-world rotation of the client's <b>render</b> transform — the
+     * per-frame slerp the hull itself is drawn with — or null when unavailable.
+     * Client-only; used by the render-time pitch lock.
+     */
+    @Nullable
+    public static Matrix4dc getRenderShipToWorld(Object ship) {
+        try {
+            Method getRender = methodFor(ship.getClass(), "getRenderTransform");
+            if (getRender == null) {
+                return null;
+            }
+            Object transform = getRender.invoke(ship);
+            if (transform == null) {
+                return null;
+            }
+            Method m = methodFor(transform.getClass(), "getShipToWorld");
+            if (m == null) {
+                return null;
+            }
+            Object matrix = m.invoke(transform);
+            return matrix instanceof Matrix4dc m4 ? m4 : null;
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+    }
+
     /** Ship-to-world rotation of the previous game tick transform, or null when unavailable. */
     @Nullable
     public static Matrix4dc getPrevTickShipToWorld(Object ship) {
