@@ -545,14 +545,20 @@ public final class CbcCompat {
     private static final Map<Class<?>, Field> CANNON_PITCH_FIELDS = new HashMap<>();
 
     /**
-     * g-h filter gains: the fraction of each tick's measurement error applied to
-     * the rendered position (ALPHA) and to the velocity (BETA). Lower values are
-     * smoother — errors glide out over several ticks like the pre-stabilizer
-     * entity lerp did — at the cost of a slightly softer response to deliberate
-     * slew changes.
+     * g-h filter gains (configurable, {@code scopeAimFilterAlpha/Beta}): the
+     * fraction of each tick's measurement error applied to the rendered position
+     * (ALPHA) and to the velocity (BETA). High alpha/beta = the view tracks the
+     * gun tightly and stops dead (but measurement jumps show through); low
+     * values = silkier motion but the view coasts and rings after snap-stops.
+     * Alpha 1.0 + beta 1.0 reproduces the raw unfiltered extrapolation exactly.
      */
-    private static final float SCOPE_FILTER_ALPHA = 0.2f;
-    private static final float SCOPE_FILTER_BETA = 0.06f;
+    private static float scopeFilterAlpha() {
+        return com.erika.vsanalogwarfare.config.CommonConfig.scopeAimFilterAlpha();
+    }
+
+    private static float scopeFilterBeta() {
+        return com.erika.vsanalogwarfare.config.CommonConfig.scopeAimFilterBeta();
+    }
 
     /**
      * Scope bore from the g-h filtered mount angle, extrapolated to the rendered
@@ -614,14 +620,16 @@ public final class CbcCompat {
                 // g-h update: predict with the current velocity, then split the
                 // measurement error between the rendered position and the velocity
                 // so jumps glide instead of snapping.
+                float alpha = scopeFilterAlpha();
+                float beta = scopeFilterBeta();
                 angle.posYaw += angle.velYaw * dt;
                 angle.posPitch += angle.velPitch * dt;
                 float yawErr = wrapDegrees(yaw - angle.posYaw);
                 float pitchErr = wrapDegrees(pitch - angle.posPitch);
-                angle.posYaw += SCOPE_FILTER_ALPHA * yawErr;
-                angle.posPitch += SCOPE_FILTER_ALPHA * pitchErr;
-                angle.velYaw += (SCOPE_FILTER_BETA / dt) * yawErr;
-                angle.velPitch += (SCOPE_FILTER_BETA / dt) * pitchErr;
+                angle.posYaw += alpha * yawErr;
+                angle.posPitch += alpha * pitchErr;
+                angle.velYaw += (beta / dt) * yawErr;
+                angle.velPitch += (beta / dt) * pitchErr;
             }
             angle.gameTime = now;
         }

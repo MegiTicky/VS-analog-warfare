@@ -10,6 +10,8 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.DoubleValue MOUSE_AIM_RATE_MULTIPLIER;
     public static final ForgeConfigSpec.DoubleValue MAX_RANGEFINDER_DISTANCE;
     public static final ForgeConfigSpec.BooleanValue SMOOTH_SCOPE_AIM;
+    public static final ForgeConfigSpec.DoubleValue SCOPE_AIM_FILTER_ALPHA;
+    public static final ForgeConfigSpec.DoubleValue SCOPE_AIM_FILTER_BETA;
     public static final ForgeConfigSpec.BooleanValue DISABLE_CONTRAPTION_ENTITY_COLLISION;
 
     public static final ForgeConfigSpec.BooleanValue STABILIZER_ENABLED;
@@ -46,6 +48,17 @@ public final class CommonConfig {
                         + "(the same value the drawn barrel uses) instead of the one-tick-behind contraption "
                         + "entity lerp, removing 20 TPS shutter in the zoomed scope.")
                 .define("smoothScopeAim", true);
+        SCOPE_AIM_FILTER_ALPHA = builder
+                .comment("Scope aim filter position gain: fraction of each tick's measurement error "
+                        + "applied to the rendered angle instantly. Lower = smoother/silkier but the "
+                        + "view trails the gun more; higher = snappier stops. 1.0 = no position smoothing.")
+                .defineInRange("scopeAimFilterAlpha", 0.65D, 0.0D, 1.0D);
+        SCOPE_AIM_FILTER_BETA = builder
+                .comment("Scope aim filter velocity gain: fraction of each tick's measurement error "
+                        + "fed into the extrapolation velocity. Lower = gentler velocity changes but "
+                        + "more coasting after the gun stops; higher = stops dead. 1.0 with alpha 1.0 "
+                        + "reproduces the unfiltered extrapolation.")
+                .defineInRange("scopeAimFilterBeta", 0.4D, 0.0D, 1.0D);
         builder.pop();
 
         builder.push("contraption");
@@ -92,6 +105,8 @@ public final class CommonConfig {
     // Add the new getter
     public static double maxRangefinderDistance() { return MAX_RANGEFINDER_DISTANCE.get(); }
     public static boolean smoothScopeAim() { return SMOOTH_SCOPE_AIM.get(); }
+    public static float scopeAimFilterAlpha() { return SCOPE_AIM_FILTER_ALPHA.get().floatValue(); }
+    public static float scopeAimFilterBeta() { return SCOPE_AIM_FILTER_BETA.get().floatValue(); }
     public static boolean disableContraptionEntityCollision() { return DISABLE_CONTRAPTION_ENTITY_COLLISION.get(); }
 
     public static boolean stabilizerEnabled() { return STABILIZER_ENABLED.get(); }

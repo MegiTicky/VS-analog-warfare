@@ -137,13 +137,18 @@ stabilizer injects a compensating speed into exactly that advance:
   - **g-h filtered extrapolation (final form, 2026-09-05):** raw last-tick
     deltas still kink at tick boundaries (velocity re-estimates) and land sync
     yanks at full amplitude. The scope now runs a per-mount g-h filter
-    (`SCOPE_FILTER_ALPHA = 0.2`, `SCOPE_FILTER_BETA = 0.06`, tunable constants
-    in `CbcCompat`): predict `pos + vel·dt`, measure the raw
+    (`scopeAimFilterAlpha`/`scopeAimFilterBeta` config, default `0.65`/`0.4`,
+    tunable in-game): predict `pos + vel·dt`, measure the raw
     `cannonYaw`/`cannonPitch`, split the error — `pos += ALPHA·err`,
     `vel += (BETA/dt)·err` — and render `pos + vel·partialTicks`. Measurement
     jumps glide out over several ticks (the continuity the pre-stabilizer
-    entity lerp had) at effectively zero lag (which that lerp lacked). The
-    render-lock correction is added via
+    entity lerp had) at effectively zero lag (which that lerp lacked).
+    Gain trade-off learned by in-game iteration: soft gains (0.2/0.06) made
+    the filter's velocity momentum coast and ring for ~2 s after snap-stops
+    ("scope lags behind the cannon"); the defaults land ~65% of any stop
+    error instantly and settle the rest in ~0.3 s. Alpha 1.0 + beta 1.0
+    reproduces the raw unfiltered extrapolation exactly. The render-lock
+    correction is added via
     `StabilizerController.computeRenderPitchOffset(be, 0.0f)`, which also keeps
     the lock's per-frame glide updating even when the barrel is frustum-culled
     while scoped. Comparison note: 0.4.3 (pre-stabilizer) had NO aim smoothing
