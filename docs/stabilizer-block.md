@@ -72,6 +72,15 @@ stabilizer injects a compensating speed into exactly that advance:
   Passes through during player input, on the server, and wherever no
   stabilizer state exists. The rendered gun is therefore exactly as smooth
   as the hull itself — no 20 TPS component at all.
+  Blink-proof application (fixed 2026-09-05): the correction is *always*
+  applied and glides toward its per-frame target (the solved clamp, or 0 on
+  any gate failure), so a transient gate failure — the pose-dependent
+  `shipManaging()` AABB query blinks during ship motion, `inputActive`
+  flickers — moves the target instead of snapping the render between
+  corrected and raw. The ship query is also grace-cached for 5 ticks
+  (MountState.renderShipCache), the same pattern as the tick-side servo.
+  This matters twice over since the scope reads the same value: the snap
+  was sub-pixel on the hull but fills an 8× scope.
 - **Failed experiment, reverted (commits `85546eec` → revert `437aff51`,
   2026-09-05):** an attempt to make the lock frame-exact and to feed the
   scope camera from the same locked offsets. It made everything worse in

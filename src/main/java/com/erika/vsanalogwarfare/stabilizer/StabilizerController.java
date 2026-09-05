@@ -119,6 +119,9 @@ public final class StabilizerController {
         public float renderOffset;
         /** Low-passed per-frame correction applied by the render-time pitch lock. */
         public float renderLockCorrection;
+        /** Client render path: last ship seen managing this mount, for blink-proof gate reads. */
+        public Object renderShipCache;
+        public long renderShipCacheGameTime = Long.MIN_VALUE;
 
         void reset() {
             targetValid = false;
@@ -467,8 +470,10 @@ public final class StabilizerController {
      * is drawn with — so the rendered gun has no 20 TPS component at all.
      * The correction is Newton-stepped from CBC's own extrapolated value,
      * clamped to a couple of degrees so the visual can never meaningfully
-     * diverge from the logical pitch the shot uses. Passes through during
-     * player input. Guarded: the render path must never throw.
+     * diverge from the logical pitch the shot uses. The correction is always
+     * applied and glides toward its per-frame target: a transient gate failure
+     * (ship AABB blink, input flicker) moves the target, never snaps the
+     * rendered angle. Guarded: the render path must never throw.
      */
     public static float computeRenderPitchOffset(Object mountBe, float originalRenderPitch) {
         try {
@@ -484,50 +489,67 @@ public final class StabilizerController {
             Level level = be.getLevel();
             BlockPos mountPos = be.getBlockPos();
             MountState state = STATES.get(mountPos.asLong());
-            if (state == null || !state.targetValid || state.inputActive) {
+            if (state == null) {
                 return originalRenderPitch;
             }
-            Object ship = StabilizerMath.shipManaging(level, mountPos);
-            if (ship == null) {
-                return originalRenderPitch;
+            float targetCorrection = 0.0f;
+            if (state.targetValid && !state.inputActive) {
+                Object ship = renderShipWithGrace(level, mountPos, state);
+                if (ship != null) {
+                    DirectionHolder holder = DirectionHolder.of(be, level, mountPos);
+                    Matrix4dc renderRotation = holder == null ? null : StabilizerMath.getRenderShipToWorld(ship);
+                    if (holder != null && renderRotation != null) {
+                        Vec3 aimShip = CbcCompat.getAimDirection(level, mountPos, holder.initialOrientation, 1.0f, false)
+                                .orElse(null);
+                        if (aimShip != null && aimShip.lengthSqr() >= 1.0e-6) {
+                            Vec3 axisShip = StabilizerMath.pitchAxisShipLocal(holder.initialOrientation);
+                            float sgn = StabilizerMath.cbcPitchSign(holder.initialOrientation);
+                            Vec3 aimWorld = StabilizerMath.transformDirection(renderRotation, aimShip);
+                            double elevNowDeg = StabilizerMath.elevationDeg(aimWorld);
+                            double errorDeg = state.targetElevDeg - elevNowDeg;
+                            if (Math.abs(errorDeg) >= CommonConfig.stabilizerDeadZoneDeg()) {
+                                double jacobian = StabilizerMath.pitchToElevationJacobian(renderRotation, aimShip, axisShip,
+                                        sgn, Math.toRadians(elevNowDeg));
+                                if (Math.abs(jacobian) >= 1.0e-3) {
+                                    // Jacobian gives d(world elevation)/d(cannonPitch); getPitchOffset
+                                    // returns pitch * modifier (modifier -1 for DOWN-facing cannons).
+                                    float modifier = holder.initialOrientation == Direction.DOWN ? -1.0f : 1.0f;
+                                    float correction = (float) (errorDeg / jacobian) * modifier;
+                                    targetCorrection = Math.max(-RENDER_LOCK_MAX_CORRECTION_DEG,
+                                            Math.min(RENDER_LOCK_MAX_CORRECTION_DEG, correction));
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            DirectionHolder holder = DirectionHolder.of(be, level, mountPos);
-            if (holder == null) {
-                return originalRenderPitch;
+            state.renderLockCorrection += (targetCorrection - state.renderLockCorrection) * RENDER_LOCK_SMOOTHING;
+            if (Math.abs(state.renderLockCorrection) < 0.005f) {
+                state.renderLockCorrection = 0.0f;
             }
-            Matrix4dc renderRotation = StabilizerMath.getRenderShipToWorld(ship);
-            if (renderRotation == null) {
-                return originalRenderPitch;
-            }
-            Vec3 aimShip = CbcCompat.getAimDirection(level, mountPos, holder.initialOrientation, 1.0f, false)
-                    .orElse(null);
-            if (aimShip == null || aimShip.lengthSqr() < 1.0e-6) {
-                return originalRenderPitch;
-            }
-
-            Vec3 axisShip = StabilizerMath.pitchAxisShipLocal(holder.initialOrientation);
-            float sgn = StabilizerMath.cbcPitchSign(holder.initialOrientation);
-            Vec3 aimWorld = StabilizerMath.transformDirection(renderRotation, aimShip);
-            double elevNowDeg = StabilizerMath.elevationDeg(aimWorld);
-            double errorDeg = state.targetElevDeg - elevNowDeg;
-            if (Math.abs(errorDeg) < CommonConfig.stabilizerDeadZoneDeg()) {
-                return originalRenderPitch;
-            }
-            double jacobian = StabilizerMath.pitchToElevationJacobian(renderRotation, aimShip, axisShip, sgn,
-                    Math.toRadians(elevNowDeg));
-            if (Math.abs(jacobian) < 1.0e-3) {
-                return originalRenderPitch;
-            }
-            // Jacobian gives d(world elevation)/d(cannonPitch); getPitchOffset
-            // returns pitch * modifier (modifier -1 for DOWN-facing cannons).
-            float modifier = holder.initialOrientation == Direction.DOWN ? -1.0f : 1.0f;
-            float correction = (float) (errorDeg / jacobian) * modifier;
-            correction = Math.max(-RENDER_LOCK_MAX_CORRECTION_DEG,
-                    Math.min(RENDER_LOCK_MAX_CORRECTION_DEG, correction));
-            state.renderLockCorrection += (correction - state.renderLockCorrection) * RENDER_LOCK_SMOOTHING;
             return originalRenderPitch + state.renderLockCorrection;
         }
         return originalRenderPitch;
+    }
+
+    /**
+     * The position-vs-AABB ship query blinks during ship motion; a null here
+     * would snap the rendered angle between corrected and raw every blink
+     * (sub-pixel on the hull, glaring in the zoomed scope). Reuse the last
+     * managing ship for a few ticks, exactly like the tick-side servo.
+     */
+    private static Object renderShipWithGrace(Level level, BlockPos mountPos, MountState state) {
+        Object ship = StabilizerMath.shipManaging(level, mountPos);
+        if (ship != null) {
+            state.renderShipCache = ship;
+            state.renderShipCacheGameTime = level.getGameTime();
+            return ship;
+        }
+        if (state.renderShipCache != null
+                && level.getGameTime() - state.renderShipCacheGameTime <= SHIP_LOOKUP_GRACE_TICKS) {
+            return state.renderShipCache;
+        }
+        return null;
     }
 
     public static boolean isShaftDriving(Object mountBe) {
