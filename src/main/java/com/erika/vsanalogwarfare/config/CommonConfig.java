@@ -18,6 +18,7 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.DoubleValue STABILIZER_MAX_DEG_PER_TICK;
     public static final ForgeConfigSpec.DoubleValue STABILIZER_INTEGRAL_LIMIT;
     public static final ForgeConfigSpec.DoubleValue STABILIZER_DEAD_ZONE_DEG;
+    public static final ForgeConfigSpec.DoubleValue STABILIZER_RECAPTURE_THRESHOLD_DEG;
     public static final ForgeConfigSpec.DoubleValue STABILIZER_LINK_RANGE;
 
     static {
@@ -74,6 +75,10 @@ public final class CommonConfig {
         STABILIZER_DEAD_ZONE_DEG = builder
                 .comment("World-elevation errors smaller than this (degrees) are not corrected, preventing dither.")
                 .defineInRange("deadZoneDeg", 0.02D, 0.0D, 5.0D);
+        STABILIZER_RECAPTURE_THRESHOLD_DEG = builder
+                .comment("Errors larger than this (degrees) are treated as external input (slow slewing, mechanical "
+                        + "limits): the stabilizer re-captures the current elevation instead of correcting.")
+                .defineInRange("recaptureThresholdDeg", 2.0D, 0.1D, 45.0D);
         STABILIZER_LINK_RANGE = builder
                 .comment("Maximum block distance between a stabilizer and its cannon mount.")
                 .defineInRange("linkRange", 24.0D, 2.0D, 256.0D);
@@ -101,5 +106,6 @@ public final class CommonConfig {
     public static double stabilizerMaxDegPerTick() { return STABILIZER_MAX_DEG_PER_TICK.get(); }
     public static double stabilizerIntegralLimit() { return STABILIZER_INTEGRAL_LIMIT.get(); }
     public static double stabilizerDeadZoneDeg() { return STABILIZER_DEAD_ZONE_DEG.get(); }
+    public static double stabilizerRecaptureThresholdDeg() { return STABILIZER_RECAPTURE_THRESHOLD_DEG.get(); }
     public static double stabilizerLinkRange() { return STABILIZER_LINK_RANGE.get(); }
 }

@@ -38,7 +38,7 @@ public class StabilizerBlockEntity extends BlockEntity {
             return;
         }
         long gameTime = level.getGameTime();
-        if (gameTime % 40L == 0L) {
+        if (gameTime % 20L == 0L) {
             be.captureVsAnchor();
             be.validateLink();
             be.sendStatePacket();

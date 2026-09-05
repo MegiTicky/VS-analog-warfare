@@ -35,6 +35,18 @@ public final class StabilizerController {
     /** How long (ticks) a scroll/mouse-aim adjustment counts as active input. */
     private static final int EXTERNAL_INPUT_MEMORY_TICKS = 2;
 
+    /**
+     * A per-tick pitch change deviating from the predicted advance (base speed
+     * + previous stabilizer offset) by more than this many degrees means an
+     * external writer moved the gun (mouse aim, scroll, CBC seat drag, block
+     * entity sync replacing the pitch) — treat it as player input and
+     * re-capture the held elevation instead of fighting it.
+     */
+    private static final float EXTERNAL_STEP_THRESHOLD_DEG = 0.3f;
+
+    /** Low-pass factor for the client-side feedforward rate (bursty sync). */
+    private static final double CLIENT_RATE_SMOOTHING = 0.5;
+
     /** Server: mount pos -> stabilizer pos. Client: mount pos -> synced stabilizer pos. */
     private static final Map<Long, BlockPos> MOUNT_LINKS = new ConcurrentHashMap<>();
     /** Per-mount servo state, one per side. */
@@ -47,6 +59,13 @@ public final class StabilizerController {
         public double integral;
         public long lastExternalInputGameTime = Long.MIN_VALUE;
         public boolean dirty;
+        /** Bookkeeping for local external-input detection. */
+        public float prevCannonPitch;
+        public float prevBaseSpeed;
+        public float prevOffset;
+        public boolean bookkeepingValid;
+        /** Low-pass state for the client feedforward rate. */
+        public double smoothedElevRatePerTick;
 
         void reset() {
             targetValid = false;
@@ -120,20 +139,35 @@ public final class StabilizerController {
     /**
      * Extra pitch speed (CBC {@code pitchSpeed} units, deg/tick before the
      * mount's {@code sgn}) to add to the cannon's pitch advance this tick.
+     * {@code baseSpeed} is CBC's own computed pitch speed for this tick (the
+     * value the mixin intercepted), used for external-input bookkeeping.
      *
      * Guarded end-to-end: this runs inside the CBC mount tick, so any
      * unexpected failure must degrade to "no compensation" instead of
      * crashing the game.
      */
-    public static float computeOffsetSpeed(Object mountBe, float cannonPitch) {
+    public static float computeOffsetSpeed(Object mountBe, float cannonPitch, float baseSpeed) {
+        float offset;
         try {
-            return computeOffsetSpeedInner(mountBe);
+            offset = computeOffsetSpeedInner(mountBe, cannonPitch);
         } catch (RuntimeException | LinkageError e) {
-            return 0.0f;
+            offset = 0.0f;
         }
+        // Bookkeeping runs on every path so next tick's external-input
+        // prediction stays valid even when compensation is inactive.
+        if (mountBe instanceof BlockEntity be && be.getLevel() != null) {
+            MountState state = STATES.get(be.getBlockPos().asLong());
+            if (state != null) {
+                state.prevCannonPitch = cannonPitch;
+                state.prevBaseSpeed = baseSpeed;
+                state.prevOffset = offset;
+                state.bookkeepingValid = true;
+            }
+        }
+        return offset;
     }
 
-    private static float computeOffsetSpeedInner(Object mountBe) {
+    private static float computeOffsetSpeedInner(Object mountBe, float cannonPitch) {
         if (!(mountBe instanceof BlockEntity be) || be.getLevel() == null) {
             return 0.0f;
         }
@@ -194,7 +228,24 @@ public final class StabilizerController {
         }
 
         // --- Input detection: hold-on-release ---------------------------
-        boolean inputActive = isShaftDriving(be) || isExternalInputRecent(level, state);
+        // Local detection: did the pitch advance match what we predicted from
+        // last tick's (base speed + stabilizer offset)? A mismatch means an
+        // external writer moved the gun — mouse aim, scroll step, CBC seat
+        // drag, or a block-entity sync replacing the pitch wholesale. This
+        // works identically on server and client with no packet lag.
+        boolean externalStep = false;
+        if (state.bookkeepingValid) {
+            float actualDelta = cannonPitch - state.prevCannonPitch;
+            float predictedDelta = (state.prevBaseSpeed + state.prevOffset) * sgn;
+            if (Math.abs(actualDelta - predictedDelta) > EXTERNAL_STEP_THRESHOLD_DEG) {
+                externalStep = true;
+            }
+        }
+        if (externalStep) {
+            state.lastExternalInputGameTime = level.getGameTime();
+        }
+
+        boolean inputActive = externalStep || isShaftDriving(be) || isExternalInputRecent(level, state);
         boolean wasInputActive = state.inputActive;
         state.inputActive = inputActive;
         if (inputActive) {
@@ -228,9 +279,26 @@ public final class StabilizerController {
 
         // --- Feedforward: cancel this tick's ship-induced elevation drift
         double elevRateDegPerTick = StabilizerMath.elevationRatePerTick(ship, rotation, prevRotation, aimShip, aimWorld);
+        if (clientSide) {
+            // Client ship transforms arrive in bursts, so the raw rate
+            // alternates zero/double; low-pass it to keep the injected speed
+            // steady between sync packets.
+            state.smoothedElevRatePerTick += (elevRateDegPerTick - state.smoothedElevRatePerTick)
+                    * CLIENT_RATE_SMOOTHING;
+            elevRateDegPerTick = state.smoothedElevRatePerTick;
+        }
 
         // --- PI feedback on the held elevation --------------------------
         double errorDeg = state.targetElevDeg - elevDeg;
+        if (Math.abs(errorDeg) > CommonConfig.stabilizerRecaptureThresholdDeg()) {
+            // Error beyond anything the servo should correct: an external
+            // writer is slowly slewing the gun (per-tick steps under the
+            // detection threshold) or the gun rails at a mechanical limit.
+            // Follow it instead of fighting: re-capture the held elevation.
+            state.targetElevDeg = elevDeg;
+            state.integral = 0.0;
+            errorDeg = 0.0;
+        }
         if (Math.abs(errorDeg) < CommonConfig.stabilizerDeadZoneDeg()) {
             errorDeg = 0.0;
         }

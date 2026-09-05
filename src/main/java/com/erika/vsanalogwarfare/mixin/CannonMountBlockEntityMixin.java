@@ -32,7 +32,7 @@ public class CannonMountBlockEntityMixin {
                     remap = false),
             remap = false)
     private float vsaw$stabilizerPitchSpeed(float original) {
-        float offset = StabilizerController.computeOffsetSpeed((Object) this, this.cannonPitch);
+        float offset = StabilizerController.computeOffsetSpeed((Object) this, this.cannonPitch, original);
         if (offset == 0.0f) {
             return original;
         }

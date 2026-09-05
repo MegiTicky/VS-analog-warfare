@@ -56,10 +56,19 @@ stabilizer injects a compensating speed into exactly that advance:
   constant pitch rate interpolate consistently across the same tick boundary:
   world aim is constant to second order → frame-stable in the scope.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
-  `{mountPos, active, targetElevDeg}` on capture/transition plus a 40-tick
+  `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
   with a 100-tick TTL. During input the client chases locally (same rule as
   the server), so slewing looks identical on both sides.
+- Anti-stutter measures (added after first playtest): input detection is
+  fully local on both sides — each tick the controller predicts the pitch
+  advance from last tick's base speed plus its own offset, and any deviation
+  beyond 0.3° (mouse aim steps, scroll steps, CBC seat drag, BE sync
+  replacing the pitch) re-captures the held elevation instantly, so the
+  client never fights the server between sync packets. The client-side
+  feedforward rate is low-passed (alpha 0.5) because synced ship transforms
+  arrive in bursts. Large persistent errors (> `recaptureThresholdDeg`) also
+  re-capture, covering slow slews and elevation-limit railing.
 
 ## Config (`common` config, `stabilizer` section)
 
@@ -72,6 +81,7 @@ stabilizer injects a compensating speed into exactly that advance:
 | `maxCompensationDegPerTick` | `4.0` | Output clamp |
 | `integralLimit` | `400` | Anti-windup clamp (deg·ticks) |
 | `deadZoneDeg` | `0.02` | Errors below this are ignored (no dither) |
+| `recaptureThresholdDeg` | `2.0` | Errors above this are treated as external input (slow slew / mechanical rail): target re-captures instead of correcting |
 | `linkRange` | `24` | Max stabilizer→mount distance (blocks) |
 
 ## Files
