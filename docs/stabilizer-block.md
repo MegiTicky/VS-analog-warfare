@@ -72,6 +72,32 @@ stabilizer injects a compensating speed into exactly that advance:
   Passes through during player input, on the server, and wherever no
   stabilizer state exists. The rendered gun is therefore exactly as smooth
   as the hull itself — no 20 TPS component at all.
+- **Failed experiment, reverted (commits `85546eec` → revert `437aff51`,
+  2026-09-05):** an attempt to make the lock frame-exact and to feed the
+  scope camera from the same locked offsets. It made everything worse in
+  testing (scope oscillating between two angles, pitch control dead, gun
+  sagging after bumps) and was fully reverted. Two root causes, both of
+  which any re-land must fix first:
+  1. **Gate blink with no damping.** The lock's per-frame gates flip during
+     motion — `shipManaging()` is the pose-dependent AABB query that blinks,
+     and `inputActive` flickers — and removing the low-pass exposed every
+     blink as a full-size jump between the locked and unlocked angles. The
+     0.4/frame low-pass in the shipped lock was what had been hiding this.
+  2. **`getPitchOffset` has a second branch.** When the mount is
+     seat-controlled or stalled (`!canBeTurnedByController`), CBC returns
+     `contraptionLerp(pt) * sgn * modifier` — a *different* convention from
+     the servo branch the solve assumes. `inputActive` goes stale exactly in
+     those states (the tick mixin is not invoked, so nothing updates it), so
+     the lock could stay active where it must be off, solving with a wrong
+     Jacobian sign and slamming to its cap. Any re-land must hard-gate the
+     lock on `canBeTurnedByController`/`isStalled` (sampled, not inferred)
+     and hold the last correction through gate blinks instead of snapping
+     to zero.
+  Also known: the scope camera's aim path
+  (`CbcCompat.getAimDirection` → `PitchOrientedContraptionEntity.applyRotation`)
+  reads the raw 20 TPS entity lerp and bypasses `getPitchOffset` entirely —
+  that is why the shipped lock never smoothed the scope view, and remains
+  the problem any future attempt must actually solve.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
