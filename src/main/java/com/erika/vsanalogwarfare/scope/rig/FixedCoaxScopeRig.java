@@ -4,7 +4,6 @@ import com.erika.vsanalogwarfare.scope.ScopeBlock;
 import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
 import com.erika.vsanalogwarfare.scope.compat.VsCompat;
-import com.erika.vsanalogwarfare.stabilizer.StabilizerController;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
@@ -32,23 +31,10 @@ public class FixedCoaxScopeRig implements CameraRig {
         Direction viewOffsetDirection = facing.getOpposite(); // Tallyho-style: walk away from the scope until air.
         Vec3 localCameraPos = findFirstAirViewPosition(viewOffsetDirection).add(scope.getCameraOffset());
         Vec3 position = VsCompat.shipToWorldPosition(level, scopePos, localCameraPos);
-        Vec3 direction;
-        Vec3 up;
-        Vec3[] stabilized = StabilizerController.stabilizedScopeFrame(level, mountPos, partialTicks);
-        if (stabilized != null) {
-            // Same extrapolated (and render-locked) offsets the drawn barrel
-            // uses — no 20 TPS component, no one-tick lag, barrel and scope
-            // agree exactly. Ship-local like CBC's raw paths; the transform
-            // below applies the render ship transform unless the player is
-            // mounted (then the camera lives in ship space).
-            direction = VsCompat.shipToWorldDirection(level, mountPos, stabilized[0]);
-            up = VsCompat.shipToWorldDirection(level, scopePos, stabilized[1]);
-        } else {
-            direction = CbcCompat.getAimDirection(level, mountPos, viewOffsetDirection, partialTicks)
-                    .orElse(Vec3.atLowerCornerOf(viewOffsetDirection.getNormal()).normalize());
-            up = CbcCompat.getAimUpDirection(level, mountPos, viewOffsetDirection, Direction.UP, partialTicks)
-                    .orElse(VsCompat.shipToWorldDirection(level, scopePos, new Vec3(0.0, 1.0, 0.0)));
-        }
+        Vec3 direction = CbcCompat.getAimDirection(level, mountPos, viewOffsetDirection, partialTicks)
+                .orElse(Vec3.atLowerCornerOf(viewOffsetDirection.getNormal()).normalize());
+        Vec3 up = CbcCompat.getAimUpDirection(level, mountPos, viewOffsetDirection, Direction.UP, partialTicks)
+                .orElse(VsCompat.shipToWorldDirection(level, scopePos, new Vec3(0.0, 1.0, 0.0)));
         return CameraPose.looking(position, direction, up);
     }
 

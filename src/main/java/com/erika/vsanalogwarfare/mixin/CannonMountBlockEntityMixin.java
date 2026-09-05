@@ -67,15 +67,13 @@ public class CannonMountBlockEntityMixin {
     /**
      * Render-time world-elevation lock: while the stabilizer is holding, the
      * rendered pitch is re-solved per frame against the ship's interpolated
-     * render transform <b>at the rendered partialTick</b>, so the gun is as
-     * smooth as the hull itself with no 20 TPS stepping and no extrapolation
-     * lead in the zoomed scope. Client-only, hold-state-gated, and capped at
-     * a few degrees from CBC's own value; passes through everywhere else
-     * (server, input, no stabilizer, schematic previews, and the pt=1 logical
-     * feedback reads from mouse aim).
+     * render transform, so the gun is as smooth as the hull itself with no
+     * 20 TPS stepping in the zoomed scope. Client-only, hold-state-gated, and
+     * capped at a couple of degrees from CBC's own value; passes through
+     * everywhere else (server, input, no stabilizer, schematic previews).
      */
     @ModifyReturnValue(method = "getPitchOffset(F)F", at = @At("RETURN"), remap = false)
-    private float vsaw$renderPitchLock(float partialTicks, float original) {
-        return StabilizerController.computeRenderPitchOffset((Object) this, partialTicks, original);
+    private float vsaw$renderPitchLock(float original) {
+        return StabilizerController.computeRenderPitchOffset((Object) this, original);
     }
 }
