@@ -147,8 +147,12 @@ stabilizer injects a compensating speed into exactly that advance:
     the filter's velocity momentum coast and ring for ~2 s after snap-stops
     ("scope lags behind the cannon"); the defaults land ~65% of any stop
     error instantly and settle the rest in ~0.3 s. Alpha 1.0 + beta 1.0
-    reproduces the raw unfiltered extrapolation exactly. The render-lock
-    correction is added via
+    reproduces the raw unfiltered extrapolation exactly. User-tuned defaults
+    (in-game A/B): `0.45`/`0.35`. `scopeAimLattice` (default off) switches the
+    scope to the vanilla interpolation lattice (contraption entity lerp):
+    vibration-free by construction, at the cost of trailing the true bore by
+    up to one tick — the 0.4.3 behavior, kept as an escape hatch. The
+    render-lock correction is added via
     `StabilizerController.computeRenderPitchOffset(be, 0.0f)`, which also keeps
     the lock's per-frame glide updating even when the barrel is frustum-culled
     while scoped. Comparison note: 0.4.3 (pre-stabilizer) had NO aim smoothing

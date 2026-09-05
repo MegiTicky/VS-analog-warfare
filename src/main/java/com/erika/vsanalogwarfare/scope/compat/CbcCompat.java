@@ -429,9 +429,16 @@ public final class CbcCompat {
         Vec3 forward = null;
         try {
             if (callNoArg(be, "getContraption") != null) {
-                forward = tryDirectionFromObservedOffsets(be, level, partialTicks);
-                if (forward == null) {
-                    forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(null);
+                if (com.erika.vsanalogwarfare.config.CommonConfig.scopeAimLattice()) {
+                    // Vanilla-style interpolation lattice: the contraption entity lerp
+                    // is continuous by construction (no vibration ever) at the cost of
+                    // trailing the true bore by up to one tick.
+                    forward = tryDirectionFromContraption(be, partialTicks).orElse(null);
+                } else {
+                    forward = tryDirectionFromObservedOffsets(be, level, partialTicks);
+                    if (forward == null) {
+                        forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(null);
+                    }
                 }
             }
         } catch (ReflectiveOperationException | LinkageError ignored) {
