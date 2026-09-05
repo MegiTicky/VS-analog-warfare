@@ -401,6 +401,57 @@ public final class CbcCompat {
         return Optional.of(applyShipTransform ? VsCompat.shipToWorldDirection(level, mountPos, projectedUp) : projectedUp);
     }
 
+    /** Ship-local camera frame for the scope, from CBC's velocity-extrapolated render offsets. */
+    public record ScopeRenderFrame(Vec3 forward, Vec3 up) {}
+
+    private static BlockPos heldFrameMount;
+    private static Vec3 heldFrameForward;
+
+    /**
+     * Scope-camera frame resolved at the rendered partialTick from
+     * {@code getYawOffset}/{@code getPitchOffset} — the same value the drawn barrel
+     * renders with, including any render-time extrapolation/lock. This avoids the
+     * one-tick-behind contraption entity lerp that makes the zoomed view step at 20 TPS.
+     * Transient resolution failures hold the last good direction instead of snapping.
+     */
+    public static Optional<ScopeRenderFrame> getScopeRenderFrame(Level level, BlockPos mountPos, Direction scopeUp, float partialTicks) {
+        BlockEntity be = level.getBlockEntity(mountPos);
+        if (!isCannonMount(be)) {
+            heldFrameMount = null;
+            heldFrameForward = null;
+            return Optional.empty();
+        }
+
+        Vec3 forward = null;
+        try {
+            // getContraptionDirection() falls back to NORTH when the contraption is gone,
+            // which would silently produce a garbage direction — fail instead and hold.
+            if (callNoArg(be, "getContraption") != null) {
+                forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(null);
+            }
+        } catch (ReflectiveOperationException | LinkageError ignored) {
+            // fall through to the contraption lerp
+        }
+        if (forward == null) {
+            forward = tryDirectionFromContraption(be, partialTicks).orElse(null);
+        }
+        if (forward == null) {
+            if (!mountPos.equals(heldFrameMount)) {
+                return Optional.empty();
+            }
+            forward = heldFrameForward;
+        } else {
+            heldFrameMount = mountPos.immutable();
+            heldFrameForward = forward;
+        }
+
+        Vec3 localUp = Vec3.atLowerCornerOf(scopeUp.getNormal()).normalize();
+        Vec3 up = projectUp(localUp, forward);
+        return Optional.of(new ScopeRenderFrame(
+                VsCompat.shipToWorldDirection(level, mountPos, forward),
+                VsCompat.shipToWorldDirection(level, mountPos, up)));
+    }
+
     private static Optional<Vec3> tryDirectionFromContraption(Object mount, float partialTicks) {
         try {
             Object poce = callNoArg(mount, "getContraption");

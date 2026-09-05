@@ -9,6 +9,7 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.IntValue MOUSE_AIM_TARGET_TIMEOUT_TICKS;
     public static final ForgeConfigSpec.DoubleValue MOUSE_AIM_RATE_MULTIPLIER;
     public static final ForgeConfigSpec.DoubleValue MAX_RANGEFINDER_DISTANCE;
+    public static final ForgeConfigSpec.BooleanValue SMOOTH_SCOPE_AIM;
     public static final ForgeConfigSpec.BooleanValue DISABLE_CONTRAPTION_ENTITY_COLLISION;
 
     public static final ForgeConfigSpec.BooleanValue STABILIZER_ENABLED;
@@ -40,6 +41,11 @@ public final class CommonConfig {
         MAX_RANGEFINDER_DISTANCE = builder
                 .comment("Maximum distance in blocks for the rangefinder to scan. Applies to terrain and ships.")
                 .defineInRange("maxRangefinderDistance", 2000.0D, 10.0D, 10000.0D);
+        SMOOTH_SCOPE_AIM = builder
+                .comment("Build the scope camera frame from CBC's velocity-extrapolated render offsets "
+                        + "(the same value the drawn barrel uses) instead of the one-tick-behind contraption "
+                        + "entity lerp, removing 20 TPS shutter in the zoomed scope.")
+                .define("smoothScopeAim", true);
         builder.pop();
 
         builder.push("contraption");
@@ -85,6 +91,7 @@ public final class CommonConfig {
 
     // Add the new getter
     public static double maxRangefinderDistance() { return MAX_RANGEFINDER_DISTANCE.get(); }
+    public static boolean smoothScopeAim() { return SMOOTH_SCOPE_AIM.get(); }
     public static boolean disableContraptionEntityCollision() { return DISABLE_CONTRAPTION_ENTITY_COLLISION.get(); }
 
     public static boolean stabilizerEnabled() { return STABILIZER_ENABLED.get(); }

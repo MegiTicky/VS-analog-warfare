@@ -98,6 +98,21 @@ stabilizer injects a compensating speed into exactly that advance:
   reads the raw 20 TPS entity lerp and bypasses `getPitchOffset` entirely —
   that is why the shipped lock never smoothed the scope view, and remains
   the problem any future attempt must actually solve.
+- **Scope-frame fix (added 2026-09-05, `smoothScopeAim` config, default on)**:
+  the shutter is only visible through the scope; the externally drawn gun is
+  already smooth because it renders via `getPitchOffset(partialTicks)` (velocity
+  extrapolation + the low-passed render lock). The scope rig now reads the same
+  source: `FixedCoaxScopeRig` calls the new `CbcCompat.getScopeRenderFrame`,
+  which resolves the bore from `getYawOffset`/`getPitchOffset` at the rendered
+  partialTick (reflective reads hit the mixins, so the reticle is pixel-consistent
+  with the drawn barrel), falls back to the contraption entity lerp, then holds
+  the last good ship-local direction through transient failures (blink-proof,
+  single-entry cache keyed by mount). The up vector is projected from the same
+  resolved forward, so aim and roll come from one source. The guard
+  `getContraption() != null` prevents the NORTH fallback of a disassembled mount
+  from poisoning the frame. No changes to `getPitchOffset`/`applyRotation`
+  semantics, the servo, or any pt≥1.0 logical path; works for all cannons, not
+  just stabilized ones. Set `smoothScopeAim=false` to restore the old scope path.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
@@ -152,6 +167,10 @@ stabilizer injects a compensating speed into exactly that advance:
 | `linkRange` | `24` | Max stabilizer→mount distance (blocks) |
 | `debug` | `false` | Log servo state (elev/target/offset/input/ext/railed/suspend) once per second per linked mount to the server log |
 | `renderLock` | `true` | Per-frame render-time pitch lock while holding (removes 20 TPS scope stepping; visual only) |
+
+Also in the `scope` section: `smoothScopeAim` (default `true`) — build the scope
+camera frame from the extrapolated render offsets (see above) instead of the raw
+20 TPS entity lerp.
 
 ## Files
 

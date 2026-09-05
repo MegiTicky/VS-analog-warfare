@@ -10,6 +10,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Optional;
+
 public class FixedCoaxScopeRig implements CameraRig {
     private static final int MAX_AIR_SEARCH_BLOCKS = 32;
 
@@ -31,10 +33,20 @@ public class FixedCoaxScopeRig implements CameraRig {
         Direction viewOffsetDirection = facing.getOpposite(); // Tallyho-style: walk away from the scope until air.
         Vec3 localCameraPos = findFirstAirViewPosition(viewOffsetDirection).add(scope.getCameraOffset());
         Vec3 position = VsCompat.shipToWorldPosition(level, scopePos, localCameraPos);
-        Vec3 direction = CbcCompat.getAimDirection(level, mountPos, viewOffsetDirection, partialTicks)
-                .orElse(Vec3.atLowerCornerOf(viewOffsetDirection.getNormal()).normalize());
-        Vec3 up = CbcCompat.getAimUpDirection(level, mountPos, viewOffsetDirection, Direction.UP, partialTicks)
-                .orElse(VsCompat.shipToWorldDirection(level, scopePos, new Vec3(0.0, 1.0, 0.0)));
+        Vec3 direction;
+        Vec3 up;
+        Optional<CbcCompat.ScopeRenderFrame> frame = com.erika.vsanalogwarfare.config.CommonConfig.smoothScopeAim()
+                ? CbcCompat.getScopeRenderFrame(level, mountPos, Direction.UP, partialTicks)
+                : Optional.empty();
+        if (frame.isPresent()) {
+            direction = frame.get().forward();
+            up = frame.get().up();
+        } else {
+            direction = CbcCompat.getAimDirection(level, mountPos, viewOffsetDirection, partialTicks)
+                    .orElse(Vec3.atLowerCornerOf(viewOffsetDirection.getNormal()).normalize());
+            up = CbcCompat.getAimUpDirection(level, mountPos, viewOffsetDirection, Direction.UP, partialTicks)
+                    .orElse(VsCompat.shipToWorldDirection(level, scopePos, new Vec3(0.0, 1.0, 0.0)));
+        }
         return CameraPose.looking(position, direction, up);
     }
 
