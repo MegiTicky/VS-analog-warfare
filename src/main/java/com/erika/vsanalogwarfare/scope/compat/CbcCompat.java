@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.scope.compat;
 
+import com.erika.vsanalogwarfare.stabilizer.StabilizerController;
 import com.mojang.logging.LogUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -527,12 +528,15 @@ public final class CbcCompat {
         return m.invoke(target);
     }
 
-    /** Per-mount client render state for observed per-tick angle deltas. */
+    /**
+     * Per-mount client render state: g-h filtered yaw/pitch (position + velocity)
+     * used to extrapolate the scope's bore without per-tick steps or kinks.
+     */
     private static final class ObservedMountAngle {
-        float yaw;
-        float pitch;
-        float yawVelPerTick;
-        float pitchVelPerTick;
+        float posYaw;
+        float velYaw;
+        float posPitch;
+        float velPitch;
         long gameTime = Long.MIN_VALUE;
     }
 
@@ -541,31 +545,44 @@ public final class CbcCompat {
     private static final Map<Class<?>, Field> CANNON_PITCH_FIELDS = new HashMap<>();
 
     /**
-     * Scope bore from CBC's render offsets, extrapolated with the mount's
-     * <b>observed</b> per-tick delta instead of the shaft speed.
-     * {@code getPitchOffset(pt)} extrapolates {@code lerp(pt, pitch, pitch + shaftSpeed)},
-     * which goes flat — a hard step every tick — whenever the cannon is driven by
-     * anything but the shaft (mouse-aim writes, stabilizer corrections), because
-     * the shaft is idle then. The pt=0 endpoints keep CBC's conventions, the
-     * render-lock correction, and the seat-control entity-lerp branch; the
-     * observed velocity only adds the missing lead.
+     * g-h filter gains: the fraction of each tick's measurement error applied to
+     * the rendered position (ALPHA) and to the velocity (BETA). Lower values are
+     * smoother — errors glide out over several ticks like the pre-stabilizer
+     * entity lerp did — at the cost of a slightly softer response to deliberate
+     * slew changes.
+     */
+    private static final float SCOPE_FILTER_ALPHA = 0.2f;
+    private static final float SCOPE_FILTER_BETA = 0.06f;
+
+    /**
+     * Scope bore from the g-h filtered mount angle, extrapolated to the rendered
+     * partialTick. CBC's own offset extrapolation
+     * {@code lerp(pt, pitch, pitch + shaftSpeed)} goes flat — a hard step every
+     * tick — whenever the cannon is driven by anything but the shaft (mouse-aim
+     * writes, stabilizer corrections), so the scope filters the raw
+     * {@code cannonYaw}/{@code cannonPitch} directly: the filter spreads
+     * measurement jumps (sync yanks, rate changes) over several ticks instead of
+     * landing them instantly, while staying at effectively zero lag.
      */
     @Nullable
-    private static Vec3 tryDirectionFromObservedOffsets(Object mount, Level level, float partialTicks) {
+    private static Vec3 tryDirectionFromObservedOffsets(BlockEntity be, Level level, float partialTicks) {
         try {
             Direction baseDir = Direction.NORTH;
-            Object direction = callNoArg(mount, "getContraptionDirection");
+            Object direction = callNoArg(be, "getContraptionDirection");
             if (direction instanceof Direction d) {
                 baseDir = d;
             }
-            ObservedMountAngle observed = observedMountAngle(mount, level);
+            ObservedMountAngle observed = observedMountAngle(be, level);
             if (observed == null) {
                 return null;
             }
-            float yaw = callFloat(mount, "getYawOffset", 0.0f) + observed.yawVelPerTick * partialTicks;
+            float yaw = observed.posYaw + observed.velYaw * partialTicks;
             float pitchModifier = baseDir == Direction.DOWN ? -1.0f : 1.0f;
-            float pitch = callFloat(mount, "getPitchOffset", 0.0f)
-                    + pitchModifier * observed.pitchVelPerTick * partialTicks;
+            float pitch = pitchModifier * (observed.posPitch + observed.velPitch * partialTicks)
+                    // Keep the stabilizer's render-lock correction (and its per-frame
+                    // glide) in the loop even when the barrel itself is frustum-culled
+                    // while scoped; with a base of 0 this returns exactly the correction.
+                    + StabilizerController.computeRenderPitchOffset(be, 0.0f);
             return directionFromYawPitch(baseDir.toYRot() + yaw, pitch);
         } catch (ReflectiveOperationException | LinkageError e) {
             return null;
@@ -573,12 +590,12 @@ public final class CbcCompat {
     }
 
     @Nullable
-    private static ObservedMountAngle observedMountAngle(Object mount, Level level) {
-        if (!(mount instanceof BlockEntity be) || be.getLevel() == null || !be.getLevel().isClientSide) {
+    private static ObservedMountAngle observedMountAngle(BlockEntity be, Level level) {
+        if (be.getLevel() == null || !be.getLevel().isClientSide) {
             return null;
         }
-        Float yaw = readFloatField(mount, CANNON_YAW_FIELDS, "cannonYaw");
-        Float pitch = readFloatField(mount, CANNON_PITCH_FIELDS, "cannonPitch");
+        Float yaw = readFloatField(be, CANNON_YAW_FIELDS, "cannonYaw");
+        Float pitch = readFloatField(be, CANNON_PITCH_FIELDS, "cannonPitch");
         if (yaw == null || pitch == null) {
             return null;
         }
@@ -588,15 +605,24 @@ public final class CbcCompat {
         if (now != angle.gameTime) {
             long dt = now - angle.gameTime;
             if (dt < 1 || dt > 5) {
-                // First read, a render gap, or a stale/foreign entry: no usable velocity.
-                angle.yawVelPerTick = 0.0f;
-                angle.pitchVelPerTick = 0.0f;
+                // First read, a render gap, or a stale/foreign entry: re-anchor without velocity.
+                angle.posYaw = yaw;
+                angle.posPitch = pitch;
+                angle.velYaw = 0.0f;
+                angle.velPitch = 0.0f;
             } else {
-                angle.yawVelPerTick = wrapDegrees(yaw - angle.yaw) / (float) dt;
-                angle.pitchVelPerTick = wrapDegrees(pitch - angle.pitch) / (float) dt;
+                // g-h update: predict with the current velocity, then split the
+                // measurement error between the rendered position and the velocity
+                // so jumps glide instead of snapping.
+                angle.posYaw += angle.velYaw * dt;
+                angle.posPitch += angle.velPitch * dt;
+                float yawErr = wrapDegrees(yaw - angle.posYaw);
+                float pitchErr = wrapDegrees(pitch - angle.posPitch);
+                angle.posYaw += SCOPE_FILTER_ALPHA * yawErr;
+                angle.posPitch += SCOPE_FILTER_ALPHA * pitchErr;
+                angle.velYaw += (SCOPE_FILTER_BETA / dt) * yawErr;
+                angle.velPitch += (SCOPE_FILTER_BETA / dt) * pitchErr;
             }
-            angle.yaw = yaw;
-            angle.pitch = pitch;
             angle.gameTime = now;
         }
         if (OBSERVED_MOUNT_ANGLES.size() > 256) {

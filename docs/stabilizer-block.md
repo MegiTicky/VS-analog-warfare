@@ -134,6 +134,21 @@ stabilizer injects a compensating speed into exactly that advance:
     the seat-control entity-lerp branch; the observed velocity adds the missing
     lead, so the view moves every frame for every drive path. Falls back to the
     static offsets path if the fields can't be read.
+  - **g-h filtered extrapolation (final form, 2026-09-05):** raw last-tick
+    deltas still kink at tick boundaries (velocity re-estimates) and land sync
+    yanks at full amplitude. The scope now runs a per-mount g-h filter
+    (`SCOPE_FILTER_ALPHA = 0.2`, `SCOPE_FILTER_BETA = 0.06`, tunable constants
+    in `CbcCompat`): predict `pos + vel·dt`, measure the raw
+    `cannonYaw`/`cannonPitch`, split the error — `pos += ALPHA·err`,
+    `vel += (BETA/dt)·err` — and render `pos + vel·partialTicks`. Measurement
+    jumps glide out over several ticks (the continuity the pre-stabilizer
+    entity lerp had) at effectively zero lag (which that lerp lacked). The
+    render-lock correction is added via
+    `StabilizerController.computeRenderPitchOffset(be, 0.0f)`, which also keeps
+    the lock's per-frame glide updating even when the barrel is frustum-culled
+    while scoped. Comparison note: 0.4.3 (pre-stabilizer) had NO aim smoothing
+    at all — its smoothness was vanilla entity interpolation's 1-tick lag; the
+    filter keeps that continuity without the lag.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
