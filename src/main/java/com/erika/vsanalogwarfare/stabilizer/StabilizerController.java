@@ -13,6 +13,8 @@ import org.joml.Matrix4dc;
 import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,15 +67,34 @@ public final class StabilizerController {
      */
     private static final int SUSPEND_RECAPTURE_TICKS = 2;
 
+    /** Reuse the last found ship for this many ticks when the position query blinks. */
+    private static final int SHIP_LOOKUP_GRACE_TICKS = 5;
+
     /** Server: mount pos -> stabilizer pos. Client: mount pos -> synced stabilizer pos. */
     private static final Map<Long, BlockPos> MOUNT_LINKS = new ConcurrentHashMap<>();
     /** Per-mount servo state, one per side. */
     private static final Map<Long, MountState> STATES = new ConcurrentHashMap<>();
+    /** Last-known ship per mount, for lookup-gap grace. */
+    private static final Map<Long, CachedShip> SHIP_CACHE = new ConcurrentHashMap<>();
+    /** Recent stall / seat-control evidence per mount (server only). */
+    private static final Map<Long, SuspensionTracker> SUSPENSION = new ConcurrentHashMap<>();
 
     /** Cached {@code mountedContraption} fields, keyed by mount BE class. */
     private static final Map<Class<?>, Optional<Field>> CONTRAPTION_FIELDS = new ConcurrentHashMap<>();
+    /** Cached {@code clientPitchDiff} fields (client), keyed by mount BE class. */
+    private static final Map<Class<?>, Optional<Field>> CLIENT_DIFF_FIELDS = new ConcurrentHashMap<>();
     /** Cached elevation-limit accessors, keyed by {@code class#method}. */
     private static final Map<String, Method> LIMIT_METHODS = new ConcurrentHashMap<>();
+
+    /** Last-known ship for the lookup-gap grace window. */
+    private record CachedShip(Object ship, long gameTime) {
+    }
+
+    /** Recent stall / seat-control evidence, sampled by the stabilizer block entity. */
+    public static final class SuspensionTracker {
+        public long lastSeatControlGameTime = Long.MIN_VALUE;
+        public long lastStallGameTime = Long.MIN_VALUE;
+    }
 
     public static final class MountState {
         public double targetElevDeg;
@@ -106,8 +127,24 @@ public final class StabilizerController {
     // ------------------------------------------------------------------
 
     public static void onLinked(BlockPos stabilizerPos, BlockPos mountPos) {
+        onLinked(stabilizerPos, mountPos, Double.NaN);
+    }
+
+    /**
+     * Links and optionally restores a previously held target (from the
+     * stabilizer's NBT anchor) so relinks and chunk reloads do not drift the
+     * hold. {@code restoredTargetElevDeg} of NaN means "no anchor; capture".
+     */
+    public static void onLinked(BlockPos stabilizerPos, BlockPos mountPos, double restoredTargetElevDeg) {
         MOUNT_LINKS.put(mountPos.asLong(), stabilizerPos.immutable());
-        STATES.computeIfAbsent(mountPos.asLong(), k -> new MountState()).reset();
+        MountState state = STATES.computeIfAbsent(mountPos.asLong(), k -> new MountState());
+        if (!state.targetValid && Double.isFinite(restoredTargetElevDeg)) {
+            state.targetElevDeg = restoredTargetElevDeg;
+            state.targetValid = true;
+            state.dirty = true;
+        } else {
+            state.reset();
+        }
     }
 
     public static void onUnlinked(BlockPos mountPos) {
@@ -116,7 +153,26 @@ public final class StabilizerController {
         if (state != null) {
             state.dirty = true;
         }
+        SHIP_CACHE.remove(mountPos.asLong());
+        SUSPENSION.remove(mountPos.asLong());
         ClientStabilizerState.clear(mountPos);
+    }
+
+    /**
+     * Removes controller state for every mount linked to this stabilizer, for
+     * the cases where the mount position can no longer be resolved but the
+     * registration must not leak.
+     */
+    public static void forgetStabilizer(BlockPos stabilizerPos) {
+        List<Long> mountKeys = new ArrayList<>();
+        for (Map.Entry<Long, BlockPos> entry : MOUNT_LINKS.entrySet()) {
+            if (entry.getValue().equals(stabilizerPos)) {
+                mountKeys.add(entry.getKey());
+            }
+        }
+        for (Long key : mountKeys) {
+            onUnlinked(BlockPos.of(key));
+        }
     }
 
     @Nullable
@@ -232,8 +288,18 @@ public final class StabilizerController {
 
         Object ship = StabilizerMath.shipManaging(level, mountPos);
         if (ship == null) {
+            // The position-vs-AABB query blinks during violent ship motion;
+            // ride through short gaps on the last known ship rather than
+            // dropping the servo (a dropped servo lets the gun bounce free).
+            CachedShip cached = SHIP_CACHE.get(mountPos.asLong());
+            if (cached != null && level.getGameTime() - cached.gameTime() <= SHIP_LOOKUP_GRACE_TICKS) {
+                ship = cached.ship();
+            }
+        }
+        if (ship == null) {
             return 0.0f;
         }
+        SHIP_CACHE.put(mountPos.asLong(), new CachedShip(ship, level.getGameTime()));
 
         DirectionHolder holder = DirectionHolder.of(be, level, mountPos);
         if (holder == null) {
@@ -271,9 +337,13 @@ public final class StabilizerController {
         }
 
         // --- Suspension: the advance loop was paused (seat gunner, stall)
-        boolean suspendRecapture = state.bookkeepingValid
+        // Only a seat gunner legitimately moves the gun while the loop is
+        // paused; a physics stall moves nothing, so the held target survives
+        // it instead of adopting the transient elevation.
+        boolean suspended = state.bookkeepingValid
                 && state.lastRunGameTime != Long.MIN_VALUE
                 && level.getGameTime() - state.lastRunGameTime > SUSPEND_RECAPTURE_TICKS;
+        boolean suspendRecapture = suspended && seatControlledDuringGap(level, mountPos, state.lastRunGameTime);
         if (suspendRecapture) {
             state.targetElevDeg = elevDeg;
             state.targetValid = true;
@@ -307,6 +377,21 @@ public final class StabilizerController {
             }
         } else {
             state.mismatchStreak = 0;
+        }
+        if (clientSide) {
+            Field diffField = clientPitchDiffField(be.getClass());
+            if (diffField != null) {
+                try {
+                    if (Math.abs(diffField.getFloat(be)) > 1.0e-3f) {
+                        // A block-entity sync yanked the client pitch to the
+                        // server's value; that is CBC's own correction, not
+                        // player input.
+                        state.mismatchStreak = 0;
+                    }
+                } catch (RuntimeException | LinkageError | ReflectiveOperationException ignored) {
+                    // fall through: evaluate this tick normally
+                }
+            }
         }
         boolean externalStep = state.mismatchStreak >= EXTERNAL_STEP_DEBOUNCE_TICKS;
         if (externalStep) {
@@ -383,6 +468,79 @@ public final class StabilizerController {
     private static boolean isExternalInputRecent(Level level, MountState state) {
         return state.lastExternalInputGameTime != Long.MIN_VALUE
                 && level.getGameTime() - state.lastExternalInputGameTime <= EXTERNAL_INPUT_MEMORY_TICKS;
+    }
+
+    // ------------------------------------------------------------------
+    // Suspension context (stall vs seat gunner) and sync-yank immunity
+    // ------------------------------------------------------------------
+
+    private static boolean seatControlledDuringGap(Level level, BlockPos mountPos, long gapStartTime) {
+        SuspensionTracker tracker = SUSPENSION.get(mountPos.asLong());
+        if (tracker == null || tracker.lastSeatControlGameTime == Long.MIN_VALUE) {
+            return false; // no evidence of a gunner: keep the target (stall-safe default)
+        }
+        long now = level.getGameTime();
+        return now - tracker.lastSeatControlGameTime <= (now - gapStartTime) + SUSPEND_RECAPTURE_TICKS;
+    }
+
+    /**
+     * Called every tick by the stabilizer block entity: records whether the
+     * mount's contraption is currently stalled or seat-controlled, so a
+     * suspension of the advance loop can be attributed to a cause.
+     */
+    public static void sampleMountSuspension(Level level, BlockPos mountPos) {
+        try {
+            BlockEntity be = level.getBlockEntity(mountPos);
+            if (be == null) {
+                return;
+            }
+            Field field = contraptionField(be.getClass());
+            if (field == null) {
+                return;
+            }
+            Object contraption = field.get(be);
+            if (contraption == null) {
+                return;
+            }
+            Class<?> cls = contraption.getClass();
+            SuspensionTracker tracker = SUSPENSION.computeIfAbsent(mountPos.asLong(), k -> new SuspensionTracker());
+            Method stalled = methodFor(cls, "isStalled");
+            if (stalled != null && stalled.invoke(contraption) instanceof Boolean b && b) {
+                tracker.lastStallGameTime = level.getGameTime();
+            }
+            Method seat = methodForSingleArg(cls, "canBeTurnedByController");
+            if (seat != null && seat.invoke(contraption, be) instanceof Boolean b && !b) {
+                tracker.lastSeatControlGameTime = level.getGameTime();
+            }
+        } catch (RuntimeException | ReflectiveOperationException | LinkageError ignored) {
+            // sampling is best-effort
+        }
+    }
+
+    @Nullable
+    private static Method methodForSingleArg(Class<?> cls, String name) {
+        String key = cls.getName() + '#' + name + "/1";
+        Method cached = LIMIT_METHODS.get(key);
+        if (cached != null) {
+            return cached;
+        }
+        for (Method m : cls.getMethods()) {
+            if (m.getName().equals(name) && m.getParameterCount() == 1) {
+                LIMIT_METHODS.put(key, m);
+                return m;
+            }
+        }
+        return null;
+    }
+
+    @Nullable
+    private static Field clientPitchDiffField(Class<?> mountClass) {
+        Optional<Field> cached = CLIENT_DIFF_FIELDS.get(mountClass);
+        if (cached == null) {
+            cached = Optional.ofNullable(findDeclaredField(mountClass, "clientPitchDiff"));
+            CLIENT_DIFF_FIELDS.put(mountClass, cached);
+        }
+        return cached.orElse(null);
     }
 
     // ------------------------------------------------------------------

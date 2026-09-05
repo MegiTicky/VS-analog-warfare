@@ -77,6 +77,33 @@ stabilizer injects a compensating speed into exactly that advance:
   or stall — the mixin is not invoked then), the target re-captures once on
   resume instead of fighting whoever drove the gun.
 
+- Transient resilience (added after the fast-bump playtest: a violent bump
+  could kill the hold permanently):
+  - **Ship-lookup grace**: the position-vs-AABB ship query blinks during
+    violent motion; the controller reuses the last known ship for up to 5
+    ticks so the servo rides through instead of dropping (a dropped servo
+    lets the gun bounce free).
+  - **Validation grace + fallback**: `validateLink` only unlinks after 3
+    consecutive failed validations (60 ticks), and `resolveMountPos` falls
+    back to the link-time world position when the ship-relative resolve
+    misses. Previously one failed resolve (ship AABB is pose-dependent and
+    transiently null) permanently unlinked the stabilizer — the fast-bump
+    "stops working and settles wrong" bug.
+  - **Re-registration on load**: the link lives in NBT; the controller
+    registry does not. On tick, a fresh BE instance re-registers itself, so
+    chunk unload/reload and world restarts no longer silently disable the
+    servo.
+  - **Durable target anchor**: the held elevation is mirrored into the
+    stabilizer BE (persisted in NBT, fresh for 6000 ticks) and restored on
+    relink/reload instead of recapturing — drift-free across restarts.
+  - **Stall vs seat gunner**: the stabilizer BE samples the mount's
+    `isStalled()` / seat control each tick; a >2-tick advance-loop gap only
+    re-captures the target when a seat gunner was driving. A physics stall
+    moves nothing, so the original target survives it.
+  - **Client sync-yank immunity**: on the client, a nonzero `clientPitchDiff`
+    (a block-entity sync yank, CBC's own correction) resets the input
+    detector instead of masquerading as player input.
+
 ## Config (`common` config, `stabilizer` section)
 
 | Key | Default | Meaning |

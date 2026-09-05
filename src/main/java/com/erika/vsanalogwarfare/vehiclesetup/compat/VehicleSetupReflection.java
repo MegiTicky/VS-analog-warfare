@@ -51,7 +51,7 @@ public final class VehicleSetupReflection {
             int minY = coordinate(box, "minY");
             int minZ = coordinate(box, "minZ");
             BlockPos offset = pos.offset(-minX, -minY, -minZ);
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Recorded ship position: shipId={}, world={}, "
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Recorded ship position: shipId={}, world={}, "
                             + "aabbMin=({}, {}, {}), aabbMinRaw=({}, {}, {}), offset={}, reconstructed={}",
                     number.longValue(), pos, minX, minY, minZ, rawMinX, rawMinY, rawMinZ, offset,
                     new BlockPos(minX, minY, minZ).offset(offset));
@@ -86,7 +86,7 @@ public final class VehicleSetupReflection {
             int minY = coordinate(box, "minY");
             int minZ = coordinate(box, "minZ");
             BlockPos resolved = new BlockPos(minX, minY, minZ).offset(offset);
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Resolved ship position: shipId={}, "
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Resolved ship position: shipId={}, "
                             + "aabbMin=({}, {}, {}), aabbMinRaw=({}, {}, {}), offset={}, resolved={}",
                     id instanceof Number number ? number.longValue() : "unknown", minX, minY, minZ,
                     rawMinX, rawMinY, rawMinZ, offset, resolved);
@@ -142,7 +142,7 @@ public final class VehicleSetupReflection {
         Object value = box.getClass().getMethod(name).invoke(box);
         if (!(value instanceof Number number)) throw new ReflectiveOperationException("Invalid ship bounding-box coordinate");
         if (number.doubleValue() != Math.floor(number.doubleValue())) {
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Fractional ship AABB coordinate: {}={}", name, number);
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Fractional ship AABB coordinate: {}={}", name, number);
         }
         return number.intValue();
     }
