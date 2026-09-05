@@ -8,6 +8,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4d;
 import org.joml.Matrix4dc;
 
 import javax.annotation.Nullable;
@@ -122,6 +123,10 @@ public final class StabilizerController {
         /** Client render path: last ship seen managing this mount, for blink-proof gate reads. */
         public Object renderShipCache;
         public long renderShipCacheGameTime = Long.MIN_VALUE;
+        /** Client render path: scope world-elevation lock (blend, aim-following rail, timing). */
+        public float renderScopeElevBlend;
+        public double renderScopeElevRail = Double.NaN;
+        public long renderScopeElevRailNanos = Long.MIN_VALUE;
 
         void reset() {
             targetValid = false;
@@ -550,6 +555,92 @@ public final class StabilizerController {
             return state.renderShipCache;
         }
         return null;
+    }
+
+    /** Scope elevation lock: aim-rail time constant (seconds) and divergence cap (degrees). */
+    private static final double SCOPE_ELEV_RAIL_TAU_SECONDS = 0.08;
+    private static final double SCOPE_ELEV_LOCK_MAX_DEG = 8.0;
+
+    /**
+     * Client render path: pin the scope camera's world-space pitch to the
+     * stabilizer's hold. While holding, the anchor is the held elevation —
+     * a constant, so the vertical axis has neither vibration nor lag. While
+     * the gun is being aimed, the anchor is a short low-pass rail of the
+     * cannon's real world elevation (ship roll/yaw compensated by the render
+     * transform), so pitch input directly steers the scope's world pitch
+     * without falling back to the tick-quantized filter. All transitions are
+     * blended; a divergence cap releases the lock if the anchor outruns the
+     * gun (fast seat-gunner slew, stale target).
+     *
+     * @return the adjusted ship-local forward, or null for no adjustment.
+     */
+    @Nullable
+    public static Vec3 applyScopeElevationLock(Object mountBe, Vec3 localForward) {
+        try {
+            return applyScopeElevationLockInner(mountBe, localForward);
+        } catch (RuntimeException | LinkageError e) {
+            return null;
+        }
+    }
+
+    private static Vec3 applyScopeElevationLockInner(Object mountBe, Vec3 localForward) {
+        if (!CommonConfig.scopeElevationLock() || !(mountBe instanceof BlockEntity be)
+                || be.getLevel() == null || !be.getLevel().isClientSide) {
+            return null;
+        }
+        MountState state = STATES.get(be.getBlockPos().asLong());
+        if (state == null) {
+            return null;
+        }
+        Object ship = renderShipWithGrace(be.getLevel(), be.getBlockPos(), state);
+        Matrix4dc rotation = ship == null ? null : StabilizerMath.getRenderShipToWorld(ship);
+        if (rotation == null) {
+            state.renderScopeElevBlend = glideBlend(state.renderScopeElevBlend, 0.0f, 0.25f);
+            return null;
+        }
+
+        Vec3 worldForward = StabilizerMath.transformDirection(rotation, localForward);
+        double worldElev = Math.toDegrees(Math.asin(clampUnit(worldForward.y)));
+
+        // Aim-following rail: heavily low-passed world elevation. Its output is
+        // smooth by construction, so no tick quantization reaches the camera.
+        long now = System.nanoTime();
+        if (Double.isNaN(state.renderScopeElevRail) || state.renderScopeElevRailNanos == Long.MIN_VALUE
+                || now < state.renderScopeElevRailNanos) {
+            state.renderScopeElevRail = worldElev;
+        } else {
+            double dt = Math.min((now - state.renderScopeElevRailNanos) / 1.0e9, 0.25);
+            double k = 1.0 - Math.exp(-dt / SCOPE_ELEV_RAIL_TAU_SECONDS);
+            state.renderScopeElevRail += (worldElev - state.renderScopeElevRail) * k;
+        }
+        state.renderScopeElevRailNanos = now;
+
+        boolean holding = state.targetValid && !state.inputActive;
+        double anchor = holding ? state.targetElevDeg : state.renderScopeElevRail;
+        double err = anchor - worldElev;
+        if (Math.abs(err) > SCOPE_ELEV_LOCK_MAX_DEG) {
+            // Anchor outran the gun (fast seat-gunner slew, stale target):
+            // release gracefully and let the filter path show through.
+            state.renderScopeElevBlend = glideBlend(state.renderScopeElevBlend, 0.0f, 0.25f);
+            state.renderScopeElevRail = Double.NaN;
+            return null;
+        }
+
+        state.renderScopeElevBlend = glideBlend(state.renderScopeElevBlend, 1.0f, 0.5f);
+        double lockedElev = worldElev + state.renderScopeElevBlend * err;
+        float worldYaw = (float) Math.toDegrees(Math.atan2(-worldForward.x, worldForward.z));
+        Vec3 worldFinal = CbcCompat.directionFromYawPitch(worldYaw, (float) lockedElev);
+        Matrix4dc inverse = new Matrix4d(rotation).invert();
+        return StabilizerMath.transformDirection(inverse, worldFinal);
+    }
+
+    private static float glideBlend(float current, float target, float rate) {
+        current += (target - current) * rate;
+        return Math.abs(current) < 0.005f ? 0.0f : current;
+    }
+
+    private static double clampUnit(double value) {
+        return Math.max(-1.0, Math.min(1.0, value));
     }
 
     public static boolean isShaftDriving(Object mountBe) {

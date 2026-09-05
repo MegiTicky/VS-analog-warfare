@@ -158,6 +158,20 @@ stabilizer injects a compensating speed into exactly that advance:
     while scoped. Comparison note: 0.4.3 (pre-stabilizer) had NO aim smoothing
     at all — its smoothness was vanilla entity interpolation's 1-tick lag; the
     filter keeps that continuity without the lag.
+  - **World-elevation lock (`scopeElevationLock` config, default on)**: with a
+    stabilizer linked, the scope camera's world-space pitch is pinned directly.
+    While holding, the anchor is the held target elevation — a constant, so the
+    vertical axis has neither vibration nor lag at all (steadier than any
+    extrapolation can be). While the gun is being aimed, the anchor is an
+    ~80 ms low-pass rail of the cannon's real world elevation (ship roll/yaw
+    compensated via the render transform), so pitch input directly steers the
+    scope's world pitch with no tick-quantized noise. Transitions are blended
+    (attack 0.5/frame, decay 0.25/frame); a divergence cap (8°) releases the
+    lock gracefully if the anchor outruns the gun (fast seat-gunner slew,
+    stale target) and it re-engages automatically. Yaw is untouched (ship
+    slerp + the g-h filter already cover it). Implemented as a read-side
+    adjustment in `StabilizerController.applyScopeElevationLock` called from
+    `CbcCompat.getScopeRenderFrame` — no mixin or logical-path changes.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it

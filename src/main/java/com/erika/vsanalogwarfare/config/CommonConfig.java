@@ -13,6 +13,7 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.DoubleValue SCOPE_AIM_FILTER_ALPHA;
     public static final ForgeConfigSpec.DoubleValue SCOPE_AIM_FILTER_BETA;
     public static final ForgeConfigSpec.BooleanValue SCOPE_AIM_LATTICE;
+    public static final ForgeConfigSpec.BooleanValue SCOPE_ELEVATION_LOCK;
     public static final ForgeConfigSpec.BooleanValue DISABLE_CONTRAPTION_ENTITY_COLLISION;
 
     public static final ForgeConfigSpec.BooleanValue STABILIZER_ENABLED;
@@ -66,6 +67,13 @@ public final class CommonConfig {
                         + "smooth by construction - no vibration ever - but the view trails the true "
                         + "bore by up to one tick. Default off.")
                 .define("scopeAimLattice", false);
+        SCOPE_ELEVATION_LOCK = builder
+                .comment("While a gyro stabilizer is linked, the scope camera's world-space pitch is "
+                        + "pinned to the held elevation (zero vertical vibration, zero lag while "
+                        + "holding). While the gun is being aimed, the scope's world pitch instead "
+                        + "follows the cannon on a short low-pass rail adjusted for ship roll and yaw. "
+                        + "Non-stabilized cannons are unaffected.")
+                .define("scopeElevationLock", true);
         builder.pop();
 
         builder.push("contraption");
@@ -115,6 +123,7 @@ public final class CommonConfig {
     public static float scopeAimFilterAlpha() { return SCOPE_AIM_FILTER_ALPHA.get().floatValue(); }
     public static float scopeAimFilterBeta() { return SCOPE_AIM_FILTER_BETA.get().floatValue(); }
     public static boolean scopeAimLattice() { return SCOPE_AIM_LATTICE.get(); }
+    public static boolean scopeElevationLock() { return SCOPE_ELEVATION_LOCK.get(); }
     public static boolean disableContraptionEntityCollision() { return DISABLE_CONTRAPTION_ENTITY_COLLISION.get(); }
 
     public static boolean stabilizerEnabled() { return STABILIZER_ENABLED.get(); }

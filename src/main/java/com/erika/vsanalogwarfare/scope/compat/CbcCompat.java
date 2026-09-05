@@ -458,6 +458,12 @@ public final class CbcCompat {
         }
 
         Vec3 localUp = Vec3.atLowerCornerOf(scopeUp.getNormal()).normalize();
+        // Stabilizer hold: pin the camera's world-space pitch (held elevation
+        // while holding, aim-following rail while the gun is being aimed).
+        Vec3 locked = StabilizerController.applyScopeElevationLock(be, forward);
+        if (locked != null) {
+            forward = locked;
+        }
         Vec3 up = projectUp(localUp, forward);
         return Optional.of(new ScopeRenderFrame(
                 VsCompat.shipToWorldDirection(level, mountPos, forward),
