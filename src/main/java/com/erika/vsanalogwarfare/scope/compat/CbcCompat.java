@@ -12,8 +12,11 @@ import net.minecraft.world.phys.Vec3;
 import org.joml.primitives.AABBdc;
 import org.slf4j.Logger;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.annotation.Nullable;
@@ -424,10 +427,11 @@ public final class CbcCompat {
 
         Vec3 forward = null;
         try {
-            // getContraptionDirection() falls back to NORTH when the contraption is gone,
-            // which would silently produce a garbage direction — fail instead and hold.
             if (callNoArg(be, "getContraption") != null) {
-                forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(null);
+                forward = tryDirectionFromObservedOffsets(be, level, partialTicks);
+                if (forward == null) {
+                    forward = tryDirectionFromMountOffsets(be, partialTicks).orElse(null);
+                }
             }
         } catch (ReflectiveOperationException | LinkageError ignored) {
             // fall through to the contraption lerp
@@ -521,6 +525,120 @@ public final class CbcCompat {
     private static Object callNoArg(Object target, String method) throws ReflectiveOperationException {
         Method m = target.getClass().getMethod(method);
         return m.invoke(target);
+    }
+
+    /** Per-mount client render state for observed per-tick angle deltas. */
+    private static final class ObservedMountAngle {
+        float yaw;
+        float pitch;
+        float yawVelPerTick;
+        float pitchVelPerTick;
+        long gameTime = Long.MIN_VALUE;
+    }
+
+    private static final Map<Long, ObservedMountAngle> OBSERVED_MOUNT_ANGLES = new HashMap<>();
+    private static final Map<Class<?>, Field> CANNON_YAW_FIELDS = new HashMap<>();
+    private static final Map<Class<?>, Field> CANNON_PITCH_FIELDS = new HashMap<>();
+
+    /**
+     * Scope bore from CBC's render offsets, extrapolated with the mount's
+     * <b>observed</b> per-tick delta instead of the shaft speed.
+     * {@code getPitchOffset(pt)} extrapolates {@code lerp(pt, pitch, pitch + shaftSpeed)},
+     * which goes flat — a hard step every tick — whenever the cannon is driven by
+     * anything but the shaft (mouse-aim writes, stabilizer corrections), because
+     * the shaft is idle then. The pt=0 endpoints keep CBC's conventions, the
+     * render-lock correction, and the seat-control entity-lerp branch; the
+     * observed velocity only adds the missing lead.
+     */
+    @Nullable
+    private static Vec3 tryDirectionFromObservedOffsets(Object mount, Level level, float partialTicks) {
+        try {
+            Direction baseDir = Direction.NORTH;
+            Object direction = callNoArg(mount, "getContraptionDirection");
+            if (direction instanceof Direction d) {
+                baseDir = d;
+            }
+            ObservedMountAngle observed = observedMountAngle(mount, level);
+            if (observed == null) {
+                return null;
+            }
+            float yaw = callFloat(mount, "getYawOffset", 0.0f) + observed.yawVelPerTick * partialTicks;
+            float pitchModifier = baseDir == Direction.DOWN ? -1.0f : 1.0f;
+            float pitch = callFloat(mount, "getPitchOffset", 0.0f)
+                    + pitchModifier * observed.pitchVelPerTick * partialTicks;
+            return directionFromYawPitch(baseDir.toYRot() + yaw, pitch);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+    }
+
+    @Nullable
+    private static ObservedMountAngle observedMountAngle(Object mount, Level level) {
+        if (!(mount instanceof BlockEntity be) || be.getLevel() == null || !be.getLevel().isClientSide) {
+            return null;
+        }
+        Float yaw = readFloatField(mount, CANNON_YAW_FIELDS, "cannonYaw");
+        Float pitch = readFloatField(mount, CANNON_PITCH_FIELDS, "cannonPitch");
+        if (yaw == null || pitch == null) {
+            return null;
+        }
+        long key = be.getBlockPos().asLong();
+        long now = level.getGameTime();
+        ObservedMountAngle angle = OBSERVED_MOUNT_ANGLES.computeIfAbsent(key, k -> new ObservedMountAngle());
+        if (now != angle.gameTime) {
+            long dt = now - angle.gameTime;
+            if (dt < 1 || dt > 5) {
+                // First read, a render gap, or a stale/foreign entry: no usable velocity.
+                angle.yawVelPerTick = 0.0f;
+                angle.pitchVelPerTick = 0.0f;
+            } else {
+                angle.yawVelPerTick = wrapDegrees(yaw - angle.yaw) / (float) dt;
+                angle.pitchVelPerTick = wrapDegrees(pitch - angle.pitch) / (float) dt;
+            }
+            angle.yaw = yaw;
+            angle.pitch = pitch;
+            angle.gameTime = now;
+        }
+        if (OBSERVED_MOUNT_ANGLES.size() > 256) {
+            OBSERVED_MOUNT_ANGLES.clear();
+        }
+        return angle;
+    }
+
+    @Nullable
+    private static Float readFloatField(Object target, Map<Class<?>, Field> cache, String name) {
+        Field field = cache.get(target.getClass());
+        if (field == null && !cache.containsKey(target.getClass())) {
+            for (Class<?> c = target.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                try {
+                    field = c.getDeclaredField(name);
+                    field.setAccessible(true);
+                    break;
+                } catch (NoSuchFieldException ignored) {
+                    // walk up to the declaring class
+                }
+            }
+            cache.put(target.getClass(), field);
+        }
+        if (field == null) {
+            return null;
+        }
+        try {
+            return field.getFloat(target);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+    }
+
+    private static float wrapDegrees(float deg) {
+        float wrapped = deg % 360.0f;
+        if (wrapped >= 180.0f) {
+            wrapped -= 360.0f;
+        }
+        if (wrapped < -180.0f) {
+            wrapped += 360.0f;
+        }
+        return wrapped;
     }
 
     private static float callFloat(Object target, String method, float partialTicks) throws ReflectiveOperationException {

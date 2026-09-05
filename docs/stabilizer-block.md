@@ -122,6 +122,18 @@ stabilizer injects a compensating speed into exactly that advance:
   from poisoning the frame. No changes to `getPitchOffset`/`applyRotation`
   semantics, the servo, or any pt≥1.0 logical path; works for all cannons, not
   just stabilized ones. Set `smoothScopeAim=false` to restore the old scope path.
+  - **Observed-velocity extrapolation (follow-up, 2026-09-05):** CBC's offset
+    extrapolation `lerp(pt, pitch, pitch + shaftSpeed)` goes flat — one hard
+    step per tick — whenever the cannon is driven by anything but the shaft
+    (mouse-aim writes, stabilizer corrections), because the shaft is idle then.
+    The scope now measures each mount's actual per-tick yaw/pitch delta
+    (reflective `cannonYaw`/`cannonPitch` reads, captured on the first render
+    frame of each tick, wrap-safe, per-mount client cache) and extrapolates
+    `getYawOffset(0) + yawVel·pt` / `getPitchOffset(0) + modifier·pitchVel·pt`.
+    The pt=0 endpoints keep CBC's conventions, the render-lock correction, and
+    the seat-control entity-lerp branch; the observed velocity adds the missing
+    lead, so the view moves every frame for every drive path. Falls back to the
+    static offsets path if the fields can't be read.
 - Client sync: `StabilizerStatePacket` (network protocol bumped to "7") sends
   `{mountPos, active, targetElevDeg}` on capture/transition plus a 20-tick
   heartbeat to players within 160 blocks; `ClientStabilizerState` mirrors it
