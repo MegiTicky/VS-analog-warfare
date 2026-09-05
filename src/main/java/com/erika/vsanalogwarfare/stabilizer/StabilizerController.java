@@ -568,22 +568,27 @@ public final class StabilizerController {
      * the gun is being aimed, the anchor is a short low-pass rail of the
      * cannon's real world elevation (ship roll/yaw compensated by the render
      * transform), so pitch input directly steers the scope's world pitch
-     * without falling back to the tick-quantized filter. All transitions are
-     * blended; a divergence cap releases the lock if the anchor outruns the
-     * gun (fast seat-gunner slew, stale target).
+     * without falling back to the tick-quantized filter. While engaged, the
+     * camera's roll is also leveled against world up (real gyro-optics
+     * behavior): the horizon stays level while the ship rolls beneath the
+     * scope. All transitions are blended; a divergence cap releases the lock
+     * if the anchor outruns the gun (fast seat-gunner slew, stale target).
      *
-     * @return the adjusted ship-local forward, or null for no adjustment.
+     * @return the adjusted ship-local camera frame, or null for no adjustment.
      */
     @Nullable
-    public static Vec3 applyScopeElevationLock(Object mountBe, Vec3 localForward) {
+    public static ScopeElevationFrame applyScopeElevationLock(Object mountBe, Vec3 localForward, Vec3 localUp) {
         try {
-            return applyScopeElevationLockInner(mountBe, localForward);
+            return applyScopeElevationLockInner(mountBe, localForward, localUp);
         } catch (RuntimeException | LinkageError e) {
             return null;
         }
     }
 
-    private static Vec3 applyScopeElevationLockInner(Object mountBe, Vec3 localForward) {
+    /** Lock-adjusted scope camera frame in ship-local space. */
+    public record ScopeElevationFrame(Vec3 forward, Vec3 up) {}
+
+    private static ScopeElevationFrame applyScopeElevationLockInner(Object mountBe, Vec3 localForward, Vec3 localUp) {
         if (!CommonConfig.scopeElevationLock() || !(mountBe instanceof BlockEntity be)
                 || be.getLevel() == null || !be.getLevel().isClientSide) {
             return null;
@@ -631,7 +636,41 @@ public final class StabilizerController {
         float worldYaw = (float) Math.toDegrees(Math.atan2(-worldForward.x, worldForward.z));
         Vec3 worldFinal = CbcCompat.directionFromYawPitch(worldYaw, (float) lockedElev);
         Matrix4dc inverse = new Matrix4d(rotation).invert();
-        return StabilizerMath.transformDirection(inverse, worldFinal);
+        Vec3 forwardFinal = StabilizerMath.transformDirection(inverse, worldFinal);
+
+        // Roll stabilization: blend the ship-local up (rolls with the hull)
+        // toward world-up-projected-on-the-view-plane (level horizon) by the
+        // same lock factor, so engage/release can never snap the roll.
+        Vec3 shipUp = projectPerpendicular(localUp, forwardFinal);
+        Vec3 worldUpProjected = projectPerpendicular(new Vec3(0.0, 1.0, 0.0), worldFinal);
+        Vec3 levelUp = worldUpProjected == null
+                ? null : StabilizerMath.transformDirection(inverse, worldUpProjected);
+        Vec3 up;
+        if (levelUp == null) {
+            up = shipUp != null ? shipUp : localUp;
+        } else if (shipUp == null) {
+            up = levelUp;
+        } else {
+            float b = state.renderScopeElevBlend;
+            up = new Vec3(
+                    shipUp.x + (levelUp.x - shipUp.x) * b,
+                    shipUp.y + (levelUp.y - shipUp.y) * b,
+                    shipUp.z + (levelUp.z - shipUp.z) * b).normalize();
+        }
+        return new ScopeElevationFrame(forwardFinal, up);
+    }
+
+    @Nullable
+    private static Vec3 projectPerpendicular(Vec3 up, Vec3 forward) {
+        double dot = up.x * forward.x + up.y * forward.y + up.z * forward.z;
+        double x = up.x - forward.x * dot;
+        double y = up.y - forward.y * dot;
+        double z = up.z - forward.z * dot;
+        double len = Math.sqrt(x * x + y * y + z * z);
+        if (len < 1.0e-4) {
+            return null;
+        }
+        return new Vec3(x / len, y / len, z / len);
     }
 
     private static float glideBlend(float current, float target, float rate) {

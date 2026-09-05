@@ -168,7 +168,11 @@ stabilizer injects a compensating speed into exactly that advance:
     scope's world pitch with no tick-quantized noise. Transitions are blended
     (attack 0.5/frame, decay 0.25/frame); a divergence cap (8°) releases the
     lock gracefully if the anchor outruns the gun (fast seat-gunner slew,
-    stale target) and it re-engages automatically. Yaw is untouched (ship
+    stale target) and it re-engages automatically. While engaged, the camera's
+    roll is also leveled against world up (real gyro-optics behavior): the
+    horizon stays *level* while the ship rolls beneath the scope — without
+    this, the pinned pitch left the ship's roll oscillation as the dominant
+    "still vibrating" motion. Yaw is untouched (ship
     slerp + the g-h filter already cover it). Implemented as a read-side
     adjustment in `StabilizerController.applyScopeElevationLock` called from
     `CbcCompat.getScopeRenderFrame` — no mixin or logical-path changes.
