@@ -50,6 +50,7 @@ public final class ClientForgeEvents {
     @SubscribeEvent
     public static void onClientDisconnect(ClientPlayerNetworkEvent.LoggingOut event) {
         ClientTransmitterHighlight.clear();
+        ClientScrewdriverHighlight.clear();
         AnalogScrewdriverOverlay.reset();
         ClientScopeState.set(false, 70.0f, 3, null, null,
                 0.0, 0.0, 0.0, 0.0f, 0.0f,
@@ -180,6 +181,7 @@ public final class ClientForgeEvents {
     @SubscribeEvent
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         ClientTransmitterHighlight.render(event);
+        ClientScrewdriverHighlight.render(event);
     }
 
     @SubscribeEvent

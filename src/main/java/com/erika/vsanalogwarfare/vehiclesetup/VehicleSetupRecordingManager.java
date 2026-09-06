@@ -169,7 +169,7 @@ public final class VehicleSetupRecordingManager {
                 : player.level().getBlockEntity(anchor) instanceof VehicleSetupBlockEntity value ? value : null;
 
         if (setup == null) {
-            ModNetwork.sendToPlayer(player, new ScrewdriverHudPacket(false, mode, "", List.of()));
+            ModNetwork.sendToPlayer(player, new ScrewdriverHudPacket(false, mode, "", List.of(), null, List.of()));
             return;
         }
 
@@ -177,13 +177,26 @@ public final class VehicleSetupRecordingManager {
                 ? setup.markedRemovals()
                 : setup.actions();
         List<String> entries = new ArrayList<>();
+        List<ScrewdriverHudPacket.HighlightRecord> highlights = new ArrayList<>();
         for (VehicleSetupAction action : actions) {
             if (recordingMode == AnalogScrewdriverItem.TRANSMITTER_MODE
                     && action.type() != VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) continue;
             entries.add(describeAction(action));
+            addHighlightRecords(action, highlights);
         }
         ModNetwork.sendToPlayer(player, new ScrewdriverHudPacket(true, recordingMode,
-                "Setup " + anchor.toShortString(), entries));
+                "Setup " + anchor.toShortString(), entries, anchor, highlights));
+    }
+
+    private static void addHighlightRecords(VehicleSetupAction action,
+                                            List<ScrewdriverHudPacket.HighlightRecord> highlights) {
+        if (highlights.size() >= ScrewdriverHudPacket.MAX_HIGHLIGHTS) return;
+        boolean removal = action.type() == VehicleSetupActionType.REMOVE_BLOCK;
+        if (action.targetOffset() != null) {
+            highlights.add(new ScrewdriverHudPacket.HighlightRecord(action.targetShipId(),
+                    action.shipOffset() == null ? 0L : action.shipOffset().asLong(),
+                    action.targetOffset().asLong(), removal));
+        }
     }
 
     private static String describeAction(VehicleSetupAction action) {
