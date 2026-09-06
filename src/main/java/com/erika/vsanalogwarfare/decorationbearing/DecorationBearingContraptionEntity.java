@@ -97,8 +97,6 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     private boolean pivotCaptured = false;
     /** Consecutive server ticks without a resolvable CBC pose (diagnostics). */
     private int unresolvedTicks = 0;
-    /** Render frame counter for periodic client-side diagnostics. */
-    private int renderLogCounter = 0;
 
     public DecorationBearingContraptionEntity(EntityType<?> type, Level level) {
         super(type, level);
@@ -191,13 +189,6 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         float initialYaw = getInitialYaw();
         float interpYaw = getInterpolatedYaw(partialTicks);
         float interpPitch = getInterpolatedPitch(partialTicks);
-
-        if (++renderLogCounter % 60 == 0) {
-            LOGGER.info("[VSAW_DBC] render: build={} interpYaw={} interpPitch={} initialYaw={} pivotLocal={} entityPos={} axis={}",
-                    BUILD_TAG, String.format("%.2f", interpYaw), String.format("%.2f", interpPitch),
-                    String.format("%.2f", initialYaw), pivotLocal, position(),
-                    getInitialOrientation().getAxis());
-        }
 
         // Translate to render origin (block center convention for
         // OrientedContraptionEntity; entity pos = atBottomCenterOf(contraption.anchor)).
@@ -341,8 +332,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             if (cbcEntity != null) {
                 CbcCompat.CbcPoseData livePose = CbcCompat.readCbcPoseData(cbcEntity);
                 if (livePose != null) {
-                    yaw = livePose.viewYaw();
-                    pitch = livePose.viewPitch();
+                    applyRotationModeFilter(livePose.viewYaw(), livePose.viewPitch());
                     linkedCbcEntityId = livePose.entityId();
                 } else {
                     yaw = this.entityData.get(SYNCED_YAW);
@@ -352,21 +342,10 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                 yaw = this.entityData.get(SYNCED_YAW);
                 pitch = this.entityData.get(SYNCED_PITCH);
             }
-            if (tickCount % 40 == 0) {
-                LOGGER.info("[VSAW_DBC] client tick: build={} yaw={} pitch={} pos={} pivotLocal={} liveCbc={}",
-                        BUILD_TAG, yaw, pitch, position(), pivotLocal, cbcEntity != null);
-            }
         } else {
             Object cbcEntity = resolveLinkedCbcEntity();
             if (cbcEntity == null) {
                 unresolvedTicks++;
-                if (unresolvedTicks % 60 == 1) {
-                    LOGGER.info("[VSAW_DBC] tick: no CBC entity (controllerPos={}, linkedId={}, failures={})",
-                            controllerPos, linkedCbcEntityId, unresolvedTicks);
-                } else {
-                    LOGGER.debug("[VSAW_DBC] tick: no CBC entity (controllerPos={}, linkedId={}, failures={})",
-                            controllerPos, linkedCbcEntityId, unresolvedTicks);
-                }
             } else {
                 CbcCompat.CbcPoseData pose = CbcCompat.readCbcPoseData(cbcEntity);
                 if (pose == null) {
@@ -379,8 +358,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                     // view yaw. CBC's render and applyRotation add this value
                     // (+ initialYaw) directly; our transform consumers do the
                     // same, so store it unmodified.
-                    yaw = pose.viewYaw();
-                    pitch = pose.viewPitch();
+                    applyRotationModeFilter(pose.viewYaw(), pose.viewPitch());
                     linkedCbcEntityId = pose.entityId();
 
                     // If assembly could not use the live CBC anchor (assembled
@@ -417,15 +395,6 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                     this.entityData.set(SYNCED_PITCH, pitch);
                     this.entityData.set(SYNCED_CBC_POS, new Vector3f(
                             (float) pose.entityPos().x, (float) pose.entityPos().y, (float) pose.entityPos().z));
-                    if (tickCount % 40 == 0) {
-                        LOGGER.info("[VSAW_DBC] tick: build={} viewYaw={} pitch={} cbcEntityPos={} pos={} pivotLocal={} shipOffset={} id={}",
-                                BUILD_TAG, yaw, pitch, pose.entityPos(), position(), pivotLocal,
-                                renderOriginLocal != Vec3.ZERO ? position().subtract(renderOriginLocal) : "n/a",
-                                linkedCbcEntityId);
-                    } else {
-                        LOGGER.debug("[VSAW_DBC] tick: yaw={} pitch={} anchor={} id={}",
-                                yaw, pitch, pose.entityPos(), linkedCbcEntityId);
-                    }
                 }
             }
         }
@@ -449,9 +418,37 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         }
     }
 
+    /**
+     * Copy a CBC pose (yaw, pitch) into this entity's rotation fields,
+     * honoring the controller bearing's rotation mode: the frozen axis simply
+     * keeps its current field value, so the decoration holds whatever pose it
+     * had when the mode was (or became) active — no snap on mode switches.
+     * No-op for YAW_AND_PITCH. The controller's mode reaches the client
+     * through the behaviour framework, so both the server branch and the
+     * client's live-CBC read filter identically.
+     */
+    private void applyRotationModeFilter(float newYaw, float newPitch) {
+        DecorationRotationMode mode = resolveRotationMode();
+        if (mode == DecorationRotationMode.PITCH_ONLY) {
+            pitch = newPitch;
+        } else if (mode == DecorationRotationMode.YAW_ONLY) {
+            yaw = newYaw;
+        } else {
+            yaw = newYaw;
+            pitch = newPitch;
+        }
+    }
+
+    private DecorationRotationMode resolveRotationMode() {
+        if (controllerPos != null && level() != null
+                && level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity bearing) {
+            return bearing.getRotationMode();
+        }
+        return DecorationRotationMode.YAW_AND_PITCH;
+    }
+
     @Nullable
-    private Object resolveLinkedCbcEntity() {
-        if (controllerPos == null || level() == null) {
+    private Object resolveLinkedCbcEntity() {        if (controllerPos == null || level() == null) {
             return null;
         }
         var be = level().getBlockEntity(controllerPos);

@@ -10,9 +10,12 @@ import com.simibubi.create.content.contraptions.bearing.BearingContraption;
 import com.simibubi.create.content.contraptions.bearing.IBearingBlockEntity;
 import com.simibubi.create.content.contraptions.IDisplayAssemblyExceptions;
 import com.simibubi.create.content.kinetics.base.GeneratingKineticBlockEntity;
+import com.simibubi.create.foundation.blockEntity.behaviour.CenteredSideValueBoxTransform;
+import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollOptionBehaviour;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
@@ -33,6 +36,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     private boolean assembleNextTick;
     private float angle;
     private AssemblyException lastException;
+    private ScrollOptionBehaviour<DecorationRotationMode> rotationMode;
 
     public DecorationBearingBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.DECORATION_BEARING.get(), pos, state);
@@ -49,14 +53,10 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
                 if (bearing.movedContraption != null && !bearing.movedContraption.isStalled()) {
                     // already running, do nothing
                 } else {
-                    LOGGER.info("[VSAW_DBC] tick: disassembling (running={}, stalled={})",
-                            bearing.running, bearing.movedContraption != null && bearing.movedContraption.isStalled());
                     bearing.disassemble();
                 }
             } else {
                 if (bearing.getSpeed() == 0) return;
-                LOGGER.info("[VSAW_DBC] tick: assembling (speed={}, linkedMount={}, pos={})",
-                        bearing.getSpeed(), bearing.linkedMount, pos);
                 bearing.assemble();
             }
         }
@@ -168,8 +168,6 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
     public void assemble() {
         if (level == null || level.isClientSide || running || resolveMount() == null) {
-            LOGGER.info("[VSAW_DBC] assemble: SKIPPED (level={}, clientSide={}, running={}, mount={})",
-                    level != null, level != null && level.isClientSide, running, resolveMount());
             return;
         }
         Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
@@ -197,7 +195,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         Object cbcEntity = CbcCompat.resolveLiveCbcEntity(level, mount);
         CbcCompat.CbcPoseData pose = cbcEntity != null ? CbcCompat.readCbcPoseData(cbcEntity) : null;
         if (pose == null) {
-            LOGGER.info("[VSAW_DBC] assemble: live CBC entity unavailable at {} (mount={}, mountBE={}, reason={})",
+            LOGGER.debug("[VSAW_DBC] assemble: live CBC entity unavailable at {} (mount={}, mountBE={}, reason={})",
                     worldPosition, mount,
                     mount != null ? level.getBlockEntity(mount) : null,
                     CbcCompat.describeResolutionFailure(level, mount));
@@ -221,8 +219,19 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
             // the render rotation center land on the cannon's visual pivot.
             movedContraption.capturePivot(pose.entityPos(), renderOrigin);
             // pose.viewYaw() is already CBC's m_5675_ (negated) convention;
-            // store it unmodified.
-            movedContraption.setDecorationRotation(pose.viewYaw(), pose.viewPitch());
+            // store it unmodified — except for the rotation mode filter: the
+            // frozen axis starts at its neutral value (identity orientation,
+            // matching the fallback branch below), then the contraption tick
+            // holds it at whatever value it had when the mode was applied.
+            float initYaw = pose.viewYaw();
+            float initPitch = pose.viewPitch();
+            DecorationRotationMode mode = getRotationMode();
+            if (mode == DecorationRotationMode.YAW_ONLY) {
+                initPitch = 0.0f;
+            } else if (mode == DecorationRotationMode.PITCH_ONLY) {
+                initYaw = -initialOrientation.toYRot();
+            }
+            movedContraption.setDecorationRotation(initYaw, initPitch);
         } else {
             // Approximate the POCE spawn position in the Create/VS shipyard
             // frame (atLowerCornerOf(mount - 2 along the vertical axis));
@@ -240,9 +249,6 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         contraption.removeBlocksFromWorld(level, BlockPos.ZERO);
 
         level.addFreshEntity(movedContraption);
-        LOGGER.info("[VSAW_DBC] assemble: build={} entity CREATED id={} pivotLocal={} renderOrigin={} mount={} fromLiveCbc={}",
-                DecorationBearingContraptionEntity.BUILD_TAG,
-                movedContraption.getId(), movedContraption.getPivotLocal(), renderOrigin, mount, pose != null);
         running = true;
         angle = 0;
         sendData();
@@ -250,7 +256,6 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     }
 
     public void disassemble() {
-        LOGGER.info("[VSAW_DBC] disassemble: entity={}", movedContraption);
         if (movedContraption != null) {
             movedContraption.disassemble();
             if (!movedContraption.isRemoved()) movedContraption.discard();
@@ -270,6 +275,24 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
 
     @Override
     public void addBehaviours(List<com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour> behaviours) {
+        super.addBehaviours(behaviours);
+        rotationMode = new ScrollOptionBehaviour<>(DecorationRotationMode.class,
+                Component.translatable("vsanalogwarfare.decoration_bearing.rotation_mode.label"),
+                this,
+                // Horizontal faces only — matches the Mechanical Bearing, whose
+                // slot never appears on the top or bottom.
+                new CenteredSideValueBoxTransform((state, dir) -> dir.getAxis().isHorizontal()));
+        rotationMode.requiresWrench();
+        behaviours.add(rotationMode);
+    }
+
+    /**
+     * Current rotation mode. Persistence and client sync are handled entirely
+     * by the behaviour framework (NBT key "ScrollValue"); before behaviours
+     * are registered (or on stripped BEs) default to tracking both axes.
+     */
+    public DecorationRotationMode getRotationMode() {
+        return rotationMode != null ? rotationMode.get() : DecorationRotationMode.YAW_AND_PITCH;
     }
 
     @Override

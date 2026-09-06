@@ -41,6 +41,13 @@ public class DecorationBearingBlock extends BearingBlock implements EntityBlock 
                 return InteractionResult.CONSUME;
             }
         }
+        // Wrench: Create's ValueSettingsInputHandler intercepts clicks that
+        // hit the rotation-mode value box (hold-to-edit). A wrench click that
+        // misses the box falls through to here and must NOT assemble or
+        // disassemble the decoration.
+        if (com.simibubi.create.AllTags.AllItemTags.WRENCH.matches(player.getItemInHand(hand))) {
+            return InteractionResult.PASS;
+        }
         if (level.isClientSide) return InteractionResult.SUCCESS;
         if (level.getBlockEntity(pos) instanceof DecorationBearingBlockEntity bearing) {
             if (player.isShiftKeyDown()) {

@@ -1,0 +1,6 @@
+{
+  "vsanalogwarfare.decoration_bearing.rotation_mode.label": "Rotation Mode",
+  "vsanalogwarfare.decoration_bearing.rotation_mode.yaw_only": "Yaw Only",
+  "vsanalogwarfare.decoration_bearing.rotation_mode.pitch_only": "Pitch Only",
+  "vsanalogwarfare.decoration_bearing.rotation_mode.yaw_and_pitch": "Yaw + Pitch"
+}
