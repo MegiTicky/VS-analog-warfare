@@ -6,5 +6,7 @@
   "vs_analog_warfare.mouse_aim.strength.gentle": "弱",
   "vs_analog_warfare.mouse_aim.strength.firm": "中",
   "vs_analog_warfare.mouse_aim.strength.aggressive": "強",
-  "vs_analog_warfare.mouse_aim.strength.brutal": "最大"
+  "vs_analog_warfare.mouse_aim.strength.brutal": "最大",
+  "block.vs_analog_warfare.invisible_seat": "透明な座席",
+  "item.vs_analog_warfare.invisible_seat": "透明な座席"
 }

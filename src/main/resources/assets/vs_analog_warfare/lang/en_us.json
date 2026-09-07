@@ -40,5 +40,7 @@
   "vs_analog_warfare.mouse_aim.strength.gentle": "Gentle",
   "vs_analog_warfare.mouse_aim.strength.firm": "Firm",
   "vs_analog_warfare.mouse_aim.strength.aggressive": "Aggressive",
-  "vs_analog_warfare.mouse_aim.strength.brutal": "Brutal"
+  "vs_analog_warfare.mouse_aim.strength.brutal": "Brutal",
+  "block.vs_analog_warfare.invisible_seat": "Invisible Seat",
+  "item.vs_analog_warfare.invisible_seat": "Invisible Seat"
 }

@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.ponder.VehicleSetupPonder;
 import com.erika.vsanalogwarfare.registry.ModEntities;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
+import com.erika.vsanalogwarfare.seat.InvisibleSeatEntity;
 import com.jozufozu.flywheel.backend.instancing.InstancedRenderRegistry;
 import com.simibubi.create.content.contraptions.bearing.BearingInstance;
 import com.simibubi.create.content.contraptions.bearing.BearingRenderer;
@@ -26,6 +27,7 @@ public final class ClientModEvents {
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.SCOPE_CAMERA.get(), ScopeCameraRenderer::new);
         event.registerEntityRenderer(ModEntities.DECORATION_BEARING_CONTRAPTION.get(), ContraptionEntityRenderer::new);
+        event.registerEntityRenderer(ModEntities.INVISIBLE_SEAT.get(), InvisibleSeatEntity.Render::new);
         event.registerBlockEntityRenderer(ModBlockEntities.DECORATION_BEARING.get(), BearingRenderer::new);
         event.registerBlockEntityRenderer(ModBlockEntities.VEHICLE_MOUNT_HANDLE.get(), VehicleMountHandleRenderer::new);
     }

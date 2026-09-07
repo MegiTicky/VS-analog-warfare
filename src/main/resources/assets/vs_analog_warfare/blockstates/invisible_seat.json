@@ -1,0 +1,13 @@
+{
+  "variants": {
+    "": {
+      "model": "vs_analog_warfare:block/invisible_seat"
+    },
+    "waterlogged=false": {
+      "model": "vs_analog_warfare:block/invisible_seat"
+    },
+    "waterlogged=true": {
+      "model": "vs_analog_warfare:block/invisible_seat"
+    }
+  }
+}

@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.registry;
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.scope.ScopeCameraEntity;
 import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingContraptionEntity;
+import com.erika.vsanalogwarfare.seat.InvisibleSeatEntity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraftforge.registries.DeferredRegister;
@@ -29,6 +30,15 @@ public final class ModEntities {
                     .clientTrackingRange(256)
                     .updateInterval(1)
                     .build(VSAnalogWarfare.MOD_ID + ":decoration_bearing_contraption"));
+
+    public static final RegistryObject<EntityType<InvisibleSeatEntity>> INVISIBLE_SEAT =
+            ENTITIES.register("invisible_seat", () -> EntityType.Builder
+                    .<InvisibleSeatEntity>of(InvisibleSeatEntity::new, MobCategory.MISC)
+                    .sized(0.25f, 0.35f)
+                    .clientTrackingRange(5)
+                    .updateInterval(Integer.MAX_VALUE)
+                    .fireImmune()
+                    .build(VSAnalogWarfare.MOD_ID + ":invisible_seat"));
 
     private ModEntities() {
     }

@@ -8,6 +8,8 @@ import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlock;
 import com.erika.vsanalogwarfare.vehiclesetup.GroundCollisionDisablerBlock;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlock;
 import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingBlock;
+import com.erika.vsanalogwarfare.seat.InvisibleSeatBlock;
+import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
@@ -54,6 +56,10 @@ public final class ModBlocks {
     public static final RegistryObject<Block> STABILIZER = BLOCKS.register("stabilizer",
             () -> new StabilizerBlock(BlockBehaviour.Properties.of()
                     .mapColor(MapColor.METAL).strength(1.5f, 6.0f).noOcclusion()));
+
+    public static final RegistryObject<Block> INVISIBLE_SEAT = BLOCKS.register("invisible_seat",
+            () -> new InvisibleSeatBlock(BlockBehaviour.Properties.of()
+                    .mapColor(MapColor.COLOR_GRAY).strength(0.5f, 6.0f).noOcclusion(), DyeColor.GRAY));
 
     private ModBlocks() {
     }

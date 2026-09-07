@@ -183,6 +183,7 @@ public final class ClientForgeEvents {
     public static void onRenderLevelStage(RenderLevelStageEvent event) {
         ClientTransmitterHighlight.render(event);
         ClientScrewdriverHighlight.render(event);
+        ClientInvisibleSeatHighlight.render(event);
     }
 
     @SubscribeEvent

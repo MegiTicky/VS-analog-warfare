@@ -1,0 +1,6 @@
+{
+	"parent": "minecraft:block/block",
+	"textures": {
+		"particle": "vs_analog_warfare:block/scope_block"
+	}
+}

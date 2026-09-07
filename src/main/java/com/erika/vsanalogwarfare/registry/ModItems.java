@@ -37,6 +37,9 @@ public final class ModItems {
     public static final RegistryObject<Item> STABILIZER = ITEMS.register("stabilizer",
             () -> new BlockItem(ModBlocks.STABILIZER.get(), new Item.Properties()));
 
+    public static final RegistryObject<Item> INVISIBLE_SEAT = ITEMS.register("invisible_seat",
+            () -> new BlockItem(ModBlocks.INVISIBLE_SEAT.get(), new Item.Properties()));
+
     public static final RegistryObject<Item> ANALOG_SCREWDRIVER = ITEMS.register("analog_screwdriver",
             () -> new AnalogScrewdriverItem(new Item.Properties().stacksTo(1)));
 
@@ -55,6 +58,7 @@ public final class ModItems {
                 event.accept(VEHICLE_MOUNT_HANDLE);
                 event.accept(DECORATION_BEARING);
                 event.accept(STABILIZER);
+                event.accept(INVISIBLE_SEAT);
                 event.accept(ANALOG_SCREWDRIVER);
             }
         }
