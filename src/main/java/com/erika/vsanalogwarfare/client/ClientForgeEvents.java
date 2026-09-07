@@ -148,7 +148,8 @@ public final class ClientForgeEvents {
             return;
         }
         Vec3 direction = ClientScopeState.zeroedFreeLookDirection();
-        ModNetwork.sendToServer(new MouseAimTargetPacket(scopePos, mountPos, direction.x, direction.y, direction.z));
+        boolean shipRelative = com.erika.vsanalogwarfare.scope.compat.VsCompat.isPlayerMountedToShip();
+        ModNetwork.sendToServer(new MouseAimTargetPacket(scopePos, mountPos, direction.x, direction.y, direction.z, shipRelative));
     }
 
     @SubscribeEvent

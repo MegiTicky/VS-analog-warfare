@@ -9,12 +9,33 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.Direction.Axis;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.level.LevelReader;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
 
 public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<MouseAimBlockEntity> {
+    /**
+     * Marker for the internal turret-output persona of this block. It is never
+     * written into the world: only the synthetic block state handed to
+     * {@link MouseAimOutputInterface} carries it, so that the output sub-block
+     * entity connects kinetically through the arrow-marked top face alone,
+     * while the main block entity keeps its ordinary horizontal power
+     * connections.
+     */
+    public static final BooleanProperty OUTPUT = BooleanProperty.create("output");
+
     public MouseAimBlock(Properties properties) {
         super(properties);
+        registerDefaultState(defaultBlockState().setValue(OUTPUT, Boolean.FALSE));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(StateDefinition.Builder<Block, BlockState> builder) {
+        super.createBlockStateDefinition(builder);
+        builder.add(OUTPUT);
     }
 
     @Override
@@ -24,8 +45,13 @@ public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<Mous
 
     @Override
     public boolean hasShaftTowards(LevelReader world, BlockPos pos, BlockState state, Direction face) {
-        if (CbcCompat.isCannonMount(world.getBlockEntity(pos.relative(face)))) {
+        BlockEntity neighbor = world.getBlockEntity(pos.relative(face));
+        if (CbcCompat.isCannonMount(neighbor)) {
             return false;
+        }
+        if (state.getValue(OUTPUT)) {
+            // The turret-output persona only reaches through the arrow face.
+            return face == Direction.UP;
         }
         return face.getAxis() != state.getValue(AXIS);
     }

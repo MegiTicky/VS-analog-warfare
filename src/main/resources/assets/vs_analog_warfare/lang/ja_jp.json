@@ -1,0 +1,10 @@
+{
+  "vs_analog_warfare.mouse_aim.mode.label": "照準モード",
+  "vs_analog_warfare.mouse_aim.mode.cannon": "キャノン（砲身の yaw + pitch を操作）",
+  "vs_analog_warfare.mouse_aim.mode.turret": "タレット（pitch 操作、yaw は上面回転出力）",
+  "vs_analog_warfare.mouse_aim.strength.label": "出力の強さ",
+  "vs_analog_warfare.mouse_aim.strength.gentle": "弱",
+  "vs_analog_warfare.mouse_aim.strength.firm": "中",
+  "vs_analog_warfare.mouse_aim.strength.aggressive": "強",
+  "vs_analog_warfare.mouse_aim.strength.brutal": "最大"
+}

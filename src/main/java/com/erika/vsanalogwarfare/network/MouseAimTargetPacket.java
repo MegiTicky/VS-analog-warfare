@@ -12,17 +12,27 @@ import net.minecraftforge.network.NetworkEvent;
 import java.util.Optional;
 import java.util.function.Supplier;
 
-public record MouseAimTargetPacket(BlockPos scopePos, BlockPos mountPos, double dirX, double dirY, double dirZ) {
+/**
+ * @param shipRelative true when the direction was captured in the scope
+ *                      ship's frame (the player was mounted while aiming);
+ *                      false when it is already a world-space direction.
+ */
+public record MouseAimTargetPacket(BlockPos scopePos, BlockPos mountPos,
+                                   double dirX, double dirY, double dirZ,
+                                   boolean shipRelative) {
     public static void encode(MouseAimTargetPacket packet, FriendlyByteBuf buf) {
         buf.writeBlockPos(packet.scopePos);
         buf.writeBlockPos(packet.mountPos);
         buf.writeDouble(packet.dirX);
         buf.writeDouble(packet.dirY);
         buf.writeDouble(packet.dirZ);
+        buf.writeBoolean(packet.shipRelative);
     }
 
     public static MouseAimTargetPacket decode(FriendlyByteBuf buf) {
-        return new MouseAimTargetPacket(buf.readBlockPos(), buf.readBlockPos(), buf.readDouble(), buf.readDouble(), buf.readDouble());
+        return new MouseAimTargetPacket(buf.readBlockPos(), buf.readBlockPos(),
+                buf.readDouble(), buf.readDouble(), buf.readDouble(),
+                buf.readBoolean());
     }
 
     public static void handle(MouseAimTargetPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -45,7 +55,8 @@ public record MouseAimTargetPacket(BlockPos scopePos, BlockPos mountPos, double 
                 return;
             }
             MouseAimController.findControllerForMount(level, packet.mountPos)
-                    .ifPresent(controller -> controller.setTarget(sender.getUUID(), packet.mountPos, direction.normalize()));
+                    .ifPresent(controller -> controller.setTarget(sender.getUUID(), packet.mountPos,
+                            packet.scopePos, direction.normalize(), packet.shipRelative));
         });
         context.setPacketHandled(true);
     }

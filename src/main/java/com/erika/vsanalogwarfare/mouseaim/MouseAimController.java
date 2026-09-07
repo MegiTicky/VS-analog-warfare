@@ -58,12 +58,7 @@ public final class MouseAimController {
             return;
         }
 
-        Vec3 localTarget;
-        if (VsCompat.isPlayerMountedToShip()) {
-            localTarget = targetWorldDirection;
-        } else {
-            localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection);
-        }
+        Vec3 localTarget = toMountLocal(level, mountPos, targetWorldDirection);
         AimAngles desired = AimAngles.fromDirection(localTarget);
 
         float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(desired.yaw());
@@ -79,6 +74,43 @@ public final class MouseAimController {
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
         com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
+    }
+
+    /**
+     * Turret mode: slew only the mount's pitch and hold its yaw untouched —
+     * yaw authority belongs to the physics-bearing-driven turret structure.
+     */
+    public static void tickTurretPitch(MouseAimBlockEntity controller, BlockPos mountPos, Vec3 targetWorldDirection, double maxDegreesPerTick) {
+        Level level = controller.getLevel();
+        if (level == null || maxDegreesPerTick <= 0.0) {
+            return;
+        }
+        BlockEntity mount = level.getBlockEntity(mountPos);
+        if (!CbcCompat.isCannonMount(mount)) {
+            controller.clearTarget();
+            return;
+        }
+
+        Vec3 localTarget = toMountLocal(level, mountPos, targetWorldDirection);
+        AimAngles desired = AimAngles.fromDirection(localTarget);
+
+        float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(desired.yaw());
+        float currentPitch = readFloat(mount, "getPitchOffset", 1.0f).orElse(desired.pitch());
+        float pitchStep = clampAngleStep(desired.pitch() - currentPitch, maxDegreesPerTick);
+
+        float nextPitch = clampPitchToMount(mount, currentPitch + pitchStep);
+
+        writeYawPitch(mount, currentYaw, nextPitch);
+        callNoArg(mount, "applyRotation");
+        callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
+    }
+
+    private static Vec3 toMountLocal(Level level, BlockPos mountPos, Vec3 targetWorldDirection) {
+        if (VsCompat.isPlayerMountedToShip()) {
+            return targetWorldDirection;
+        }
+        return VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection);
     }
 
     /** Set a linked cannon to the requested world-space bore direction. */

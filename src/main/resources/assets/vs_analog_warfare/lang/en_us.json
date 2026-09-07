@@ -32,5 +32,13 @@
   "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_2": "Right-click the Setup Block to begin marking.",
   "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_3": "Right-click a recorded block to mark it for removal, such as this Black Wool.",
   "vs_analog_warfare.ponder.vehicle_setup_removal_markers.text_4": "Right-click the Setup Block again to stop marking. Marked blocks are removed the next time the setup runs.",
-  "block.vs_analog_warfare.stabilizer": "Gyro Stabilizer"
+  "block.vs_analog_warfare.stabilizer": "Gyro Stabilizer",
+  "vs_analog_warfare.mouse_aim.mode.label": "Aim mode",
+  "vs_analog_warfare.mouse_aim.mode.cannon": "Cannon (moves barrel yaw + pitch)",
+  "vs_analog_warfare.mouse_aim.mode.turret": "Turret (barrel pitch; yaw output on top)",
+  "vs_analog_warfare.mouse_aim.strength.label": "Output strength",
+  "vs_analog_warfare.mouse_aim.strength.gentle": "Gentle",
+  "vs_analog_warfare.mouse_aim.strength.firm": "Firm",
+  "vs_analog_warfare.mouse_aim.strength.aggressive": "Aggressive",
+  "vs_analog_warfare.mouse_aim.strength.brutal": "Brutal"
 }
