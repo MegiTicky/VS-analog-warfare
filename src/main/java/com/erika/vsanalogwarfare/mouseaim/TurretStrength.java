@@ -6,7 +6,7 @@ import com.simibubi.create.foundation.utility.Lang;
 
 /**
  * Output aggressiveness of the turret-mode yaw controller, selectable through
- * Create's {@code ScrollOptionBehaviour} value-settings UI.
+ * the block's config screen.
  *
  * <p>The RPM output is a velocity command: the Clockwork physics bearing
  * converts it into torque against the turret's inertia internally. Strength

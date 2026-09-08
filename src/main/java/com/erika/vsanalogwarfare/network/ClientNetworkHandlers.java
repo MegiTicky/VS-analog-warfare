@@ -41,6 +41,11 @@ public final class ClientNetworkHandlers {
         VehicleSetupEditorScreen.open(packet.pos(), packet.revision(), packet.actions(), packet.removals(), packet.removalDelay());
     }
 
+    public static void openMouseAimConfig(MouseAimConfigPacket.Snapshot packet) {
+        com.erika.vsanalogwarfare.client.MouseAimConfigScreen.open(
+                packet.pos(), packet.mode(), packet.strength());
+    }
+
     public static void openScopeLinks(ScopeLinkPacket.Open packet) {
         Minecraft.getInstance().setScreen(new ScopeLinkScreen(packet.scope(), packet.revision(), packet.primary(), packet.secondary()));
     }

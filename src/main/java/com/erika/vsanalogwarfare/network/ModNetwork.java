@@ -18,7 +18,7 @@ import java.lang.reflect.Method;
 import java.util.function.Supplier;
 
 public final class ModNetwork {
-    private static final String PROTOCOL = "7";
+    private static final String PROTOCOL = "8";
     public static SimpleChannel CHANNEL;
 
     private ModNetwork() {
@@ -129,6 +129,12 @@ public final class ModNetwork {
         CHANNEL.messageBuilder(StabilizerStatePacket.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(StabilizerStatePacket::encode).decoder(StabilizerStatePacket::decode)
                 .consumerMainThread(StabilizerStatePacket::handle).add();
+        CHANNEL.messageBuilder(MouseAimConfigPacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(MouseAimConfigPacket::encode).decoder(MouseAimConfigPacket::decode)
+                .consumerMainThread(MouseAimConfigPacket::handle).add();
+        CHANNEL.messageBuilder(MouseAimConfigPacket.Snapshot.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(MouseAimConfigPacket.Snapshot::encode).decoder(MouseAimConfigPacket.Snapshot::decode)
+                .consumerMainThread(MouseAimConfigPacket.Snapshot::handle).add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object packet) {

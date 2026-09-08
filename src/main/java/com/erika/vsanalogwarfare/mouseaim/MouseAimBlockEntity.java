@@ -2,15 +2,10 @@ package com.erika.vsanalogwarfare.mouseaim;
 
 import com.erika.vsanalogwarfare.config.CommonConfig;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
-import com.simibubi.create.foundation.blockEntity.behaviour.BlockEntityBehaviour;
-import com.simibubi.create.foundation.blockEntity.behaviour.CenteredSideValueBoxTransform;
-import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollOptionBehaviour;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -38,10 +33,10 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     private volatile float turretOutputRpm;
     private final MouseAimOutputInterface outputInterface;
 
-    @Nullable
-    private ScrollOptionBehaviour<MouseAimMode> mode;
-    @Nullable
-    private ScrollOptionBehaviour<TurretStrength> strength;
+    /** Aim mode, set from the config screen. */
+    private MouseAimMode mode = MouseAimMode.CANNON;
+    /** Output aggressiveness, set from the config screen. */
+    private TurretStrength strength = TurretStrength.FIRM;
 
     public MouseAimBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.MOUSE_AIM.get(), pos, state);
@@ -49,30 +44,30 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
                 state.setValue(MouseAimBlock.OUTPUT, Boolean.TRUE), this);
     }
 
-    @Override
-    public void addBehaviours(List<BlockEntityBehaviour> behaviours) {
-        super.addBehaviours(behaviours);
-        mode = new ScrollOptionBehaviour<>(MouseAimMode.class,
-                Component.translatable("vs_analog_warfare.mouse_aim.mode.label"),
-                this,
-                // East/west faces, so the strength setting never overlaps it.
-                new CenteredSideValueBoxTransform((state, dir) -> dir.getAxis() == Direction.Axis.X));
-        mode.requiresWrench();
-        behaviours.add(mode);
-        strength = new ScrollOptionBehaviour<>(TurretStrength.class,
-                Component.translatable("vs_analog_warfare.mouse_aim.strength.label"),
-                this,
-                new CenteredSideValueBoxTransform((state, dir) -> dir.getAxis() == Direction.Axis.Z));
-        strength.requiresWrench();
-        behaviours.add(strength);
-    }
-
     public MouseAimMode getMode() {
-        return mode != null ? mode.get() : MouseAimMode.CANNON;
+        return mode;
     }
 
     public TurretStrength getTurretStrength() {
-        return strength != null ? strength.get() : TurretStrength.FIRM;
+        return strength;
+    }
+
+    public void setMode(MouseAimMode mode) {
+        if (mode == null || mode == this.mode) {
+            return;
+        }
+        this.mode = mode;
+        setChanged();
+    }
+
+    public void setStrength(TurretStrength strength) {
+        if (strength == null || strength == this.strength) {
+            return;
+        }
+        this.strength = strength;
+        setChanged();
+        // The max-RPM clamp is part of the generated speed capability.
+        outputInterface.updateGeneratedRotation();
     }
 
     /** Latest PID output command for the turret rotation face, in RPM. */
@@ -201,6 +196,8 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     protected void write(CompoundTag compound, boolean clientPacket) {
         super.write(compound, clientPacket);
         if (!clientPacket) {
+            compound.putString("Mode", mode.name());
+            compound.putString("Strength", strength.name());
             compound.put("OutputInterface", outputInterface.writeServer(new CompoundTag()));
         }
     }
@@ -210,6 +207,12 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         super.read(compound, clientPacket);
         if (clientPacket) {
             return;
+        }
+        if (compound.contains("Mode")) {
+            mode = MouseAimMode.valueOf(compound.getString("Mode"));
+        }
+        if (compound.contains("Strength")) {
+            strength = TurretStrength.valueOf(compound.getString("Strength"));
         }
         if (compound.contains("OutputInterface")) {
             outputInterface.readServer(compound.getCompound("OutputInterface"));

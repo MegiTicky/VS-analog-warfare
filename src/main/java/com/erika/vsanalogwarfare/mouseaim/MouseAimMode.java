@@ -5,8 +5,8 @@ import com.simibubi.create.foundation.gui.AllIcons;
 import com.simibubi.create.foundation.utility.Lang;
 
 /**
- * Aiming modes for the mouse aim block, selectable through Create's
- * {@code ScrollOptionBehaviour} value-settings UI (hold right click).
+ * Aiming modes for the mouse aim block, selectable through the block's config
+ * screen (right-click with an empty hand).
  *
  * <ul>
  *   <li>{@link #CANNON} — the classic behaviour: mouse aim slews both the yaw
