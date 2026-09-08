@@ -17,19 +17,31 @@ import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 
 public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<MouseAimBlockEntity> {
-    /**
-     * Marker for the internal turret-output persona of this block. It is never
+    /** Marker for the internal turret-output persona of this block. It is never
      * written into the world: only the synthetic block state handed to
      * {@link MouseAimOutputInterface} carries it, so that the output sub-block
-     * entity connects kinetically through the arrow-marked top face alone,
-     * while the main block entity keeps its ordinary horizontal power
-     * connections.
+     * entity connects kinetically through the arrow-marked face alone, while the
+     * main block entity keeps its ordinary power connections.
      */
     public static final BooleanProperty OUTPUT = BooleanProperty.create("output");
 
     public MouseAimBlock(Properties properties) {
         super(properties);
         registerDefaultState(defaultBlockState().setValue(OUTPUT, Boolean.FALSE));
+    }
+
+    /**
+     * The face the turret-mode rotation leaves the block through — the face the
+     * arrow texture marks. It follows the block's placed {@link #AXIS} so the
+     * output is consistent with how the model rotates the arrow (see the
+     * blockstate's axis transforms): X → east, Z → south, Y → up.
+     */
+    public static Direction getOutputFace(BlockState state) {
+        return switch (state.getValue(AXIS)) {
+            case X -> Direction.EAST;
+            case Z -> Direction.SOUTH;
+            default -> Direction.UP;
+        };
     }
 
     @Override
@@ -39,21 +51,19 @@ public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<Mous
     }
 
     @Override
-    public BlockState getStateForPlacement(BlockPlaceContext context) {
-        return defaultBlockState().setValue(AXIS, Axis.Y);
-    }
-
-    @Override
     public boolean hasShaftTowards(LevelReader world, BlockPos pos, BlockState state, Direction face) {
         BlockEntity neighbor = world.getBlockEntity(pos.relative(face));
         if (CbcCompat.isCannonMount(neighbor)) {
             return false;
         }
+        Direction outputFace = getOutputFace(state);
         if (state.getValue(OUTPUT)) {
             // The turret-output persona only reaches through the arrow face.
-            return face == Direction.UP;
+            return face == outputFace;
         }
-        return face.getAxis() != state.getValue(AXIS);
+        // The power persona accepts shafts on any face that isn't the arrowed
+        // output face (and isn't the mount itself).
+        return face != outputFace && face.getAxis() != state.getValue(AXIS);
     }
 
     @Override

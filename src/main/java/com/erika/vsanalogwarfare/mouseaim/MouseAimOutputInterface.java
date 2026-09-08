@@ -35,10 +35,25 @@ public class MouseAimOutputInterface extends GeneratingKineticBlockEntity {
         this.parent = parent;
     }
 
-    /** The PID yaw controller's commanded output, in Create RPM. */
+    /**
+     * The PID yaw controller's commanded output, in Create RPM.
+     *
+     * <p>The output persona lives at the same block position as the input-driven
+     * main block entity. Create keys kinetic networks by the value returned here,
+     * and {@code GeneratingKineticBlockEntity} defaults it to the block
+     * position's long — which would merge the turret output into the main
+     * block's power network, letting the constant input RPM reach the turret
+     * directly. Return a position-derived-but-distinct id so the generated
+     * output forms its own isolated network.
+     */
     @Override
     public float getGeneratedSpeed() {
         return parent != null ? parent.getTurretOutputRpm() : 0.0F;
+    }
+
+    @Override
+    public Long createNetworkId() {
+        return worldPosition.asLong() ^ 0x51A7_3C0_FL;
     }
 
     /** Exposes the protected kinetic serialization for the parent's NBT. */

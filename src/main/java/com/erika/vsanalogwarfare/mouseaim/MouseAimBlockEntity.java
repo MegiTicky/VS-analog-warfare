@@ -8,6 +8,7 @@ import com.simibubi.create.foundation.blockEntity.behaviour.scrollValue.ScrollOp
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.Level;
@@ -183,7 +184,9 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     @Nullable
     @Override
     public KineticBlockEntity getInterfacingBlockEntity(BlockPos from) {
-        if (from.subtract(worldPosition).equals(new BlockPos(0, 1, 0))) {
+        Vec3i outputOffset = MouseAimBlock.getOutputFace(
+                getBlockState()).getNormal();
+        if (from.subtract(worldPosition).equals(outputOffset)) {
             return outputInterface;
         }
         return null;

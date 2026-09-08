@@ -16,9 +16,11 @@ Both values persist in the block NBT (Create's `ScrollValue`).
 
 ## Turret mode wiring
 
-The rotation output leaves the block **on its arrow-marked top face only**. It is a
-separate kinetic network from the block's power input (horizontal faces) and from the
-cannon mount — it cannot leak into either.
+The rotation output leaves the block **on the arrow-marked face only** — the face the
+arrow texture points to. The arrow follows the block's placed axis (east for
+`axis=x`, south for `axis=z`, up for `axis=y`), and the output is a separate kinetic
+network from the block's power input and from the cannon mount — it cannot leak into
+either.
 
 ```
 [Mouse Aim Controller] --shaft--> [Energy Transmitter] ~wireless~ [Energy Transmitter] --shaft--> [Physics Bearing (facing up)]
@@ -73,21 +75,41 @@ Per server tick (`TurretYawController`):
 - The output face is a second kinetic persona on the same block position
   (`MouseAimOutputInterface`, the CBC `HasMultipleKineticInterfaces` trick): the
   main entity keeps the horizontal power connections, the persona is bound to the
-  top face via a synthetic `output=true` block state that never occurs in the world.
-  CBC's mixins on Create's `RotationPropagator` (plain `instanceof` checks) do the
-  routing; we only ship a compile-only stub.
+  arrow-marked face via a synthetic `output=true` block state that never occurs in
+  the world. CBC's mixins on Create's `RotationPropagator` (plain `instanceof`
+  checks) do the routing; we only ship a compile-only stub.
 - The sub-BE is a `GeneratingKineticBlockEntity`; `getGeneratedSpeed()` returns the
   PID output and `updateGeneratedRotation()` is called only when the command changes
   by more than 0.01 RPM to avoid network churn.
+- Network isolation: both personas sit at the same `BlockPos`, and Create keys
+  kinetic networks by `KineticBlockEntity.createNetworkId()` which defaults to the
+  block position. Without an override the output would merge into the main block's
+  power network and let the constant input RPM reach the turret. The persona
+  overrides `createNetworkId()` with a position-derived-but-distinct id so the
+  generated output forms its own isolated network.
+- Placement: inherits `RotatedPillarKineticBlock`'s Create-standard
+  `getStateForPlacement` (aligns to an adjacent shaft axis, else the player's look /
+  horizontal axis), so it orients like every other Create pillar block. The arrowed
+  output face is derived from the placed axis (`MouseAimBlock.getOutputFace`), kept
+  consistent with the blockstate's `axis` → model-rotation mapping (verified against
+  vanilla `BlockModelRotation` + JOML `rotateYXZ`: `axis=x` → east, `axis=z` →
+  south, `axis=y` → up).
 - Limitation: aiming while mounted **on the turret itself** is unsupported for yaw
   (the setpoint frame would rotate with the turret). Pitch still works.
 
 ## Test checklist (first in-game session)
 
 1. Cannon mode regression: aim + zeroing scroll behave exactly as before.
-2. Turret mode sign: with a bearing facing up, sweeping the aim right rotates the
+2. Wrench UI: hold a Create Wrench and right-click / scroll over the E/W faces to
+   switch Cannon ↔ Turret mode and the Z faces for the output strength value box.
+3. Placement: place against a shaft to auto-orient; the arrow ends up on the east
+   (`axis=x`), south (`axis=z`) or up (`axis=y`) face and matches the placed axis.
+4. Turret mode sign: with a bearing facing up, sweeping the aim right rotates the
    turret right. If inverted, set `turretAim.invert = true`.
-3. Strength levels 1–4: chase speed and oscillation feel.
-4. Wireless hop through Ender transmitters across the physics-bearing joint.
-5. Scope close / power off: turret coasts to a stop (no freeze, no jump).
-6. World reload: mode, strength and output network persist.
+5. Strength levels 1–4: chase speed and oscillation feel.
+6. Wireless hop through Ender transmitters across the physics-bearing joint.
+7. **No passthrough**: power the block's input at a constant RPM and confirm the
+   turret stops when on-target (the output network is isolated; the constant input
+   must not keep spinning the turret).
+8. Scope close / power off: turret coasts to a stop (no freeze, no jump).
+9. World reload: mode, strength and output network persist.
