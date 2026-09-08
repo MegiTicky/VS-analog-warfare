@@ -12,6 +12,7 @@
   ],
   "client": [
     "client.CameraMixin",
+    "client.ClientLevelMixin",
     "client.GameRendererMixin",
     "client.MouseHandlerMixin",
     "client.PoseStackMixin",

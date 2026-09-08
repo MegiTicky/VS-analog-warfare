@@ -83,6 +83,12 @@ public class InvisibleSeatBlock extends SeatBlock {
         }
         InvisibleSeatEntity seat = new InvisibleSeatEntity(world, pos);
         seat.setPos(pos.getX() + 0.5F, pos.getY(), pos.getZ() + 0.5F);
+        Object ship = com.erika.vsanalogwarfare.scope.compat.VsCompat.findShip(world, pos);
+        if (ship != null) {
+            Vec3 anchor = com.erika.vsanalogwarfare.scope.compat.VsCompat
+                    .worldToShipPosition(world, pos, new Vec3(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D));
+            seat.setShipAnchor(com.erika.vsanalogwarfare.scope.compat.VsCompat.getShipId(ship), anchor);
+        }
         world.addFreshEntity(seat);
         entity.startRiding(seat, true);
         if (entity instanceof TamableAnimal tamable) {
