@@ -4,8 +4,7 @@
 	"textures": {
 		"1": "create:block/gearbox",
 		"particle": "create:block/encased_chain_drive",
-		"side": "create:block/encased_chain_drive",
-		"arrow": "vs_analog_warfare:block/mouse_aim_output_arrow"
+		"side": "create:block/encased_chain_drive"
 	},
 	"elements": [
 		{
@@ -39,7 +38,7 @@
 				"east": {"uv": [0, 0, 2, 16], "rotation": 90, "texture": "#side"},
 				"south": {"uv": [0, 0, 16, 2], "texture": "#1"},
 				"west": {"uv": [14, 0, 16, 16], "rotation": 270, "texture": "#side"},
-				"up": {"uv": [0, 0, 16, 16], "texture": "#arrow"},
+				"up": {"uv": [0, 0, 16, 16], "texture": "#side"},
 				"down": {"uv": [0, 0, 16, 16], "texture": "#side"}
 			}
 		},

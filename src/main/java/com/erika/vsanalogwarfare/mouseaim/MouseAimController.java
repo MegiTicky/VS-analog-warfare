@@ -107,9 +107,11 @@ public final class MouseAimController {
     }
 
     private static Vec3 toMountLocal(Level level, BlockPos mountPos, Vec3 targetWorldDirection) {
-        if (VsCompat.isPlayerMountedToShip()) {
-            return targetWorldDirection;
-        }
+        // The packet direction is always world-frame (the client seeds its
+        // free-look angles from the world-frame sight direction), so it must
+        // be expressed in the mount ship's frame no matter where the player
+        // sits — feeding it through unchanged made the aim rotate along with
+        // the ship/turret the player is mounted on.
         return VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection);
     }
 
@@ -119,12 +121,7 @@ public final class MouseAimController {
                 || targetWorldDirection.lengthSqr() < 1.0e-8) return;
         BlockEntity mount = level.getBlockEntity(mountPos);
         if (!CbcCompat.isCannonMount(mount)) return;
-        Vec3 localTarget;
-        if (VsCompat.isPlayerMountedToShip()) {
-            localTarget = targetWorldDirection.normalize();
-        } else {
-            localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection.normalize());
-        }
+        Vec3 localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection.normalize());
         AimAngles desired = AimAngles.fromDirection(localTarget);
         float pitch = clampPitchToMount(mount, desired.pitch());
         writeYawPitch(mount, desired.yaw(), pitch);

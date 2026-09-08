@@ -13,10 +13,10 @@ import javax.annotation.Nullable;
  * The turret-mode rotation output of a {@link MouseAimBlockEntity}, hosted at
  * the same block position as an internal sub-block entity (the same trick CBC
  * uses for its yaw/pitch interfaces). Its synthetic block state carries
- * {@link MouseAimBlock#OUTPUT}, restricting it to the arrow-marked top face,
- * so the PID-generated RPM reaches only the network the player wires there
- * (shafts → Ender Energy Transmitters → Clockwork physics bearing) and never
- * leaks into the mount's power network on the horizontal faces.
+ * {@link MouseAimBlock#OUTPUT}, restricting it to the block's current output
+ * end (the input end's opposite), so the PID-generated RPM reaches only the
+ * network the player wires there (shafts → Ender Energy Transmitters →
+ * Clockwork physics bearing) and never leaks into the input power network.
  *
  * <p>This block entity is never placed in the world; like CBC's interfaces it
  * borrows the owning block's registered type and lives only as a field.
@@ -54,6 +54,20 @@ public class MouseAimOutputInterface extends GeneratingKineticBlockEntity {
     @Override
     public Long createNetworkId() {
         return worldPosition.asLong() ^ 0x51A7_3C0_FL;
+    }
+
+    /**
+     * Forces this generator's kinetic connections to re-resolve (server side).
+     * Called when the block's input end changes: Create only re-runs rotation
+     * propagation on block add/remove, so a flipped output face needs an
+     * explicit detach/re-attach cycle.
+     */
+    public void refreshConnections() {
+        if (level == null || level.isClientSide) {
+            return;
+        }
+        detachKinetics();
+        attachKinetics();
     }
 
     /** Exposes the protected kinetic serialization for the parent's NBT. */

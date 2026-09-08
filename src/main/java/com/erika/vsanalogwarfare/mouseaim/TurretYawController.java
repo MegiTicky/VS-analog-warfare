@@ -12,7 +12,6 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4dc;
 
-import javax.annotation.Nullable;
 import java.util.Optional;
 
 /**
@@ -24,10 +23,18 @@ import java.util.Optional;
  * the turret ship — so this class is a velocity servo, not a torque servo.
  *
  * <p>All angles are computed in <b>world space</b> (Minecraft azimuth,
- * {@code atan2(-x, z)}, degrees, wrapped to ±180). Working in world space
- * sidesteps VS2's ship-local axis conventions entirely: a setpoint captured in
- * the scope's ship frame is converted to world with that ship's tick
- * transform, and the bore is converted to world with the turret ship's.
+ * {@code atan2(-x, z)}, degrees, wrapped to ±180). The setpoint arrives from
+ * the client as a world-space direction (the free-look angles are seeded in
+ * world frame), and the bore is converted to world with the turret ship's
+ * tick transform.
+ *
+ * <p><b>Response shape:</b> War Thunder-style aim snap. The commanded speed is
+ * the strength's max RPM until the aim error enters the configured
+ * deceleration zone, then ramps down linearly onto the deadband — full-speed
+ * slew with a crisp stop, no asymptotic crawl near the crosshair. The
+ * derivative term damps the settle, the feed-forward term keeps tracking a
+ * sweeping aim, and the slew limiter keeps the physics bearing from being
+ * shocked.
  *
  * <p><b>Sign:</b> a Clockwork physics bearing facing up applies omega along
  * its facing normal, so positive RPM decreases the Minecraft azimuth
@@ -53,29 +60,14 @@ final class TurretYawController {
     /**
      * Computes this tick's output command.
      *
-     * @param targetDirection the aim direction from the client packet
-     * @param shipRelative    true when the client captured it in the scope
-     *                        ship's frame (player was mounted)
+     * @param targetDirection the aim direction from the client packet (world frame)
      * @return the commanded RPM, slew-limited; the previous output when the
-     *         setpoint or measurement cannot be resolved this tick
+     *         measurement cannot be resolved this tick
      */
-    float computeTargetRpm(MouseAimBlockEntity controller, @Nullable BlockPos scopePos, BlockPos mountPos,
-                           Vec3 targetDirection, boolean shipRelative) {
+    float computeTargetRpm(MouseAimBlockEntity controller, BlockPos mountPos, Vec3 targetDirection) {
         Level level = controller.getLevel();
         if (level == null) {
             return lastOutputRpm;
-        }
-
-        Vec3 setpointWorld = targetDirection;
-        if (shipRelative) {
-            if (scopePos == null) {
-                return lastOutputRpm;
-            }
-            Object scopeShip = VsCompat.findShip(level, scopePos);
-            if (scopeShip == null) {
-                return lastOutputRpm;
-            }
-            setpointWorld = VsCompat.shipToWorldDirection(scopeShip, targetDirection);
         }
 
         Object turretShip = VsCompat.findShip(level, mountPos);
@@ -94,7 +86,7 @@ final class TurretYawController {
             return lastOutputRpm;
         }
 
-        double setpointYaw = azimuthDeg(setpointWorld);
+        double setpointYaw = azimuthDeg(targetDirection);
         double measuredYaw = azimuthDeg(boreWorld);
         double err = wrapDegrees(setpointYaw - measuredYaw);
 
@@ -110,18 +102,25 @@ final class TurretYawController {
         prevErr = err;
         hasHistory = true;
 
-        double core = CommonConfig.turretKp() * err
-                + CommonConfig.turretKd() * derivativeLpf
-                + CommonConfig.turretFeedForward() * setpointRateLpf;
+        TurretStrength strength = controller.getTurretStrength();
+        float maxRpm = strength.maxRpm();
+        double gain = strength.gainMultiplier();
+        // Velocity-saturated proportional term: full strength speed until the
+        // error enters the deceleration zone, then a linear ramp onto the
+        // deadband — a constant max-speed slew like War Thunder's turret drive
+        // instead of a proportional crawl near the crosshair.
+        double snapGain = maxRpm * gain / Math.max(0.1D, CommonConfig.turretSnapDecelDeg());
+        double vProp = Mth.clamp(err * snapGain, -maxRpm, maxRpm);
+        double core = vProp
+                + CommonConfig.turretKd() * gain * derivativeLpf
+                + CommonConfig.turretFeedForward() * gain * setpointRateLpf;
         if (Math.abs(err) < CommonConfig.turretDeadbandDeg()
                 && Math.abs(setpointRateLpf) < HOLD_FEED_RATE_THRESHOLD) {
             core = 0.0D;
         }
 
-        TurretStrength strength = controller.getTurretStrength();
         float sign = CommonConfig.turretYawInvert() ? 1.0F : -1.0F;
-        float raw = (float) Mth.clamp(sign * core * strength.gainMultiplier(),
-                -strength.maxRpm(), strength.maxRpm());
+        float raw = (float) Mth.clamp(sign * core, -maxRpm, maxRpm);
         float slew = (float) CommonConfig.turretOutputSlewPerTick();
         lastOutputRpm = (float) Mth.clamp(raw, lastOutputRpm - slew, lastOutputRpm + slew);
 

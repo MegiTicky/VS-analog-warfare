@@ -28,29 +28,14 @@ public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<Mous
     /** Marker for the internal turret-output persona of this block. It is never
      * written into the world: only the synthetic block state handed to
      * {@link MouseAimOutputInterface} carries it, so that the output sub-block
-     * entity connects kinetically through the arrow-marked face alone, while the
-     * main block entity keeps its ordinary power connections.
+     * entity connects kinetically through the current output end alone, while
+     * the main block entity keeps its ordinary power connections.
      */
     public static final BooleanProperty OUTPUT = BooleanProperty.create("output");
 
     public MouseAimBlock(Properties properties) {
         super(properties);
         registerDefaultState(defaultBlockState().setValue(OUTPUT, Boolean.FALSE));
-    }
-
-    /**
-     * The face the turret-mode rotation leaves the block through — the face the
-     * arrow texture marks. It follows the block's placed {@link #AXIS} so the
-     * output is consistent with how the model rotates the arrow (see the
-     * blockstate's axis transforms): X → east, Z → south, Y → up. The opposite
-     * (negative) axis end is the single power input.
-     */
-    public static Direction getOutputFace(BlockState state) {
-        return switch (state.getValue(AXIS)) {
-            case X -> Direction.EAST;
-            case Z -> Direction.SOUTH;
-            default -> Direction.UP;
-        };
     }
 
     @Override
@@ -65,15 +50,16 @@ public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<Mous
         if (CbcCompat.isCannonMount(neighbor)) {
             return false;
         }
-        Direction outputFace = getOutputFace(state);
         if (state.getValue(OUTPUT)) {
-            // The turret-output persona only reaches through the arrow face.
-            return face == outputFace;
+            // The turret-output persona only reaches through the end opposite
+            // to wherever the power currently comes in.
+            return world.getBlockEntity(pos) instanceof MouseAimBlockEntity aim
+                    && face == aim.getOutputFace();
         }
-        // The power persona is purely in-line: a single input hole on the end
-        // opposite the arrowed output face, exactly like an encased chain drive.
-        return face.getAxis() == state.getValue(AXIS)
-                && face.getAxisDirection() == Direction.AxisDirection.NEGATIVE;
+        // The power persona is purely in-line: shafts may enter from either end
+        // of the axis (like an encased chain drive). Whichever end receives
+        // power is the input; the opposite end becomes the PID output.
+        return face.getAxis() == state.getValue(AXIS);
     }
 
     /**

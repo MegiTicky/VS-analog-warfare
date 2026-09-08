@@ -155,9 +155,39 @@ public final class ClientScopeState {
         freeLookEnabled = !freeLookEnabled;
         if (freeLookEnabled) {
             CameraPose pose = currentPose(1.0f);
-            freeLookYaw = pose.yaw();
-            freeLookPitch = (float)(pose.pitch() + getZeroPitch());
+            // Seed from the WORLD-frame sight direction. While the player is
+            // mounted the rig hands back ship-local yaw/pitch; seeding those
+            // raw made free look (and the turret aim fed from it) rotate along
+            // with the ship/turret the player rides on.
+            Vec3 sightDir = toWorldFrame(directionFromYawPitch(pose.yaw(), pose.pitch()));
+            freeLookYaw = yawFromDirection(sightDir);
+            freeLookPitch = (float) (pitchFromDirection(sightDir) + getZeroPitch());
         }
+    }
+
+    /** Ship-to-world direction conversion, honoring the player's mount state. */
+    private static Vec3 toWorldFrame(Vec3 direction) {
+        if (!com.erika.vsanalogwarfare.scope.compat.VsCompat.isPlayerMountedToShip()) {
+            return direction;
+        }
+        Level level = Minecraft.getInstance().level;
+        Object ship = level == null ? null
+                : com.erika.vsanalogwarfare.scope.compat.VsCompat.findShip(level, scopePos());
+        if (ship == null) {
+            return direction;
+        }
+        return com.erika.vsanalogwarfare.scope.compat.VsCompat.shipToWorldDirection(ship, direction);
+    }
+
+    /** Inverse of {@link #directionFromYawPitch}: Minecraft azimuth in degrees. */
+    private static float yawFromDirection(Vec3 direction) {
+        return (float) Math.toDegrees(Math.atan2(-direction.x, direction.z));
+    }
+
+    /** Inverse of {@link #directionFromYawPitch}: elevation in degrees (+ = up). */
+    private static float pitchFromDirection(Vec3 direction) {
+        double y = Math.max(-1.0D, Math.min(1.0D, direction.y));
+        return (float) -Math.toDegrees(Math.asin(y));
     }
 
 
@@ -411,13 +441,8 @@ public final class ClientScopeState {
         
         Vec3 direction;
         if (freeLookEnabled()) {
-            Vec3 freelookDir = freeLookDirection();
-            if (com.erika.vsanalogwarfare.scope.compat.VsCompat.isPlayerMountedToShip()) {
-                direction = com.erika.vsanalogwarfare.scope.compat.VsCompat
-                        .shipToWorldDirectionForRaycast(mc.level, mountPos, freelookDir);
-            } else {
-                direction = freelookDir;
-            }
+            // Free look angles are world-frame (see toggleFreeLook), mounted or not.
+            direction = freeLookDirection();
         } else {
             double zeroPitch = getZeroPitch();
             if (zeroPitch > 0) {

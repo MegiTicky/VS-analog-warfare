@@ -4,6 +4,7 @@ import com.erika.vsanalogwarfare.config.CommonConfig;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.level.Level;
@@ -24,14 +25,15 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     private BlockPos targetScopePos;
     @Nullable
     private Vec3 targetDirection;
-    /** True when {@link #targetDirection} was captured in the scope ship's frame. */
-    private boolean targetShipRelative;
     private long lastTargetGameTime = Long.MIN_VALUE;
 
     private final TurretYawController turretYaw = new TurretYawController();
     /** Latest commanded output, in Create RPM; read by the output interface. */
     private volatile float turretOutputRpm;
     private final MouseAimOutputInterface outputInterface;
+    /** Last seen input end; a change re-routes the output face. */
+    @Nullable
+    private Direction lastInputFace;
 
     /** Aim mode, set from the config screen. */
     private MouseAimMode mode = MouseAimMode.CANNON;
@@ -42,6 +44,32 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         super(ModBlockEntities.MOUSE_AIM.get(), pos, state);
         outputInterface = new MouseAimOutputInterface(ModBlockEntities.MOUSE_AIM.get(), pos,
                 state.setValue(MouseAimBlock.OUTPUT, Boolean.TRUE), this);
+    }
+
+    /**
+     * Direction from this block toward the end that currently powers it, or
+     * {@code null} when no shaft is driving it. Follows Create's
+     * {@code DirectionalShaftHalvesBlockEntity} pattern: the kinetic network
+     * records the source block we receive speed from.
+     */
+    @Nullable
+    public Direction getInputFace() {
+        if (!hasSource()) {
+            return null;
+        }
+        Vec3i offset = source.subtract(worldPosition);
+        Direction face = Direction.getNearest(offset.getX(), offset.getY(), offset.getZ());
+        return face.getAxis() == getBlockState().getValue(MouseAimBlock.AXIS) ? face : null;
+    }
+
+    /**
+     * Direction toward the current rotation-output end — the input end's
+     * opposite — or {@code null} when the block has no input.
+     */
+    @Nullable
+    public Direction getOutputFace() {
+        Direction input = getInputFace();
+        return input == null ? null : input.getOpposite();
     }
 
     public MouseAimMode getMode() {
@@ -82,6 +110,13 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         if (level == null || level.isClientSide) {
             return;
         }
+        // Create only re-runs rotation propagation on block add/remove, so a
+        // flipped input end needs an explicit re-route of the output network.
+        Direction inputFace = getInputFace();
+        if (inputFace != lastInputFace) {
+            lastInputFace = inputFace;
+            outputInterface.refreshConnections();
+        }
         if (getMode() == MouseAimMode.CANNON) {
             float idleRpm = turretYaw.idle();
             if (idleRpm == 0.0F) {
@@ -116,7 +151,7 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         }
         Vec3 target = targetDirection.normalize();
         MouseAimController.tickTurretPitch(this, targetMountPos, target, getMouseAimRateDegreesPerTick());
-        applyTurretOutput(turretYaw.computeTargetRpm(this, targetScopePos, targetMountPos, target, targetShipRelative));
+        applyTurretOutput(turretYaw.computeTargetRpm(this, targetMountPos, target));
     }
 
     private void applyTurretOutput(float rpm) {
@@ -134,12 +169,11 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         return Math.abs(convertToAngular(getSpeed())) * CommonConfig.mouseAimRateMultiplier();
     }
 
-    public void setTarget(UUID playerId, BlockPos mountPos, BlockPos scopePos, Vec3 direction, boolean shipRelative) {
+    public void setTarget(UUID playerId, BlockPos mountPos, BlockPos scopePos, Vec3 direction) {
         this.targetPlayer = playerId;
         this.targetMountPos = mountPos.immutable();
         this.targetScopePos = scopePos.immutable();
         this.targetDirection = direction.normalize();
-        this.targetShipRelative = shipRelative;
         this.lastTargetGameTime = level == null ? 0L : level.getGameTime();
         setChanged();
     }
@@ -159,7 +193,6 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         this.targetMountPos = null;
         this.targetScopePos = null;
         this.targetDirection = null;
-        this.targetShipRelative = false;
         this.lastTargetGameTime = Long.MIN_VALUE;
         this.turretYaw.reset();
         setChanged();
@@ -179,9 +212,8 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     @Nullable
     @Override
     public KineticBlockEntity getInterfacingBlockEntity(BlockPos from) {
-        Vec3i outputOffset = MouseAimBlock.getOutputFace(
-                getBlockState()).getNormal();
-        if (from.subtract(worldPosition).equals(outputOffset)) {
+        Direction outputFace = getOutputFace();
+        if (outputFace != null && from.subtract(worldPosition).equals(outputFace.getNormal())) {
             return outputInterface;
         }
         return null;

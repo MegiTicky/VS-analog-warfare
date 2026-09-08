@@ -2,19 +2,15 @@
   "variants": {
     "axis=x": {
       "model": "vs_analog_warfare:block/mouse_aim_block",
-      "uvlock": true,
       "x": 90,
       "y": 90
     },
     "axis=y": {
       "model": "vs_analog_warfare:block/mouse_aim_block",
-      "uvlock": true
+      "x": 90
     },
     "axis=z": {
-      "model": "vs_analog_warfare:block/mouse_aim_block",
-      "uvlock": true,
-      "x": 90,
-      "y": 180
+      "model": "vs_analog_warfare:block/mouse_aim_block"
     }
   }
 }
