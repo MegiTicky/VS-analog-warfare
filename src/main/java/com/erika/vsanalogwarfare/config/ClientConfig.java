@@ -8,6 +8,7 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.BooleanValue DISABLE_PLAYER_BLOCK_INTERACTION_WHILE_SCOPED;
     public static final ForgeConfigSpec.IntValue ZEROING_STEP;
     public static final ForgeConfigSpec.BooleanValue IGNORE_TALLYHO_ENTITY_PLACEMENT;
+    public static final ForgeConfigSpec.BooleanValue SCOPE_MOUNTED_ROTATION_COMPENSATION;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -21,6 +22,11 @@ public final class ClientConfig {
         ZEROING_STEP = builder
                 .comment("Distance increment (in meters) when adjusting sight zero with scroll wheel while holding the zeroing key.")
                 .defineInRange("zeroingStep", 50, 10, 500);
+        SCOPE_MOUNTED_ROTATION_COMPENSATION = builder
+                .comment("When true and the player is seated on a ship, the scope camera pre-divides its world-frame\n"
+                        + "orientation by the ship's render rotation so Valkyrien Skies' mounted-camera transform\n"
+                        + "cancels exactly. Keeps free-look and the scope locked to world-space angles on ships.")
+                .define("scopeMountedRotationCompensation", true);
         builder.pop();
         builder.push("actionToIgnore");
         IGNORE_TALLYHO_ENTITY_PLACEMENT = builder
@@ -47,5 +53,9 @@ public final class ClientConfig {
 
     public static boolean ignoreTallyhoEntityPlacement() {
         return IGNORE_TALLYHO_ENTITY_PLACEMENT.get();
+    }
+
+    public static boolean scopeMountedRotationCompensation() {
+        return SCOPE_MOUNTED_ROTATION_COMPENSATION.get();
     }
 }

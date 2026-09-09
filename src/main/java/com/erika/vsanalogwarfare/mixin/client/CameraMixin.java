@@ -76,20 +76,25 @@ public abstract class CameraMixin {
         if (!ClientScopeState.active()) {
             return;
         }
+        // Deliberately no ship pre-rotation here: the ship component of VS's
+        // mounted-camera transform is already canceled by the compensated
+        // angles fed to ComputeCameraAngles (see ClientScopeState). The pure
+        // world-frame pose below is exactly what the frame renders, so it is
+        // also what camera.rotation / yaw / pitch must report.
         CameraPose pose = ClientScopeState.cameraPose(partialTick);
         Vec3 cameraPosition = pose.position();
-        float yaw = pose.yaw();
-        float pitch = pose.pitch();
         Quaternionf scopeRotation = new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize();
         m_90581_(cameraPosition);
-
-        m_90572_(yaw, pitch);
-        this.f_90558_ = yaw;
-        this.f_90557_ = pitch;
 
         this.f_90559_.set(scopeRotation).normalize();
         this.f_90554_.set(0.0f, 0.0f, 1.0f).rotate(this.f_90559_);
         this.f_90555_.set(0.0f, 1.0f, 0.0f).rotate(this.f_90559_);
         this.f_90556_.set(1.0f, 0.0f, 0.0f).rotate(this.f_90559_);
+        Vector3f forward = new Vector3f(this.f_90554_).normalize();
+        float worldYaw = (float) Math.toDegrees(Math.atan2(-forward.x(), forward.z()));
+        float worldPitch = (float) -Math.toDegrees(Math.asin(Math.max(-1.0f, Math.min(1.0f, forward.y()))));
+        m_90572_(worldYaw, worldPitch);
+        this.f_90558_ = worldYaw;
+        this.f_90557_ = worldPitch;
     }
 }

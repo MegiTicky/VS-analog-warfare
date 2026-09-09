@@ -88,6 +88,19 @@ public final class VsCompat {
             () -> () -> VsCompatClient.isPlayerMountedToShip(getShipMountedToMethod));
     }
 
+    /**
+     * Rotation (ship-local to world) of the ship the local player is currently
+     * mounted to, taken from the same interpolated render transform VS2 uses
+     * for its mounted-camera transform. Null when not mounted, VS is absent,
+     * or the rotation cannot be resolved.
+     */
+    public static org.joml.Quaternionf playerMountedShipRotation() {
+        if (!isClientSide) return null;
+        if (getShipMountedToMethod == null) return null;
+        return DistExecutor.unsafeCallWhenOn(Dist.CLIENT,
+            () -> () -> VsCompatClient.playerMountedShipRotation(getShipMountedToMethod));
+    }
+
     public static Optional<Long> findShipId(Level level, BlockPos pos) {
         Object ship = findShip(level, pos);
         if (ship == null) {
@@ -130,10 +143,15 @@ public final class VsCompat {
         return transformed == null ? worldPosition : new Vec3(transformed.x, transformed.y, transformed.z);
     }
 
+    /**
+     * Ship-local to world direction through the render transform of the ship
+     * managing {@code anchorPos}. Always transforms: every caller passes a
+     * ship-local CBC direction, and with the seat-rotation-compensated camera
+     * the sight data must be true world-frame (the old mounted bypass that
+     * returned the direction untransformed froze the cannon crosshair while
+     * the ship rotated and mis-seeded free look on rotated ships).
+     */
     public static Vec3 shipToWorldDirection(Level level, BlockPos anchorPos, Vec3 localDirection) {
-        if (isPlayerMountedToShip()) {
-            return localDirection.normalize();
-        }
         Object ship = findShip(level, anchorPos);
         if (ship == null) {
             return localDirection.normalize();

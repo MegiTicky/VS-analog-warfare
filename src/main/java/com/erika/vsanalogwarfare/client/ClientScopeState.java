@@ -48,6 +48,13 @@ public final class ClientScopeState {
     private static float cachedPartialTick = Float.NaN;
     private static CameraPose cachedSightPose = fallbackPose;
     private static CameraPose cachedCameraPose = fallbackPose;
+    // Angles actually fed to the camera this frame. When the player is mounted
+    // to a ship these pre-divide the world-frame pose by the ship's render
+    // rotation, so VS2's mounted-camera transform cancels exactly. Render-only:
+    // freeLookYaw/freeLookPitch and the aim packet stay world-frame.
+    private static float cachedRenderYaw;
+    private static float cachedRenderPitch;
+    private static float cachedRenderRoll;
 
     private static double cachedZeroPitch = 0.0;
     private static boolean zeroPitchDirty = true;
@@ -139,6 +146,27 @@ public final class ClientScopeState {
     public static CameraPose cameraPose(float partialTick) {
         ensureCached(partialTick);
         return cachedCameraPose;
+    }
+
+
+    /** Yaw actually rendered this frame: world-frame yaw with VS seat-rotation compensation applied. */
+    public static float renderYaw(float partialTick) {
+        ensureCached(partialTick);
+        return cachedRenderYaw;
+    }
+
+
+    /** Pitch actually rendered this frame: world-frame pitch with VS seat-rotation compensation applied. */
+    public static float renderPitch(float partialTick) {
+        ensureCached(partialTick);
+        return cachedRenderPitch;
+    }
+
+
+    /** Roll actually rendered this frame: world-frame roll with VS seat-rotation compensation applied. */
+    public static float renderRoll(float partialTick) {
+        ensureCached(partialTick);
+        return cachedRenderRoll;
     }
 
 
@@ -259,16 +287,22 @@ public final class ClientScopeState {
 
 
     public static float roll(CameraPose pose) {
-        Quaternionf desired = new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize();
+        return rollOf(new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize(),
+                pose.yaw(), pose.pitch());
+    }
+
+
+    /** Twist of {@code rotation} about its forward axis relative to the upright yaw/pitch basis, in degrees. */
+    public static float rollOf(Quaternionf rotation, float yawDeg, float pitchDeg) {
         Quaternionf upright = new Quaternionf().rotationYXZ(
-                (float) Math.toRadians(-pose.yaw()),
-                (float) Math.toRadians(pose.pitch()),
+                (float) Math.toRadians(-yawDeg),
+                (float) Math.toRadians(pitchDeg),
                 0.0f
         );
 
         Vector3f forward = upright.transform(new Vector3f(0.0f, 0.0f, 1.0f)).normalize();
         Vector3f uprightUp = upright.transform(new Vector3f(0.0f, 1.0f, 0.0f)).normalize();
-        Vector3f desiredUp = desired.transform(new Vector3f(0.0f, 1.0f, 0.0f)).normalize();
+        Vector3f desiredUp = rotation.transform(new Vector3f(0.0f, 1.0f, 0.0f)).normalize();
 
         float sin = forward.dot(uprightUp.cross(desiredUp, new Vector3f()));
         float cos = uprightUp.dot(desiredUp);
@@ -359,7 +393,7 @@ public final class ClientScopeState {
     private static void ensureCached(float partialTick) {
         if (!active) {
             cachedSightPose = fallbackPose;
-            cachedCameraPose = fallbackPose;
+            applyCachedCameraPose(fallbackPose);
             cachedFrameId = Integer.MIN_VALUE;
             cachedPartialTick = Float.NaN;
             return;
@@ -375,14 +409,14 @@ public final class ClientScopeState {
 
         if (level == null || scopePos == null || mountPos == null || !level.isLoaded(scopePos)) {
             cachedSightPose = fallbackPose;
-            cachedCameraPose = fallbackPose;
+            applyCachedCameraPose(fallbackPose);
             return;
         }
 
         BlockEntity blockEntity = level.getBlockEntity(scopePos);
         if (!(blockEntity instanceof ScopeBlockEntity scope)) {
             cachedSightPose = fallbackPose;
-            cachedCameraPose = fallbackPose;
+            applyCachedCameraPose(fallbackPose);
             return;
         }
 
@@ -396,22 +430,47 @@ public final class ClientScopeState {
             // FreeLook is OFF: Counter-rotate the camera down to match the gun elevating!
             double zeroPitch = getZeroPitch();
             if (zeroPitch > 0) {
-                cachedCameraPose = CameraPose.looking(
+                applyCachedCameraPose(CameraPose.looking(
                         cachedSightPose.position(),
                         directionFromYawPitch(cachedSightPose.yaw(), (float)(cachedSightPose.pitch() + zeroPitch)),
                         cachedSightPose.up()
-                );
+                ));
             } else {
-                cachedCameraPose = cachedSightPose;
+                applyCachedCameraPose(cachedSightPose);
             }
         } else {
             // FreeLook is ON - use sight pose's up to preserve roll from ship orientation
-            cachedCameraPose = CameraPose.looking(
+            applyCachedCameraPose(CameraPose.looking(
                     cachedSightPose.position(),
                     directionFromYawPitch(freeLookYaw, freeLookPitch),
                     cachedSightPose.up()
-            );
+            ));
         }
+    }
+
+    /**
+     * Caches the camera pose and derives the render angles from it. While the
+     * player is mounted to a ship, VS2 appends the ship's render rotation to
+     * the camera after our angles are consumed (mounted-camera transform at
+     * prepareCullFrustum). Feeding it {@code Q_ship⁻¹ · Q_world} therefore
+     * renders exactly {@code Q_world}, keeping free-look and the scope locked
+     * to world-space angles on rotating ships. The same interpolated render
+     * transform quaternion VS2 itself uses is taken for the pre-division, so
+     * the cancellation is exact (no lag, no drift, roll handled correctly).
+     */
+    private static void applyCachedCameraPose(CameraPose pose) {
+        cachedCameraPose = pose;
+        Quaternionf rotation = new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize();
+        if (ClientConfig.scopeMountedRotationCompensation()) {
+            Quaternionf shipRotation = com.erika.vsanalogwarfare.scope.compat.VsCompat.playerMountedShipRotation();
+            if (shipRotation != null) {
+                rotation = shipRotation.conjugate().mul(rotation).normalize();
+            }
+        }
+        Vector3f forward = rotation.transform(new Vector3f(0.0f, 0.0f, 1.0f)).normalize();
+        cachedRenderYaw = (float) Math.toDegrees(Math.atan2(-forward.x(), forward.z()));
+        cachedRenderPitch = (float) -Math.toDegrees(Math.asin(Math.max(-1.0f, Math.min(1.0f, forward.y()))));
+        cachedRenderRoll = rollOf(rotation, cachedRenderYaw, cachedRenderPitch);
     }
 
     public static void triggerRangefinder() {

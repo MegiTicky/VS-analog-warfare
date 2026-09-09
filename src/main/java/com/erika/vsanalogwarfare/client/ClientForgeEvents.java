@@ -70,10 +70,12 @@ public final class ClientForgeEvents {
             return;
         }
         float partialTick = (float) event.getPartialTick();
-        CameraPose pose = ClientScopeState.cameraPose(partialTick);
-        event.setYaw(pose.yaw());
-        event.setPitch(pose.pitch());
-        event.setRoll(ClientScopeState.roll(pose));
+        // While mounted to a ship these angles carry the inverse of the ship's
+        // seat rotation, so the transform VS2 appends at prepareCullFrustum
+        // cancels and the world-frame scope/free-look pose is what renders.
+        event.setYaw(ClientScopeState.renderYaw(partialTick));
+        event.setPitch(ClientScopeState.renderPitch(partialTick));
+        event.setRoll(ClientScopeState.renderRoll(partialTick));
     }
 
     @SubscribeEvent
