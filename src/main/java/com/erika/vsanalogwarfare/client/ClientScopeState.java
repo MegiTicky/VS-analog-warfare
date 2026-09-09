@@ -155,28 +155,12 @@ public final class ClientScopeState {
         freeLookEnabled = !freeLookEnabled;
         if (freeLookEnabled) {
             CameraPose pose = currentPose(1.0f);
-            // Seed from the WORLD-frame sight direction. While the player is
-            // mounted the rig hands back ship-local yaw/pitch; seeding those
-            // raw made free look (and the turret aim fed from it) rotate along
-            // with the ship/turret the player rides on.
-            Vec3 sightDir = toWorldFrame(directionFromYawPitch(pose.yaw(), pose.pitch()));
-            freeLookYaw = yawFromDirection(sightDir);
-            freeLookPitch = (float) (pitchFromDirection(sightDir) + getZeroPitch());
+            // The scope rig already returns a world-space pose, including the
+            // ship transform. Seed from it directly so mounted free look is not
+            // transformed a second time.
+            freeLookYaw = pose.yaw();
+            freeLookPitch = (float) (pose.pitch() + getZeroPitch());
         }
-    }
-
-    /** Ship-to-world direction conversion, honoring the player's mount state. */
-    private static Vec3 toWorldFrame(Vec3 direction) {
-        if (!com.erika.vsanalogwarfare.scope.compat.VsCompat.isPlayerMountedToShip()) {
-            return direction;
-        }
-        Level level = Minecraft.getInstance().level;
-        Object ship = level == null ? null
-                : com.erika.vsanalogwarfare.scope.compat.VsCompat.findShip(level, scopePos());
-        if (ship == null) {
-            return direction;
-        }
-        return com.erika.vsanalogwarfare.scope.compat.VsCompat.shipToWorldDirection(ship, direction);
     }
 
     /** Inverse of {@link #directionFromYawPitch}: Minecraft azimuth in degrees. */

@@ -88,7 +88,7 @@ final class TurretYawController {
 
         double setpointYaw = azimuthDeg(targetDirection);
         double measuredYaw = azimuthDeg(boreWorld);
-        double err = wrapDegrees(setpointYaw - measuredYaw);
+        double err = horizontalErrorDeg(targetDirection, boreWorld);
 
         double derivative = hasHistory ? wrapDegrees(err - prevErr) : 0.0D;
         double setpointRate = 0.0D;
@@ -152,6 +152,22 @@ final class TurretYawController {
 
     float lastOutputRpm() {
         return lastOutputRpm;
+    }
+
+    private static double horizontalErrorDeg(Vec3 target, Vec3 bore) {
+        double targetLength = target.horizontalDistance();
+        double boreLength = bore.horizontalDistance();
+        if (targetLength < 1.0e-6 || boreLength < 1.0e-6) {
+            return 0.0D;
+        }
+
+        double targetX = target.x / targetLength;
+        double targetZ = target.z / targetLength;
+        double boreX = bore.x / boreLength;
+        double boreZ = bore.z / boreLength;
+        double sin = targetZ * boreX - targetX * boreZ;
+        double cos = targetX * boreX + targetZ * boreZ;
+        return Math.toDegrees(Math.atan2(sin, cos));
     }
 
     private static double azimuthDeg(Vec3 direction) {
