@@ -2,7 +2,6 @@
   "variants": {
     "axis=x": {
       "model": "vs_analog_warfare:block/mouse_aim_block",
-      "x": 90,
       "y": 90
     },
     "axis=y": {

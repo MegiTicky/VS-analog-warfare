@@ -213,10 +213,12 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     @Override
     public KineticBlockEntity getInterfacingBlockEntity(BlockPos from) {
         Direction outputFace = getOutputFace();
-        if (outputFace != null && from.subtract(worldPosition).equals(outputFace.getNormal())) {
-            return outputInterface;
+        if (outputFace == null) {
+            return null;
         }
-        return null;
+        BlockPos outputOffset = BlockPos.ZERO.relative(outputFace);
+        return from.equals(outputOffset) || from.equals(BlockPos.ZERO.subtract(outputOffset))
+                ? outputInterface : null;
     }
 
     @Override
