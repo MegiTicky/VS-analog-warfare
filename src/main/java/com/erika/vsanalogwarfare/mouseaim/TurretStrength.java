@@ -11,8 +11,8 @@ import com.simibubi.create.foundation.utility.Lang;
  * <p>The RPM output is a velocity command: the Clockwork physics bearing
  * converts it into torque against the turret's inertia internally. Strength
  * therefore tunes the control loop, not the raw torque — it scales the
- * maximum slew speed together with the approach stiffness (how sharply the
- * output decelerates into the target). Fine tuning of the deceleration zone
+ * maximum slew speed together with the braking deceleration (how far out the
+ * output starts slowing into the target). Fine tuning of the braking profile
  * and individual gains lives in the common config under {@code turretAim}.
  */
 public enum TurretStrength implements INamedIconOptions {

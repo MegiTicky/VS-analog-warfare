@@ -23,7 +23,7 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.BooleanValue STABILIZER_DEBUG;
     public static final ForgeConfigSpec.BooleanValue STABILIZER_RENDER_LOCK;
 
-    public static final ForgeConfigSpec.DoubleValue TURRET_SNAP_DECEL_DEG;
+    public static final ForgeConfigSpec.DoubleValue TURRET_BRAKE_ACCEL;
     public static final ForgeConfigSpec.DoubleValue TURRET_KD;
     public static final ForgeConfigSpec.DoubleValue TURRET_FEED_FORWARD;
     public static final ForgeConfigSpec.DoubleValue TURRET_DEADBAND_DEG;
@@ -116,11 +116,13 @@ public final class CommonConfig {
         builder.pop();
 
         builder.push("turretAim");
-        TURRET_SNAP_DECEL_DEG = builder
-                .comment("War-Thunder-style aim snap: the turret yaw output runs at full strength speed "
-                        + "until the aim error enters this deceleration zone (degrees), then ramps down "
-                        + "linearly onto the deadband. Smaller = harder snap. Replaces the old kp.")
-                .defineInRange("snapDecelDeg", 3.0D, 0.5D, 30.0D);
+        TURRET_BRAKE_ACCEL = builder
+                .comment("Deceleration the turret yaw braking profile assumes, in degrees per tick "
+                        + "squared. Once the aim error is inside the stopping distance the commanded "
+                        + "speed follows v = sqrt(2 * accel * error), so the turret can actually stop "
+                        + "on the crosshair. Raise it if the turret slows too early on approach; "
+                        + "lower it if it still swings past the crosshair.")
+                .defineInRange("brakeAccelDegPerTick2", 0.3D, 0.05D, 5.0D);
         TURRET_KD = builder
                 .comment("Turret-mode yaw servo derivative gain: damping RPM per degree-per-tick of "
                         + "error change, before the block's strength scaling.")
@@ -175,7 +177,7 @@ public final class CommonConfig {
     public static boolean stabilizerDebug() { return STABILIZER_DEBUG.get(); }
     public static boolean stabilizerRenderLock() { return STABILIZER_RENDER_LOCK.get(); }
 
-    public static double turretSnapDecelDeg() { return TURRET_SNAP_DECEL_DEG.get(); }
+    public static double turretBrakeAccelDegPerTick2() { return TURRET_BRAKE_ACCEL.get(); }
     public static double turretKd() { return TURRET_KD.get(); }
     public static double turretFeedForward() { return TURRET_FEED_FORWARD.get(); }
     public static double turretDeadbandDeg() { return TURRET_DEADBAND_DEG.get(); }

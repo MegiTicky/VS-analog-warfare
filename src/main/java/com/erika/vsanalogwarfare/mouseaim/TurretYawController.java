@@ -29,9 +29,11 @@ import java.util.Optional;
  * tick transform.
  *
  * <p><b>Response shape:</b> War Thunder-style aim snap. The commanded speed is
- * the strength's max RPM until the aim error enters the configured
- * deceleration zone, then ramps down linearly onto the deadband — full-speed
- * slew with a crisp stop, no asymptotic crawl near the crosshair. The
+ * the strength's max RPM while the error is large, then follows a square-root
+ * braking profile {@code v = sqrt(2 * brakeAccel * error)} so the commanded
+ * deceleration starts early enough for the slew limit and the physics
+ * bearing's inertia to actually stop on target — a fixed small deceleration
+ * zone saturates the command into a relay and pumps a growing swing. The
  * derivative term damps the settle, the feed-forward term keeps tracking a
  * sweeping aim, and the slew limiter keeps the physics bearing from being
  * shocked.
@@ -47,7 +49,7 @@ final class TurretYawController {
     private static final float FEED_FORWARD_SMTH = 0.3F;
     private static final float ZERO_SPEED_EPSILON_RPM = 0.01F;
     private static final float HOLD_FEED_RATE_THRESHOLD = 0.05F;
-    private static final int DEBUG_PERIOD_TICKS = 20;
+    private static final int DEBUG_PERIOD_TICKS = 4;
 
     private double prevErr;
     private double prevSetpointYaw;
@@ -105,12 +107,15 @@ final class TurretYawController {
         TurretStrength strength = controller.getTurretStrength();
         float maxRpm = strength.maxRpm();
         double gain = strength.gainMultiplier();
-        // Velocity-saturated proportional term: full strength speed until the
-        // error enters the deceleration zone, then a linear ramp onto the
-        // deadband — a constant max-speed slew like War Thunder's turret drive
-        // instead of a proportional crawl near the crosshair.
-        double snapGain = maxRpm * gain / Math.max(0.1D, CommonConfig.turretSnapDecelDeg());
-        double vProp = Mth.clamp(err * snapGain, -maxRpm, maxRpm);
+        // Braking-distance profile: full strength speed until the error gets
+        // within the stopping distance the commanded deceleration can cover
+        // (v = sqrt(2 a d)), then a square-root ramp onto the deadband. The
+        // stop must begin tens of degrees out — a small fixed zone saturates
+        // the command into a relay and pumps the swing through the target.
+        double brakingErr = Math.max(0.0D,
+                Math.abs(err) - CommonConfig.turretDeadbandDeg());
+        double vBrake = Math.sqrt(2.0D * CommonConfig.turretBrakeAccelDegPerTick2() * brakingErr);
+        double vProp = Math.signum(err) * Math.min(maxRpm, gain * vBrake);
         double core = vProp
                 + CommonConfig.turretKd() * gain * derivativeLpf
                 + CommonConfig.turretFeedForward() * gain * setpointRateLpf;
@@ -124,7 +129,7 @@ final class TurretYawController {
         float slew = (float) CommonConfig.turretOutputSlewPerTick();
         lastOutputRpm = (float) Mth.clamp(raw, lastOutputRpm - slew, lastOutputRpm + slew);
 
-        debugTick(controller, err, setpointYaw, measuredYaw, lastOutputRpm);
+        debugTick(controller, err, setpointYaw, measuredYaw, raw, lastOutputRpm);
         return lastOutputRpm;
     }
 
@@ -181,7 +186,8 @@ final class TurretYawController {
         return value;
     }
 
-    private void debugTick(MouseAimBlockEntity controller, double err, double setpointYaw, double measuredYaw, float rpm) {
+    private void debugTick(MouseAimBlockEntity controller, double err, double setpointYaw,
+                           double measuredYaw, float rawRpm, float slewedRpm) {
         if (!CommonConfig.turretDebug()) {
             return;
         }
@@ -189,9 +195,9 @@ final class TurretYawController {
             return;
         }
         debugTimer = 0;
-        VSAnalogWarfare.LOGGER.info("[VSAW_TURRET] {} set={} meas={} err={} rpm={}",
+        VSAnalogWarfare.LOGGER.info("[VSAW_TURRET] {} set={} meas={} err={} raw={} rpm={}",
                 controller.getBlockPos(), String.format("%.2f", setpointYaw),
                 String.format("%.2f", measuredYaw), String.format("%.2f", err),
-                String.format("%.2f", rpm));
+                String.format("%.2f", rawRpm), String.format("%.2f", slewedRpm));
     }
 }
