@@ -59,14 +59,14 @@ public final class ClientForgeEvents {
 
     @SubscribeEvent
     public static void onComputeFov(ViewportEvent.ComputeFov event) {
-        if (ClientScopeState.active()) {
+        if (ClientScopeState.scopeViewActive()) {
             event.setFOV(ClientScopeState.fov());
         }
     }
 
     @SubscribeEvent
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
-        if (!ClientScopeState.active()) {
+        if (!ClientScopeState.scopeViewActive()) {
             return;
         }
         float partialTick = (float) event.getPartialTick();
@@ -120,6 +120,8 @@ public final class ClientForgeEvents {
             }
             while (ClientKeyMappings.SCOPE_RANGEFINDER.consumeClick()) {
             }
+            while (ClientKeyMappings.SCOPE_VIEW_TOGGLE.consumeClick()) {
+            }
             return;
         }
         while (ClientKeyMappings.SCOPE_ZOOM.consumeClick()) {
@@ -131,11 +133,17 @@ public final class ClientForgeEvents {
         while (ClientKeyMappings.SCOPE_RANGEFINDER.consumeClick()) {
             ClientScopeState.triggerRangefinder();
         }
+        while (ClientKeyMappings.SCOPE_VIEW_TOGGLE.consumeClick()) {
+            ClientScopeState.toggleViewMode();
+        }
         sendMouseAimTargetIfNeeded();
     }
 
     private static void sendMouseAimTargetIfNeeded() {
-        if (!ClientScopeState.freeLookEnabled()) {
+        boolean thirdPerson = ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON;
+        // Third person aims 1:1 from the player's live look direction; scope view
+        // uses the free-look direction with ballistic zero applied.
+        if (!thirdPerson && !ClientScopeState.freeLookEnabled()) {
             mouseAimPacketCooldown = 0;
             return;
         }
@@ -149,7 +157,13 @@ public final class ClientForgeEvents {
         if (scopePos == null || mountPos == null) {
             return;
         }
-        Vec3 direction = ClientScopeState.zeroedFreeLookDirection();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        Vec3 direction = thirdPerson
+                ? mc.player.getLookAngle()
+                : ClientScopeState.zeroedFreeLookDirection();
         ModNetwork.sendToServer(new MouseAimTargetPacket(scopePos, mountPos, direction.x, direction.y, direction.z));
     }
 
@@ -196,6 +210,13 @@ public final class ClientForgeEvents {
         Minecraft mc = Minecraft.getInstance();
         int screenW = event.getWindow().getGuiScaledWidth();
         int screenH = event.getWindow().getGuiScaledHeight();
+        if (ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON) {
+            // The scope session is still live in third-person view; show a minimal
+            // hint instead of the scope HUD so the mode is not mistaken for an exit.
+            graphics.drawString(mc.font, "Third-Person View  [B] Scope  [Shift] Exit", 6, 6, 0xFF80FF80);
+            drawFreeLookTargetCircle(graphics, screenW, screenH);
+            return;
+        }
         int[] scopeRect = fitScopeRect(screenW, screenH);
         int scopeX = scopeRect[0];
         int scopeY = scopeRect[1];
@@ -228,7 +249,10 @@ public final class ClientForgeEvents {
     }
 
     private static void drawFreeLookTargetCircle(GuiGraphics graphics, int screenW, int screenH) {
-        if (!ClientScopeState.freeLookEnabled()) {
+        // Third-person view always shows the center cross (it marks the aim point);
+        // scope view only shows it while free look is steering the camera.
+        boolean thirdPerson = ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON;
+        if (!thirdPerson && !ClientScopeState.freeLookEnabled()) {
             return;
         }
         int cx = screenW / 2;

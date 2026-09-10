@@ -53,7 +53,7 @@ public abstract class GameRendererMixin {
             long finishTimeNano,
             PoseStack matrixStack) {
 
-        if (ClientScopeState.active()) {
+        if (ClientScopeState.scopeViewActive()) {
             if (!loggedSkip) {
                 loggedSkip = true;
                 // Note: this wrapper does NOT bypass VS - original.call() still

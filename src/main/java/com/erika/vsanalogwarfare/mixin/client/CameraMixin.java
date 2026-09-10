@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.mixin.client;
 
 import com.erika.vsanalogwarfare.client.ClientScopeState;
 import com.erika.vsanalogwarfare.client.ScopeDebug;
+import com.erika.vsanalogwarfare.config.ClientConfig;
 import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
 import net.minecraft.client.Camera;
@@ -55,6 +56,7 @@ public abstract class CameraMixin {
     @Inject(method = "m_90575_", at = @At("TAIL"), remap = false)
     private void vs_analog_warfare$useVirtualScopeView(BlockGetter level, Entity entity, boolean detached, boolean mirror, float partialTick, CallbackInfo ci) {
         vs_analog_warfare$applyVirtualScopeView(partialTick);
+        vs_analog_warfare$applyThirdPersonLift(detached);
         if (ClientScopeState.active()) {
             ScopeDebug.cameraHook("vanilla", null, (Camera) (Object) this);
         }
@@ -67,13 +69,14 @@ public abstract class CameraMixin {
                                                                           Vector3dc inShipPlayerPosition,
                                                                           CallbackInfo ci) {
         vs_analog_warfare$applyVirtualScopeView(partialTicks);
+        vs_analog_warfare$applyThirdPersonLift(thirdPerson);
         if (ClientScopeState.active()) {
             ScopeDebug.cameraHook("vs-mounted", shipMountedTo, (Camera) (Object) this);
         }
     }
 
     private void vs_analog_warfare$applyVirtualScopeView(float partialTick) {
-        if (!ClientScopeState.active()) {
+        if (!ClientScopeState.scopeViewActive()) {
             return;
         }
         // Deliberately no ship pre-rotation here: the ship component of VS's
@@ -96,5 +99,23 @@ public abstract class CameraMixin {
         m_90572_(worldYaw, worldPitch);
         this.f_90558_ = worldYaw;
         this.f_90557_ = worldPitch;
+    }
+
+    /**
+     * Scope-session third-person view: keep VS's orbit/collision result untouched
+     * and raise the origin in world Y so the vehicle hull below does not block
+     * the view. Applied after both vanilla and VS mounted setups; when the player
+     * is ship-mounted VS overwrites the vanilla setup afterward, so the lift is
+     * never applied twice.
+     */
+    private void vs_analog_warfare$applyThirdPersonLift(boolean detached) {
+        if (!detached
+                || !ClientScopeState.active()
+                || ClientScopeState.viewMode() != ClientScopeState.ViewMode.THIRD_PERSON) {
+            return;
+        }
+        Vec3 position = ((Camera) (Object) this).getPosition();
+        double lift = ClientConfig.scopeThirdPersonCameraLift();
+        m_90581_(new Vec3(position.x, position.y + lift, position.z));
     }
 }

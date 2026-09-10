@@ -9,6 +9,7 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.IntValue ZEROING_STEP;
     public static final ForgeConfigSpec.BooleanValue IGNORE_TALLYHO_ENTITY_PLACEMENT;
     public static final ForgeConfigSpec.BooleanValue SCOPE_MOUNTED_ROTATION_COMPENSATION;
+    public static final ForgeConfigSpec.DoubleValue SCOPE_THIRD_PERSON_CAMERA_LIFT;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -27,6 +28,10 @@ public final class ClientConfig {
                         + "orientation by the ship's render rotation so Valkyrien Skies' mounted-camera transform\n"
                         + "cancels exactly. Keeps free-look and the scope locked to world-space angles on ships.")
                 .define("scopeMountedRotationCompensation", true);
+        SCOPE_THIRD_PERSON_CAMERA_LIFT = builder
+                .comment("World-Y lift (blocks) applied to the third-person camera while a scope session is\n"
+                        + "toggled to third-person view, so the vehicle hull does not block the view.")
+                .defineInRange("scopeThirdPersonCameraLift", 2.0D, 0.0D, 16.0D);
         builder.pop();
         builder.push("actionToIgnore");
         IGNORE_TALLYHO_ENTITY_PLACEMENT = builder
@@ -57,5 +62,9 @@ public final class ClientConfig {
 
     public static boolean scopeMountedRotationCompensation() {
         return SCOPE_MOUNTED_ROTATION_COMPENSATION.get();
+    }
+
+    public static double scopeThirdPersonCameraLift() {
+        return SCOPE_THIRD_PERSON_CAMERA_LIFT.get();
     }
 }

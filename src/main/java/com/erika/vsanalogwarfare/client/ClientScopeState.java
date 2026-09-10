@@ -8,7 +8,9 @@ import com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver;
 import com.erika.vsanalogwarfare.scope.ballistics.ReticleMark;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
 import com.erika.vsanalogwarfare.scope.rig.FixedCoaxScopeRig;
+import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -22,7 +24,11 @@ import java.util.List;
 
 
 public final class ClientScopeState {
+    /** Client-only render mode inside an active scope session; the server session stays active in both. */
+    public enum ViewMode { SCOPE, THIRD_PERSON }
+
     private static boolean active;
+    private static ViewMode viewMode = ViewMode.SCOPE;
     private static float targetFov = 70.0f;
     private static float animationStartFov = 70.0f;
     private static float visualFov = 70.0f;
@@ -42,6 +48,10 @@ public final class ClientScopeState {
     private static boolean freeLookEnabled;
     private static float freeLookYaw;
     private static float freeLookPitch;
+    // Camera type active before the scope's third-person view took over; restored
+    // on toggling back or when the session ends.
+    @Nullable
+    private static CameraType savedCameraType;
 
     // Cache per-frame to avoid repeatedly scanning blocks / reflecting CBC on every getter call.
     private static int cachedFrameId = Integer.MIN_VALUE;
@@ -79,6 +89,17 @@ public final class ClientScopeState {
 
     public static boolean active() {
         return active;
+    }
+
+
+    public static ViewMode viewMode() {
+        return viewMode;
+    }
+
+
+    /** True while the scope session is active AND rendering the scope view (not the raised third-person view). */
+    public static boolean scopeViewActive() {
+        return active && viewMode == ViewMode.SCOPE;
     }
 
 
@@ -191,6 +212,83 @@ public final class ClientScopeState {
         }
     }
 
+
+    public static void toggleViewMode() {
+        if (!active) {
+            viewMode = ViewMode.SCOPE;
+            restoreCameraType();
+            return;
+        }
+        if (viewMode == ViewMode.SCOPE) {
+            viewMode = ViewMode.THIRD_PERSON;
+            // The scope view teleports the first-person camera, so third person
+            // must be requested explicitly or VS's orbit (and the lift) never runs.
+            Minecraft mc = Minecraft.getInstance();
+            savedCameraType = mc.options.getCameraType();
+            mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
+            // Seed the player from the rendered scope-camera direction (free-look
+            // direction when engaged, sight impact line otherwise) so the
+            // third-person camera keeps pointing at the same target. While seated,
+            // VS2 interprets player yaw/pitch as ship-local (its mounted camera and
+            // view vector premultiply the ship render rotation), so the world-frame
+            // direction must be converted into that local space first.
+            Vec3 localDir = worldToPlayerLocalDirection(cameraPose(1.0f).direction());
+            setPlayerRotation(yawFromDirection(localDir), pitchFromDirection(localDir));
+        } else {
+            viewMode = ViewMode.SCOPE;
+            restoreCameraType();
+            LocalPlayer player = Minecraft.getInstance().player;
+            if (player != null) {
+                // Seed free look from the player's look direction converted back to
+                // world frame, so the scope camera keeps looking at the same point.
+                // The cannon re-elevates by the sight zero on the next aim packet
+                // (scope convention: reticle center = impact line, bore above it).
+                Vec3 worldDir = playerLocalToWorldDirection(
+                        directionFromYawPitch(player.getYRot(), player.getXRot()));
+                freeLookYaw = yawFromDirection(worldDir);
+                freeLookPitch = clamp(pitchFromDirection(worldDir), -89.9f, 89.9f);
+            }
+            // Aim packets require free look while in the scope view; third person
+            // always aimed, so keep the turret driving across the toggle.
+            freeLookEnabled = true;
+            replayZoomIn();
+        }
+        cachedFrameId = Integer.MIN_VALUE;
+    }
+
+
+    private static void restoreCameraType() {
+        if (savedCameraType != null) {
+            Minecraft.getInstance().options.setCameraType(savedCameraType);
+            savedCameraType = null;
+        }
+    }
+
+
+    private static void setPlayerRotation(float yaw, float pitch) {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return;
+        }
+        float clampedPitch = clamp(pitch, -89.9f, 89.9f);
+        player.setYRot(yaw);
+        player.setXRot(clampedPitch);
+        player.yRotO = yaw;
+        player.xRotO = clampedPitch;
+        player.yBodyRot = yaw;
+        player.yBodyRotO = yaw;
+        player.yHeadRot = yaw;
+        player.yHeadRotO = yaw;
+    }
+
+
+    /** Restart the 200 ms zoom animation from the un-zoomed state toward the current scope targets. */
+    private static void replayZoomIn() {
+        animationStartFov = 70.0f;
+        animationStartZoom = 3.0f;
+        zoomAnimationStartMillis = net.minecraft.Util.getMillis();
+    }
+
     /** Inverse of {@link #directionFromYawPitch}: Minecraft azimuth in degrees. */
     private static float yawFromDirection(Vec3 direction) {
         return (float) Math.toDegrees(Math.atan2(-direction.x, direction.z));
@@ -200,6 +298,35 @@ public final class ClientScopeState {
     private static float pitchFromDirection(Vec3 direction) {
         double y = Math.max(-1.0D, Math.min(1.0D, direction.y));
         return (float) -Math.toDegrees(Math.asin(y));
+    }
+
+    /**
+     * While the player is mounted to a ship, VS2 treats the player's yaw/pitch as
+     * ship-local: its mounted camera and view vector premultiply the ship's render
+     * rotation (MixinEntity.preCalculateViewVector, setupWithShipMounted). These
+     * convert aim directions between that local space and world space using the
+     * same interpolated render transform the scope camera compensation uses, so
+     * toggle seeding matches the camera exactly. Directions pass through
+     * unchanged when not mounted.
+     */
+    private static Vec3 worldToPlayerLocalDirection(Vec3 worldDir) {
+        Quaternionf shipRotation = com.erika.vsanalogwarfare.scope.compat.VsCompat.playerMountedShipRotation();
+        if (shipRotation == null) {
+            return worldDir;
+        }
+        Vector3f local = new Vector3f((float) worldDir.x, (float) worldDir.y, (float) worldDir.z);
+        local.rotate(new Quaternionf(shipRotation).conjugate());
+        return new Vec3(local.x, local.y, local.z);
+    }
+
+    private static Vec3 playerLocalToWorldDirection(Vec3 localDir) {
+        Quaternionf shipRotation = com.erika.vsanalogwarfare.scope.compat.VsCompat.playerMountedShipRotation();
+        if (shipRotation == null) {
+            return localDir;
+        }
+        Vector3f world = new Vector3f((float) localDir.x, (float) localDir.y, (float) localDir.z);
+        world.rotate(new Quaternionf(shipRotation));
+        return new Vec3(world.x, world.y, world.z);
     }
 
 
@@ -319,6 +446,8 @@ public final class ClientScopeState {
 
         if (!active) {
             freeLookEnabled = false;
+            viewMode = ViewMode.SCOPE;
+            restoreCameraType();
         }
         if (active) {
             sightZeroDistance = zeroDistance;
