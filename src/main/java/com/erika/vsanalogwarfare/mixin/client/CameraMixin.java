@@ -7,9 +7,12 @@ import com.erika.vsanalogwarfare.scope.compat.VsCompat;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Quaternionf;
 import org.joml.Vector3dc;
@@ -69,7 +72,13 @@ public abstract class CameraMixin {
                                                                           Vector3dc inShipPlayerPosition,
                                                                           CallbackInfo ci) {
         vs_analog_warfare$applyVirtualScopeView(partialTicks);
-        vs_analog_warfare$applyThirdPersonLift(thirdPerson);
+        if (thirdPerson
+                && ClientScopeState.active()
+                && ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON) {
+            vs_analog_warfare$applyStabilizedThirdPerson(level, renderViewEntity, partialTicks, shipMountedTo);
+        } else {
+            vs_analog_warfare$applyThirdPersonLift(thirdPerson);
+        }
         if (ClientScopeState.active()) {
             ScopeDebug.cameraHook("vs-mounted", shipMountedTo, (Camera) (Object) this);
         }
@@ -117,5 +126,76 @@ public abstract class CameraMixin {
         Vec3 position = ((Camera) (Object) this).getPosition();
         double lift = ClientConfig.scopeThirdPersonCameraLift();
         m_90581_(new Vec3(position.x, position.y + lift, position.z));
+        vs_analog_warfare$stabilizeThirdPersonRotation();
+    }
+
+    /**
+     * Third-person view is world-stabilized: the player yaw/pitch are treated as
+     * world angles (the pose-stack side is compensated via ComputeCameraAngles),
+     * so the ship component VS's mounted camera premultiplied onto the
+     * quaternion is stripped here. The orbit position stays anchored to the
+     * vehicle; only the look direction stops swinging with the hull.
+     */
+    private void vs_analog_warfare$stabilizeThirdPersonRotation() {
+        LocalPlayer player = Minecraft.getInstance().player;
+        if (player == null) {
+            return;
+        }
+        float yaw = player.getYRot();
+        float pitch = player.getXRot();
+        Quaternionf stabilized = new Quaternionf().rotationYXZ(
+                -yaw * ((float) Math.PI / 180.0f), pitch * ((float) Math.PI / 180.0f), 0.0f);
+        this.f_90559_.set(stabilized).normalize();
+        this.f_90554_.set(0.0f, 0.0f, 1.0f).rotate(this.f_90559_);
+        this.f_90555_.set(0.0f, 1.0f, 0.0f).rotate(this.f_90559_);
+        this.f_90556_.set(1.0f, 0.0f, 0.0f).rotate(this.f_90559_);
+        m_90572_(yaw, pitch);
+        this.f_90558_ = yaw;
+        this.f_90557_ = pitch;
+    }
+
+    /**
+     * VS recomputes the third-person back-off along its ship-combined forwards
+     * (shipRot · look), while this view renders along the stabilized world look.
+     * Redo VS's orbit along the stabilized direction: same anchor (VS2's entity
+     * mixin ship-corrects getEyePosition to the anchor VS itself used), same max
+     * distance formula, same ship-aware collision that ignores the mounted ship.
+     */
+    private void vs_analog_warfare$applyStabilizedThirdPerson(BlockGetter level, Entity entity, float partialTick,
+                                                              ClientShip shipMountedTo) {
+        vs_analog_warfare$stabilizeThirdPersonRotation();
+        if (!(level instanceof net.minecraft.world.level.Level mcLevel)) {
+            return;
+        }
+        Vec3 eye = entity.getEyePosition(partialTick);
+        Vec3 dir = new Vec3(this.f_90554_.x(), this.f_90554_.y(), this.f_90554_.z());
+
+        org.joml.primitives.AABBi aabb = (org.joml.primitives.AABBi) shipMountedTo.getShipVoxelAABB();
+        double shipDist = ((aabb.lengthX() + aabb.lengthY() + aabb.lengthZ()) / 3.0) * 1.5;
+        double maxZoom = 4.0 * (Math.max(shipDist, 4.0) / 4.0);
+
+        // VS2's getMaxZoomIgnoringMountedShip 8-ray fan, verbatim, along the
+        // stabilized direction and skipping the mounted ship.
+        for (int i = 0; i < 8; ++i) {
+            float fx = (float) ((i & 1) * 2 - 1) * 0.1F;
+            float fy = (float) ((i >> 1 & 1) * 2 - 1) * 0.1F;
+            float fz = (float) ((i >> 2 & 1) * 2 - 1) * 0.1F;
+            Vec3 from = eye.add(fx, fy, fz);
+            Vec3 to = new Vec3(eye.x - dir.x * maxZoom + fx + fz,
+                    eye.y - dir.y * maxZoom + fy,
+                    eye.z - dir.z * maxZoom + fz);
+            HitResult hitResult = org.valkyrienskies.mod.common.world.RaycastUtilsKt.clipIncludeShips(mcLevel,
+                    new ClipContext(from, to, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, entity),
+                    true, shipMountedTo.getId());
+            if (hitResult.getType() != HitResult.Type.MISS) {
+                double dist = hitResult.getLocation().distanceTo(eye);
+                if (dist < maxZoom) {
+                    maxZoom = dist;
+                }
+            }
+        }
+
+        double lift = ClientConfig.scopeThirdPersonCameraLift();
+        m_90581_(eye.subtract(dir.scale(maxZoom)).add(0.0, lift, 0.0));
     }
 }

@@ -66,13 +66,14 @@ public final class ClientForgeEvents {
 
     @SubscribeEvent
     public static void onComputeCameraAngles(ViewportEvent.ComputeCameraAngles event) {
-        if (!ClientScopeState.scopeViewActive()) {
+        if (!ClientScopeState.active()) {
             return;
         }
         float partialTick = (float) event.getPartialTick();
         // While mounted to a ship these angles carry the inverse of the ship's
         // seat rotation, so the transform VS2 appends at prepareCullFrustum
         // cancels and the world-frame scope/free-look pose is what renders.
+        // Third person feeds the same compensation for its stabilized look.
         event.setYaw(ClientScopeState.renderYaw(partialTick));
         event.setPitch(ClientScopeState.renderPitch(partialTick));
         event.setRoll(ClientScopeState.renderRoll(partialTick));
@@ -162,7 +163,10 @@ public final class ClientForgeEvents {
             return;
         }
         Vec3 direction = thirdPerson
-                ? mc.player.getLookAngle()
+                // Third person is world-stabilized: the player rotation is the
+                // crosshair direction (world frame), NOT getLookAngle() which
+                // VS2 ship-corrects and would swing with the hull.
+                ? ClientScopeState.directionFromYawPitch(mc.player.getYRot(), mc.player.getXRot())
                 : ClientScopeState.zeroedFreeLookDirection();
         ModNetwork.sendToServer(new MouseAimTargetPacket(scopePos, mountPos, direction.x, direction.y, direction.z));
     }

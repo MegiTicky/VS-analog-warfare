@@ -228,25 +228,22 @@ public final class ClientScopeState {
             mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
             // Seed the player from the rendered scope-camera direction (free-look
             // direction when engaged, sight impact line otherwise) so the
-            // third-person camera keeps pointing at the same target. While seated,
-            // VS2 interprets player yaw/pitch as ship-local (its mounted camera and
-            // view vector premultiply the ship render rotation), so the world-frame
-            // direction must be converted into that local space first.
-            Vec3 localDir = worldToPlayerLocalDirection(cameraPose(1.0f).direction());
-            setPlayerRotation(yawFromDirection(localDir), pitchFromDirection(localDir));
+            // third-person camera keeps pointing at the same target. Third person
+            // is world-stabilized (player yaw/pitch are its world angles), so the
+            // world-frame scope direction maps straight onto the player.
+            CameraPose pose = cameraPose(1.0f);
+            setPlayerRotation(pose.yaw(), pose.pitch());
         } else {
             viewMode = ViewMode.SCOPE;
             restoreCameraType();
             LocalPlayer player = Minecraft.getInstance().player;
             if (player != null) {
-                // Seed free look from the player's look direction converted back to
-                // world frame, so the scope camera keeps looking at the same point.
+                // Third person is world-stabilized: the player rotation is already
+                // the world look direction, so free look seeds straight from it.
                 // The cannon re-elevates by the sight zero on the next aim packet
                 // (scope convention: reticle center = impact line, bore above it).
-                Vec3 worldDir = playerLocalToWorldDirection(
-                        directionFromYawPitch(player.getYRot(), player.getXRot()));
-                freeLookYaw = yawFromDirection(worldDir);
-                freeLookPitch = clamp(pitchFromDirection(worldDir), -89.9f, 89.9f);
+                freeLookYaw = player.getYRot();
+                freeLookPitch = clamp(player.getXRot(), -89.9f, 89.9f);
             }
             // Aim packets require free look while in the scope view; third person
             // always aimed, so keep the turret driving across the toggle.
@@ -298,35 +295,6 @@ public final class ClientScopeState {
     private static float pitchFromDirection(Vec3 direction) {
         double y = Math.max(-1.0D, Math.min(1.0D, direction.y));
         return (float) -Math.toDegrees(Math.asin(y));
-    }
-
-    /**
-     * While the player is mounted to a ship, VS2 treats the player's yaw/pitch as
-     * ship-local: its mounted camera and view vector premultiply the ship's render
-     * rotation (MixinEntity.preCalculateViewVector, setupWithShipMounted). These
-     * convert aim directions between that local space and world space using the
-     * same interpolated render transform the scope camera compensation uses, so
-     * toggle seeding matches the camera exactly. Directions pass through
-     * unchanged when not mounted.
-     */
-    private static Vec3 worldToPlayerLocalDirection(Vec3 worldDir) {
-        Quaternionf shipRotation = com.erika.vsanalogwarfare.scope.compat.VsCompat.playerMountedShipRotation();
-        if (shipRotation == null) {
-            return worldDir;
-        }
-        Vector3f local = new Vector3f((float) worldDir.x, (float) worldDir.y, (float) worldDir.z);
-        local.rotate(new Quaternionf(shipRotation).conjugate());
-        return new Vec3(local.x, local.y, local.z);
-    }
-
-    private static Vec3 playerLocalToWorldDirection(Vec3 localDir) {
-        Quaternionf shipRotation = com.erika.vsanalogwarfare.scope.compat.VsCompat.playerMountedShipRotation();
-        if (shipRotation == null) {
-            return localDir;
-        }
-        Vector3f world = new Vector3f((float) localDir.x, (float) localDir.y, (float) localDir.z);
-        world.rotate(new Quaternionf(shipRotation));
-        return new Vec3(world.x, world.y, world.z);
     }
 
 
@@ -555,7 +523,23 @@ public final class ClientScopeState {
             cachedSightPose = fallbackPose;
         }
 
-        if (!freeLookEnabled()) {
+        if (viewMode == ViewMode.THIRD_PERSON) {
+            // Third person: the view is world-stabilized on the player's live look
+            // direction. The player yaw/pitch are interpreted as world angles (see
+            // CameraMixin) and go through the same ship compensation as the scope,
+            // so VS2's mounted-camera transform cancels and the horizon stays
+            // level while the ship rolls under the camera.
+            LocalPlayer player = mc.player;
+            if (player != null) {
+                applyCachedCameraPose(CameraPose.looking(
+                        cachedSightPose.position(),
+                        directionFromYawPitch(player.getYRot(), player.getXRot()),
+                        cachedSightPose.up()
+                ));
+            } else {
+                applyCachedCameraPose(cachedSightPose);
+            }
+        } else if (!freeLookEnabled()) {
             // FreeLook is OFF: Counter-rotate the camera down to match the gun elevating!
             double zeroPitch = getZeroPitch();
             if (zeroPitch > 0) {
