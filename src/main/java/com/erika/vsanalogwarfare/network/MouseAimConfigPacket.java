@@ -2,7 +2,6 @@ package com.erika.vsanalogwarfare.network;
 
 import com.erika.vsanalogwarfare.mouseaim.MouseAimBlockEntity;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimMode;
-import com.erika.vsanalogwarfare.mouseaim.TurretStrength;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,16 +18,14 @@ import java.util.function.Supplier;
  * authoritative state ({@link Snapshot}) which also opens the screen on
  * right-click, mirroring the vehicle setup editor flow.
  */
-public record MouseAimConfigPacket(BlockPos pos, MouseAimMode mode, TurretStrength strength) {
+public record MouseAimConfigPacket(BlockPos pos, MouseAimMode mode) {
     public static void encode(MouseAimConfigPacket packet, FriendlyByteBuf buf) {
         buf.writeBlockPos(packet.pos);
         buf.writeEnum(packet.mode);
-        buf.writeEnum(packet.strength);
     }
 
     public static MouseAimConfigPacket decode(FriendlyByteBuf buf) {
-        return new MouseAimConfigPacket(buf.readBlockPos(), buf.readEnum(MouseAimMode.class),
-                buf.readEnum(TurretStrength.class));
+        return new MouseAimConfigPacket(buf.readBlockPos(), buf.readEnum(MouseAimMode.class));
     }
 
     public static void handle(MouseAimConfigPacket packet, Supplier<NetworkEvent.Context> contextSupplier) {
@@ -43,22 +40,19 @@ public record MouseAimConfigPacket(BlockPos pos, MouseAimMode mode, TurretStreng
                 return;
             }
             aim.setMode(packet.mode);
-            aim.setStrength(packet.strength);
-            ModNetwork.sendToPlayer(player, new Snapshot(packet.pos, aim.getMode(), aim.getTurretStrength()));
+            ModNetwork.sendToPlayer(player, new Snapshot(packet.pos, aim.getMode()));
         });
         context.setPacketHandled(true);
     }
 
-    public record Snapshot(BlockPos pos, MouseAimMode mode, TurretStrength strength) {
+    public record Snapshot(BlockPos pos, MouseAimMode mode) {
         public static void encode(Snapshot packet, FriendlyByteBuf buf) {
             buf.writeBlockPos(packet.pos);
             buf.writeEnum(packet.mode);
-            buf.writeEnum(packet.strength);
         }
 
         public static Snapshot decode(FriendlyByteBuf buf) {
-            return new Snapshot(buf.readBlockPos(), buf.readEnum(MouseAimMode.class),
-                    buf.readEnum(TurretStrength.class));
+            return new Snapshot(buf.readBlockPos(), buf.readEnum(MouseAimMode.class));
         }
 
         public static void handle(Snapshot packet, Supplier<NetworkEvent.Context> contextSupplier) {

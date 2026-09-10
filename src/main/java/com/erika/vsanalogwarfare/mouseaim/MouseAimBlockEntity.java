@@ -37,8 +37,6 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
 
     /** Aim mode, set from the config screen. */
     private MouseAimMode mode = MouseAimMode.CANNON;
-    /** Output aggressiveness, set from the config screen. */
-    private TurretStrength strength = TurretStrength.FIRM;
 
     public MouseAimBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.MOUSE_AIM.get(), pos, state);
@@ -76,8 +74,14 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         return mode;
     }
 
-    public TurretStrength getTurretStrength() {
-        return strength;
+    /**
+     * Fixed turret pitch slew rate in degrees per tick, derived from the
+     * output ceiling through the same conversion and multiplier as the
+     * cannon-mode chase rate, so elevation speed matches the yaw authority.
+     */
+    public double getTurretPitchSlewDegPerTick() {
+        return Math.abs(convertToAngular((float) CommonConfig.turretMaxOutputRpm()))
+                * CommonConfig.mouseAimRateMultiplier();
     }
 
     public void setMode(MouseAimMode mode) {
@@ -86,16 +90,6 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         }
         this.mode = mode;
         setChanged();
-    }
-
-    public void setStrength(TurretStrength strength) {
-        if (strength == null || strength == this.strength) {
-            return;
-        }
-        this.strength = strength;
-        setChanged();
-        // The max-RPM clamp is part of the generated speed capability.
-        outputInterface.updateGeneratedRotation();
     }
 
     /** Latest PID output command for the turret rotation face, in RPM. */
@@ -111,11 +105,15 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
             return;
         }
         // Create only re-runs rotation propagation on block add/remove, so a
-        // flipped input end needs an explicit re-route of the output network.
+        // flipped input end needs an explicit re-route of the output network —
+        // and of this BE's own connections, since the power persona's accepted
+        // faces exclude the current output end.
         Direction inputFace = getInputFace();
         if (inputFace != lastInputFace) {
             lastInputFace = inputFace;
             outputInterface.refreshConnections();
+            detachKinetics();
+            attachKinetics();
         }
         if (getMode() == MouseAimMode.CANNON) {
             float idleRpm = turretYaw.idle();
@@ -150,7 +148,7 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
             return;
         }
         Vec3 target = targetDirection.normalize();
-        MouseAimController.tickTurretPitch(this, targetMountPos, target, getMouseAimRateDegreesPerTick());
+        MouseAimController.tickTurretPitch(this, targetMountPos, target, getTurretPitchSlewDegPerTick());
         applyTurretOutput(turretYaw.computeTargetRpm(this, targetMountPos, target));
     }
 
@@ -216,9 +214,13 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         if (outputFace == null) {
             return null;
         }
-        BlockPos outputOffset = BlockPos.ZERO.relative(outputFace);
-        return from.equals(outputOffset) || from.equals(BlockPos.ZERO.subtract(outputOffset))
-                ? outputInterface : null;
+        // CBC's propagation mixin replaces the BE a rotation walk arrives at
+        // with the interface bound to the arrival face (`from` is this block's
+        // face toward the walking neighbour). Bind only the output end:
+        // binding the input end swallows input-network walks, so a source
+        // speed change never reaches this block and its rotation goes stale
+        // until it is broken and replaced.
+        return from.equals(BlockPos.ZERO.relative(outputFace)) ? outputInterface : null;
     }
 
     @Override
@@ -231,7 +233,6 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         super.write(compound, clientPacket);
         if (!clientPacket) {
             compound.putString("Mode", mode.name());
-            compound.putString("Strength", strength.name());
             compound.put("OutputInterface", outputInterface.writeServer(new CompoundTag()));
         }
     }
@@ -244,9 +245,6 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         }
         if (compound.contains("Mode")) {
             mode = MouseAimMode.valueOf(compound.getString("Mode"));
-        }
-        if (compound.contains("Strength")) {
-            strength = TurretStrength.valueOf(compound.getString("Strength"));
         }
         if (compound.contains("OutputInterface")) {
             outputInterface.readServer(compound.getCompound("OutputInterface"));

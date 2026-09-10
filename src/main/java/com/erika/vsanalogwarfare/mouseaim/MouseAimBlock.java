@@ -57,15 +57,21 @@ public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<Mous
                     && face == aim.getOutputFace();
         }
         // The power persona is purely in-line: shafts may enter from either end
-        // of the axis (like an encased chain drive). Whichever end receives
-        // power is the input; the opposite end becomes the PID output.
+        // of the axis (like an encased chain drive), EXCEPT the end currently
+        // serving as the isolated rotation output. Claiming that end too lets
+        // input-network walks continue straight through this block into the
+        // shaft wired to the output, which then gets claimed by both networks
+        // and is eventually destroyed by Create's conflict handling.
+        if (world.getBlockEntity(pos) instanceof MouseAimBlockEntity aim) {
+            return face.getAxis() == state.getValue(AXIS) && face != aim.getOutputFace();
+        }
         return face.getAxis() == state.getValue(AXIS);
     }
 
     /**
-     * Right-click with an empty hand opens the config screen (aim mode +
-     * output strength). The wrench still takes precedence: as an item its
-     * useOn runs before the block's use, so axis rotation keeps working.
+     * Right-click with an empty hand opens the config screen (aim mode). The
+     * wrench still takes precedence: as an item its useOn runs before the
+     * block's use, so axis rotation keeps working.
      */
     @Override
     public InteractionResult use(BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand,
@@ -79,7 +85,7 @@ public class MouseAimBlock extends RotatedPillarKineticBlock implements IBE<Mous
         if (player instanceof ServerPlayer serverPlayer
                 && level.getBlockEntity(pos) instanceof MouseAimBlockEntity aim) {
             ModNetwork.sendToPlayer(serverPlayer, new MouseAimConfigPacket.Snapshot(
-                    pos, aim.getMode(), aim.getTurretStrength()));
+                    pos, aim.getMode()));
             return InteractionResult.CONSUME;
         }
         return InteractionResult.PASS;

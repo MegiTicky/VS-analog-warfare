@@ -25,17 +25,16 @@ import java.util.Optional;
  * <p>All angles are computed in <b>world space</b> (Minecraft azimuth,
  * {@code atan2(-x, z)}, degrees, wrapped to ±180). The setpoint arrives from
  * the client as a world-space direction (the free-look angles are seeded in
- * world frame), and the bore is converted to world with the turret ship's
- * tick transform.
+ * world frame), and the bore is converted to world with the turret ship's tick
+ * transform.
  *
- * <p><b>Response shape:</b> War Thunder-style aim snap. The commanded speed is
- * the strength's max RPM while the error is large, then follows a square-root
- * braking profile {@code v = sqrt(2 * brakeAccel * error)} so the commanded
- * deceleration starts early enough for the slew limit and the physics
- * bearing's inertia to actually stop on target — a fixed small deceleration
- * zone saturates the command into a relay and pumps a growing swing. The
- * derivative term damps the settle, the feed-forward term keeps tracking a
- * sweeping aim, and the slew limiter keeps the physics bearing from being
+ * <p><b>Response shape:</b> single-mode. The command is the tuned PID
+ * ({@code kp * error + kd * d(error)/dt + ff * sweepRate}, gains never
+ * scaled) clamped to a cap of the input shaft speed up to the configured
+ * ceiling — a slow crank slows the whole approach, a fast one allows the
+ * full validated response, and the command always tapers with the error.
+ * The derivative term damps the settle, the feed-forward term keeps tracking
+ * a sweeping aim, and the slew limiter keeps the physics bearing from being
  * shocked.
  *
  * <p><b>Sign:</b> a Clockwork physics bearing facing up applies omega along
@@ -93,43 +92,33 @@ final class TurretYawController {
         double err = horizontalErrorDeg(targetDirection, boreWorld);
 
         double derivative = hasHistory ? wrapDegrees(err - prevErr) : 0.0D;
-        double setpointRate = 0.0D;
-        if (hasHistory) {
-            // Setpoint rate is differenced in the same world frame as the stored yaw.
-            setpointRate = wrapDegrees(setpointYaw - prevSetpointYaw);
-        }
+        double setpointRate = hasHistory ? wrapDegrees(setpointYaw - prevSetpointYaw) : 0.0D;
         prevSetpointYaw = setpointYaw;
         derivativeLpf += (derivative - derivativeLpf) * DERIVATIVE_SMTH;
         setpointRateLpf += (setpointRate - setpointRateLpf) * FEED_FORWARD_SMTH;
         prevErr = err;
         hasHistory = true;
 
-        TurretStrength strength = controller.getTurretStrength();
-        float maxRpm = strength.maxRpm();
-        double gain = strength.gainMultiplier();
-        // Braking-distance profile: full strength speed until the error gets
-        // within the stopping distance the commanded deceleration can cover
-        // (v = sqrt(2 a d)), then a square-root ramp onto the deadband. The
-        // stop must begin tens of degrees out — a small fixed zone saturates
-        // the command into a relay and pumps the swing through the target.
-        double brakingErr = Math.max(0.0D,
-                Math.abs(err) - CommonConfig.turretDeadbandDeg());
-        double vBrake = Math.sqrt(2.0D * CommonConfig.turretBrakeAccelDegPerTick2() * brakingErr);
-        double vProp = Math.signum(err) * Math.min(maxRpm, gain * vBrake);
-        double core = vProp
-                + CommonConfig.turretKd() * gain * derivativeLpf
-                + CommonConfig.turretFeedForward() * gain * setpointRateLpf;
+        double core = CommonConfig.turretKp() * err
+                + CommonConfig.turretKd() * derivativeLpf
+                + CommonConfig.turretFeedForward() * setpointRateLpf;
         if (Math.abs(err) < CommonConfig.turretDeadbandDeg()
                 && Math.abs(setpointRateLpf) < HOLD_FEED_RATE_THRESHOLD) {
             core = 0.0D;
         }
 
-        float sign = CommonConfig.turretYawInvert() ? 1.0F : -1.0F;
-        float raw = (float) Mth.clamp(sign * core, -maxRpm, maxRpm);
+        // Single-mode response: the tuned PID always commands the output and
+        // its damping acts over the whole range; the cap is the input shaft
+        // speed (up to the configured ceiling), so a slow crank slows the
+        // whole approach and the command always tapers with the error — no
+        // relay, no speed-induced instability.
+        float cap = (float) Math.min(CommonConfig.turretMaxOutputRpm(), Math.abs(controller.getSpeed()));
+        float rpmSign = CommonConfig.turretYawInvert() ? 1.0F : -1.0F;
+        float raw = (float) Mth.clamp(rpmSign * core, -cap, cap);
         float slew = (float) CommonConfig.turretOutputSlewPerTick();
         lastOutputRpm = (float) Mth.clamp(raw, lastOutputRpm - slew, lastOutputRpm + slew);
 
-        debugTick(controller, err, setpointYaw, measuredYaw, raw, lastOutputRpm);
+        debugTick(controller, err, setpointYaw, measuredYaw, raw, lastOutputRpm, cap);
         return lastOutputRpm;
     }
 
@@ -150,6 +139,7 @@ final class TurretYawController {
     /** Clears the loop history (called when the target is dropped entirely). */
     void reset() {
         prevErr = 0.0D;
+        prevSetpointYaw = 0.0D;
         derivativeLpf = 0.0D;
         setpointRateLpf = 0.0D;
         hasHistory = false;
@@ -187,7 +177,7 @@ final class TurretYawController {
     }
 
     private void debugTick(MouseAimBlockEntity controller, double err, double setpointYaw,
-                           double measuredYaw, float rawRpm, float slewedRpm) {
+                           double measuredYaw, float rawRpm, float slewedRpm, float cap) {
         if (!CommonConfig.turretDebug()) {
             return;
         }
@@ -195,9 +185,10 @@ final class TurretYawController {
             return;
         }
         debugTimer = 0;
-        VSAnalogWarfare.LOGGER.info("[VSAW_TURRET] {} set={} meas={} err={} raw={} rpm={}",
+        VSAnalogWarfare.LOGGER.info("[VSAW_TURRET] {} set={} meas={} err={} raw={} rpm={} cap={} invert={}",
                 controller.getBlockPos(), String.format("%.2f", setpointYaw),
                 String.format("%.2f", measuredYaw), String.format("%.2f", err),
-                String.format("%.2f", rawRpm), String.format("%.2f", slewedRpm));
+                String.format("%.2f", rawRpm), String.format("%.2f", slewedRpm),
+                String.format("%.2f", cap), CommonConfig.turretYawInvert());
     }
 }

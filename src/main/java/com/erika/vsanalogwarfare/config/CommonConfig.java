@@ -23,7 +23,8 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.BooleanValue STABILIZER_DEBUG;
     public static final ForgeConfigSpec.BooleanValue STABILIZER_RENDER_LOCK;
 
-    public static final ForgeConfigSpec.DoubleValue TURRET_BRAKE_ACCEL;
+    public static final ForgeConfigSpec.DoubleValue TURRET_MAX_OUTPUT_RPM;
+    public static final ForgeConfigSpec.DoubleValue TURRET_KP;
     public static final ForgeConfigSpec.DoubleValue TURRET_KD;
     public static final ForgeConfigSpec.DoubleValue TURRET_FEED_FORWARD;
     public static final ForgeConfigSpec.DoubleValue TURRET_DEADBAND_DEG;
@@ -37,8 +38,10 @@ public final class CommonConfig {
 
         builder.push("mouseAim");
         MOUSE_AIM_MIN_SPEED = builder
-                .comment("Minimum absolute Create RPM required for a mouse aim block to control an adjacent cannon mount.")
-                .defineInRange("mouseAimMinSpeed", 16.0D, 0.0D, 4096.0D);
+                .comment("Minimum absolute Create RPM required for a mouse aim block to control an adjacent cannon mount. "
+                        + "Below this the block is inert; the turret rotation output scales linearly with the input "
+                        + "speed up to the maximum.")
+                .defineInRange("mouseAimMinSpeed", 1.0D, 0.5D, 4096.0D);
         MOUSE_AIM_PACKET_INTERVAL_TICKS = builder
                 .comment("Client-to-server mouse aim target update interval while scoped free look is active.")
                 .defineInRange("mouseAimPacketIntervalTicks", 2, 1, 20);
@@ -116,17 +119,21 @@ public final class CommonConfig {
         builder.pop();
 
         builder.push("turretAim");
-        TURRET_BRAKE_ACCEL = builder
-                .comment("Deceleration the turret yaw braking profile assumes, in degrees per tick "
-                        + "squared. Once the aim error is inside the stopping distance the commanded "
-                        + "speed follows v = sqrt(2 * accel * error), so the turret can actually stop "
-                        + "on the crosshair. Raise it if the turret slows too early on approach; "
-                        + "lower it if it still swings past the crosshair.")
-                .defineInRange("brakeAccelDegPerTick2", 0.3D, 0.05D, 5.0D);
+        TURRET_MAX_OUTPUT_RPM = builder
+                .comment("Ceiling of the turret rotation output, in Create RPM. The input shaft speed maps "
+                        + "linearly onto this: 256 RPM input (Create's maximum) commands the full ceiling, "
+                        + "half that input commands half the output. The controller gain scales with the "
+                        + "same ratio, so every input speed runs the same validated response shape, just "
+                        + "time-scaled.")
+                .defineInRange("maxOutputRpm", 16.0D, 1.0D, 256.0D);
+        TURRET_KP = builder
+                .comment("Turret-mode yaw servo proportional gain: RPM commanded per degree of "
+                        + "aim error, before the block's strength scaling.")
+                .defineInRange("kp", 0.5D, 0.0D, 10.0D);
         TURRET_KD = builder
                 .comment("Turret-mode yaw servo derivative gain: damping RPM per degree-per-tick of "
                         + "error change, before the block's strength scaling.")
-                .defineInRange("kd", 0.6D, 0.0D, 10.0D);
+                .defineInRange("kd", 0.35D, 0.0D, 10.0D);
         TURRET_FEED_FORWARD = builder
                 .comment("Turret-mode feed-forward gain: RPM per degree-per-tick of aim sweep, "
                         + "before the block's strength scaling.")
@@ -177,7 +184,8 @@ public final class CommonConfig {
     public static boolean stabilizerDebug() { return STABILIZER_DEBUG.get(); }
     public static boolean stabilizerRenderLock() { return STABILIZER_RENDER_LOCK.get(); }
 
-    public static double turretBrakeAccelDegPerTick2() { return TURRET_BRAKE_ACCEL.get(); }
+    public static double turretMaxOutputRpm() { return TURRET_MAX_OUTPUT_RPM.get(); }
+    public static double turretKp() { return TURRET_KP.get(); }
     public static double turretKd() { return TURRET_KD.get(); }
     public static double turretFeedForward() { return TURRET_FEED_FORWARD.get(); }
     public static double turretDeadbandDeg() { return TURRET_DEADBAND_DEG.get(); }

@@ -1,7 +1,6 @@
 package com.erika.vsanalogwarfare.client;
 
 import com.erika.vsanalogwarfare.mouseaim.MouseAimMode;
-import com.erika.vsanalogwarfare.mouseaim.TurretStrength;
 import com.erika.vsanalogwarfare.network.ModNetwork;
 import com.erika.vsanalogwarfare.network.MouseAimConfigPacket;
 import net.minecraft.ChatFormatting;
@@ -18,7 +17,8 @@ import net.minecraft.network.chat.Component;
  * Config screen for the Mouse Aim Controller, styled after
  * {@link VehicleSetupEditorScreen}: code-drawn flat panel, no GUI texture,
  * immediate-apply option buttons. Opened by the server's config snapshot
- * packet on right-click.
+ * packet on right-click. Output strength is not set here — it follows the
+ * rotation speed of the shaft feeding the block.
  */
 public class MouseAimConfigScreen extends Screen {
     private static final int PANEL_WIDTH = 240;
@@ -33,17 +33,15 @@ public class MouseAimConfigScreen extends Screen {
 
     private final BlockPos pos;
     private MouseAimMode mode;
-    private TurretStrength strength;
 
-    public static void open(BlockPos pos, MouseAimMode mode, TurretStrength strength) {
-        Minecraft.getInstance().setScreen(new MouseAimConfigScreen(pos, mode, strength));
+    public static void open(BlockPos pos, MouseAimMode mode) {
+        Minecraft.getInstance().setScreen(new MouseAimConfigScreen(pos, mode));
     }
 
-    private MouseAimConfigScreen(BlockPos pos, MouseAimMode mode, TurretStrength strength) {
+    private MouseAimConfigScreen(BlockPos pos, MouseAimMode mode) {
         super(Component.translatable("block.vs_analog_warfare.mouse_aim_block"));
         this.pos = pos;
         this.mode = mode;
-        this.strength = strength;
     }
 
     @Override
@@ -60,16 +58,6 @@ public class MouseAimConfigScreen extends Screen {
                     () -> selectMode(value), () -> mode == value));
         }
 
-        // Output strength: two-by-two grid.
-        TurretStrength[] strengths = TurretStrength.values();
-        for (int i = 0; i < strengths.length; i++) {
-            TurretStrength value = strengths[i];
-            addRenderableWidget(new OptionButton(left + 4 + (i % 2) * (buttonWidth + 4),
-                    106 + (i / 2) * 22, buttonWidth, 18,
-                    Component.translatable(value.getTranslationKey()),
-                    () -> selectStrength(value), () -> strength == value));
-        }
-
         addRenderableWidget(Button.builder(Component.translatable("vs_analog_warfare.mouse_aim.ui.done"), b -> onClose())
                 .bounds(width / 2 - 40, height - 28, 80, 18)
                 .build());
@@ -83,16 +71,8 @@ public class MouseAimConfigScreen extends Screen {
         send();
     }
 
-    private void selectStrength(TurretStrength value) {
-        if (strength == value) {
-            return;
-        }
-        strength = value;
-        send();
-    }
-
     private void send() {
-        ModNetwork.sendToServer(new MouseAimConfigPacket(pos, mode, strength));
+        ModNetwork.sendToServer(new MouseAimConfigPacket(pos, mode));
     }
 
     @Override
@@ -113,12 +93,9 @@ public class MouseAimConfigScreen extends Screen {
                 Component.translatable(mode.getTranslationKey()).withStyle(ChatFormatting.GRAY),
                 width / 2, top + 78, COLOR_HINT);
 
-        graphics.drawString(font, Component.translatable("vs_analog_warfare.mouse_aim.ui.strength_section"),
-                left + 6, top + 96, COLOR_LABEL, false);
         graphics.drawCenteredString(font,
-                        Component.translatable("vs_analog_warfare.mouse_aim.ui.max_rpm",
-                                String.format("%.0f", strength.maxRpm())).withStyle(ChatFormatting.GRAY),
-                width / 2, top + 152, COLOR_HINT);
+                Component.translatable("vs_analog_warfare.mouse_aim.ui.strength_hint").withStyle(ChatFormatting.GRAY),
+                width / 2, top + 108, COLOR_HINT);
 
         super.render(graphics, mouseX, mouseY, partialTick);
     }

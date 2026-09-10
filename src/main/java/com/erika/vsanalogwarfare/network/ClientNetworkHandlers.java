@@ -42,8 +42,7 @@ public final class ClientNetworkHandlers {
     }
 
     public static void openMouseAimConfig(MouseAimConfigPacket.Snapshot packet) {
-        com.erika.vsanalogwarfare.client.MouseAimConfigScreen.open(
-                packet.pos(), packet.mode(), packet.strength());
+        com.erika.vsanalogwarfare.client.MouseAimConfigScreen.open(packet.pos(), packet.mode());
     }
 
     public static void openScopeLinks(ScopeLinkPacket.Open packet) {

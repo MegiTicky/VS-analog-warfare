@@ -9,7 +9,6 @@ import com.jozufozu.flywheel.backend.instancing.InstancedRenderRegistry;
 import com.simibubi.create.content.contraptions.bearing.BearingInstance;
 import com.simibubi.create.content.contraptions.bearing.BearingRenderer;
 import com.simibubi.create.content.contraptions.render.ContraptionEntityRenderer;
-import com.simibubi.create.content.kinetics.base.ShaftInstance;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
@@ -39,6 +38,7 @@ public final class ClientModEvents {
         event.register(ClientKeyMappings.SCOPE_FREE_LOOK);
         event.register(ClientKeyMappings.SCOPE_RANGEFINDER);
         event.register(ClientKeyMappings.SCOPE_ZEROING);
+        event.register(ClientKeyMappings.SCOPE_VIEW_TOGGLE);
         event.register(ClientKeyMappings.VEHICLE_MOUNT);
     }
 
@@ -54,10 +54,10 @@ public final class ClientModEvents {
         InstancedRenderRegistry.configure(ModBlockEntities.DECORATION_BEARING.get())
                 .factory(BearingInstance::new)
                 .apply();
-        // Rotating shaft visual through the Mouse Aim Controller's casing
-        // (same machinery that renders the decoration bearing's shaft).
+        // Rotating shaft visual through the Mouse Aim Controller's casing,
+        // driven by the turret output's commanded RPM (still when idle).
         InstancedRenderRegistry.configure(ModBlockEntities.MOUSE_AIM.get())
-                .factory(ShaftInstance::new)
+                .factory(TurretOutputShaftInstance::new)
                 .apply();
     }
 }

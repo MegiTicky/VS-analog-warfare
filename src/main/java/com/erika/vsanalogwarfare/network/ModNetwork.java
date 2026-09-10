@@ -18,7 +18,7 @@ import java.lang.reflect.Method;
 import java.util.function.Supplier;
 
 public final class ModNetwork {
-    private static final String PROTOCOL = "9";
+    private static final String PROTOCOL = "10";
     public static SimpleChannel CHANNEL;
 
     private ModNetwork() {
