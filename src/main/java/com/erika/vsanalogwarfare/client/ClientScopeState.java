@@ -434,7 +434,7 @@ public final class ClientScopeState {
         if (active) {
             // Zero is clamped with the FRESH profile so the packet echo can never re-inject a value
             // the wheel clamp would reject (that divergence used to reverse the pitch deltas).
-            sightZeroDistance = Math.max(-depressionSpan(), Math.min(zeroCap(), zeroDistance));
+            sightZeroDistance = Math.max(0, Math.min(zeroCap(), zeroDistance));
             highAngleZero = highAngle;
             if (mountMaxDepressionDeg > 0.0f) maxDepressionDeg = mountMaxDepressionDeg;
             if (mountMaxElevationDeg > 0.0f) maxElevationDeg = mountMaxElevationDeg;
@@ -724,8 +724,6 @@ public final class ClientScopeState {
     // Mount's real pitch limits, resolved server-side and synced via ScopeStatePacket (degrees).
     private static float maxDepressionDeg = 89.0f;
     private static float maxElevationDeg = 89.0f;
-    // Degrees of depression commanded per zeroing notch below ZRN 0 (bore).
-    public static final float DEPRESSION_DEGREES_PER_STEP = 5.0f;
     // Per-frame low-passed zero pitch (tau ~0.1 s, the g-h filter's settling window): the camera
     // counter-rotation and the reticle offset both consume this, so an instant scroll step no longer
     // kicks the camera before the filtered bore catches up.
@@ -800,13 +798,6 @@ public final class ClientScopeState {
         return (int) com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
     }
 
-    /** Negative end of the wheel: the mount's real depression, DEPRESSION_DEGREES_PER_STEP per notch. */
-    public static int depressionSpan() {
-        if (maxDepressionDeg <= 0.01f) return 0;
-        int step = Math.max(1, com.erika.vsanalogwarfare.config.ClientConfig.zeroingStep());
-        return (int) (maxDepressionDeg / DEPRESSION_DEGREES_PER_STEP) * step;
-    }
-
     /**
      * Zero pitch smoothed for render-time consumers. Both the camera counter-rotation and the
      * reticle texture offset must use THIS value so they move in lockstep with each other and
@@ -827,7 +818,7 @@ public final class ClientScopeState {
     }
 
     public static void setSightZeroDistance(int dist) {
-        int newDist = Math.max(-depressionSpan(), Math.min(zeroCap(), dist));
+        int newDist = Math.max(0, Math.min(zeroCap(), dist));
         if (sightZeroDistance != newDist) {
             sightZeroDistance = newDist;
             zeroPitchDirty = true; // Mark for recalculation
@@ -836,11 +827,7 @@ public final class ClientScopeState {
 
     public static double getZeroPitch() {
         if (zeroPitchDirty) {
-            if (sightZeroDistance < 0) {
-                // Depression segment: each notch below bore is a fixed number of degrees.
-                int step = Math.max(1, com.erika.vsanalogwarfare.config.ClientConfig.zeroingStep());
-                cachedZeroPitch = sightZeroDistance * (DEPRESSION_DEGREES_PER_STEP / (double) step);
-            } else if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
+            if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
                 double cap = elevationCapPitch();
                 double maxPitch = highAngleZero ? cap
                         : Math.min(com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG, cap);
