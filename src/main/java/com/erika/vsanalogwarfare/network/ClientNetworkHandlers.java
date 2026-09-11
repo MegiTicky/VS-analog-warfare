@@ -47,7 +47,8 @@ public final class ClientNetworkHandlers {
     }
 
     public static void openScopeLinks(ScopeLinkPacket.Open packet) {
-        Minecraft.getInstance().setScreen(new ScopeLinkScreen(packet.scope(), packet.revision(), packet.primary(), packet.secondary()));
+        Minecraft.getInstance().setScreen(new ScopeLinkScreen(packet.scope(), packet.revision(), packet.primary(),
+                packet.secondary(), packet.wireHub()));
     }
 
     public static void handleStabilizerState(StabilizerStatePacket packet) {

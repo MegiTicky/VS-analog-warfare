@@ -30,6 +30,7 @@ import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.event.RenderHandEvent;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
@@ -91,6 +92,11 @@ public final class ClientForgeEvents {
         }
         if (!mc.options.keyAttack.isDown()) {
             vehicleHandleAttackHeld = false;
+        }
+        if (ClientScopeState.active()) {
+            // The server equipped a hub-linked tweaked controller for this
+            // session; make sure the game's own controller handler is running.
+            TweakedControllerInputCompat.ensureActive();
         }
         while (ClientKeyMappings.VEHICLE_MOUNT.consumeClick()) {
             if (mc.player == null || mc.screen != null) continue;
@@ -218,6 +224,7 @@ public final class ClientForgeEvents {
             // The scope session is still live in third-person view; show a minimal
             // hint instead of the scope HUD so the mode is not mistaken for an exit.
             graphics.drawString(mc.font, "Third-Person View  [B] Scope  [Shift] Exit", 6, 6, 0xFF80FF80);
+            drawWireKeyStatus(graphics, mc, 6, 18);
             drawFreeLookTargetCircle(graphics, screenW, screenH);
             return;
         }
@@ -240,6 +247,7 @@ public final class ClientForgeEvents {
         drawFreeLookTargetCircle(graphics, screenW, screenH);
 
         drawRangefinderText(graphics, mc, sightScopeX, sightScopeY, scopeW, scopeH);
+        drawWireKeyStatus(graphics, mc, 6, 18);
 
         // Disabled: per-frame debug overlay is expensive (Font rendering + formatting) and was a major hotspot in spark.
         // String debug = ScopeDebug.overlayLine(mc.gameRenderer.getMainCamera());
@@ -306,6 +314,26 @@ public final class ClientForgeEvents {
                 int maxDisplay = (int) Math.round(com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance());
                 graphics.drawString(mc.font, "RNG: > " + maxDisplay, elementX, elementY, 0xFFFF2222, false);
             }
+        }
+    }
+
+    private static void drawWireKeyStatus(GuiGraphics graphics, Minecraft mc, int x, int y) {
+        short mask = TweakedControllerInputCompat.handlerButtonMask();
+        StringBuilder line = new StringBuilder("CTRL");
+        for (int i = 0; i < TweakedControllerInputCompat.BUTTON_LABELS.length; i++) {
+            boolean pressed = (mask & (1 << i)) != 0;
+            line.append(pressed ? " [" + TweakedControllerInputCompat.BUTTON_LABELS[i] + "]"
+                                : "  " + TweakedControllerInputCompat.BUTTON_LABELS[i]);
+        }
+        graphics.drawString(mc.font, line.toString(), x, y, 0xFFE6E6E6, true);
+    }
+
+    /** The scope view replaces the player's hands; this also hides the fake
+     *  wire controller the session equipped. */
+    @SubscribeEvent
+    public static void onRenderHand(RenderHandEvent event) {
+        if (ClientScopeState.active()) {
+            event.setCanceled(true);
         }
     }
 

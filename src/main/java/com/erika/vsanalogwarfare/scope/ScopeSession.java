@@ -8,8 +8,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
+import javax.annotation.Nullable;
 import java.util.UUID;
 
 public class ScopeSession {
@@ -25,6 +27,8 @@ public class ScopeSession {
     private boolean highAngleZero;
     private float maxDepressionDeg;
     private float maxElevationDeg;
+    @Nullable
+    private ItemStack wireControllerOriginal;
 
     public ScopeSession(ServerPlayer player, ScopeBlockEntity scope, BlockPos mountPos) {
         this.playerId = player.getUUID();
@@ -54,6 +58,10 @@ public class ScopeSession {
     public boolean highAngleZero() { return highAngleZero; }
     public float maxDepressionDeg() { return maxDepressionDeg; }
     public float maxElevationDeg() { return maxElevationDeg; }
+
+    /** Main-hand stack displaced while the fake wire controller is equipped; null = none. */
+    @Nullable public ItemStack wireControllerOriginal() { return wireControllerOriginal; }
+    public void setWireControllerOriginal(@Nullable ItemStack stack) { this.wireControllerOriginal = stack; }
 
     public boolean isValid(ServerPlayer player) {
         if (!player.isAlive() || player.isRemoved()) return false;

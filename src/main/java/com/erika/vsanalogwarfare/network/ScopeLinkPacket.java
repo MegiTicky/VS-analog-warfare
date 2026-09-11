@@ -19,10 +19,12 @@ import java.util.function.Supplier;
 public final class ScopeLinkPacket {
     private ScopeLinkPacket() { }
 
-    public record Open(BlockPos scope, int revision, @Nullable LinkView primary, List<LinkView> secondary) {
+    public record Open(BlockPos scope, int revision, @Nullable LinkView primary, List<LinkView> secondary,
+                       @Nullable LinkView wireHub) {
         public static Open fromScope(ScopeBlockEntity scope) {
             return new Open(scope.getBlockPos(), scope.getLinkRevision(), view(scope.getPrimaryLink()),
-                    scope.getSecondaryLinks().stream().map(Open::view).toList());
+                    scope.getSecondaryLinks().stream().map(Open::view).toList(),
+                    view(scope.getWireHubLink()));
         }
 
         private static LinkView view(@Nullable ScopeCannonLink link) {
@@ -35,6 +37,7 @@ public final class ScopeLinkPacket {
             writeNullable(packet.primary, buf);
             buf.writeVarInt(packet.secondary.size());
             for (LinkView link : packet.secondary) writeNullable(link, buf);
+            writeNullable(packet.wireHub, buf);
         }
 
         public static Open decode(FriendlyByteBuf buf) {
@@ -47,7 +50,8 @@ public final class ScopeLinkPacket {
                 LinkView link = readNullable(buf);
                 if (link != null) secondary.add(link);
             }
-            return new Open(scope, revision, primary, secondary);
+            LinkView wireHub = readNullable(buf);
+            return new Open(scope, revision, primary, secondary, wireHub);
         }
 
         public static void handle(Open packet, Supplier<NetworkEvent.Context> supplier) {

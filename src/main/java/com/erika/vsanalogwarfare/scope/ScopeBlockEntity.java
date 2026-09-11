@@ -24,6 +24,9 @@ public class ScopeBlockEntity extends BlockEntity {
 
     @Nullable
     private ScopeCannonLink primaryLink;
+    /** drivebywire Controller Hub this scope acts as a controller for (ship-local link). */
+    @Nullable
+    private ScopeCannonLink wireHubLink;
     private final List<ScopeCannonLink> secondaryLinks = new ArrayList<>();
     private boolean primaryLinkDeleted;
     private transient Map<Long, Object> placedShips;
@@ -141,6 +144,31 @@ public class ScopeBlockEntity extends BlockEntity {
         return List.copyOf(secondaryLinks);
     }
 
+    @Nullable
+    public ScopeCannonLink getWireHubLink() {
+        return wireHubLink;
+    }
+
+    /** Links this scope to a drivebywire Controller Hub; overwrites any previous link. */
+    public boolean setWireHubLink(@Nullable ScopeCannonLink link) {
+        if (link == null) {
+            this.wireHubLink = null;
+            markLinkChanged();
+            return true;
+        }
+        if (sameTarget(wireHubLink, link)) return false;
+        this.wireHubLink = link;
+        markLinkChanged();
+        return true;
+    }
+
+    /** World position of the linked hub, resolved through ship-local links. */
+    @Nullable
+    public BlockPos resolveWireHubPos() {
+        if (this.wireHubLink == null || this.level == null) return null;
+        return this.wireHubLink.resolve(this.level, this.placedShips);
+    }
+
     public int getLinkRevision() {
         return revision;
     }
@@ -211,7 +239,8 @@ public class ScopeBlockEntity extends BlockEntity {
         }
     }
 
-    private static boolean sameTarget(ScopeCannonLink first, ScopeCannonLink second) {
+    private static boolean sameTarget(@Nullable ScopeCannonLink first, @Nullable ScopeCannonLink second) {
+        if (first == null || second == null) return first == second;
         if (first.shipId() != second.shipId()) return false;
         if (first.shipOffset() != null || second.shipOffset() != null) {
             return first.shipOffset() != null && first.shipOffset().equals(second.shipOffset());
@@ -282,6 +311,7 @@ public class ScopeBlockEntity extends BlockEntity {
         super.saveAdditional(tag);
         if (this.primaryLink != null) tag.put("PrimaryLink", this.primaryLink.save());
         tag.putBoolean("PrimaryLinkDeleted", this.primaryLinkDeleted);
+        if (this.wireHubLink != null) tag.put("WireHubLink", this.wireHubLink.save());
         net.minecraft.nbt.ListTag secondary = new net.minecraft.nbt.ListTag();
         for (ScopeCannonLink link : this.secondaryLinks) secondary.add(link.save());
         tag.put("SecondaryLinks", secondary);
@@ -312,6 +342,7 @@ public class ScopeBlockEntity extends BlockEntity {
             this.primaryLink = new ScopeCannonLink(-1L, null, BlockPos.of(tag.getLong("LinkedMountPos")));
         }
         this.primaryLinkDeleted = tag.getBoolean("PrimaryLinkDeleted");
+        this.wireHubLink = tag.contains("WireHubLink") ? ScopeCannonLink.load(tag.getCompound("WireHubLink")) : null;
         this.secondaryLinks.clear();
         if (tag.contains("SecondaryLinks", net.minecraft.nbt.Tag.TAG_LIST)) {
             net.minecraft.nbt.ListTag secondary = tag.getList("SecondaryLinks", net.minecraft.nbt.Tag.TAG_COMPOUND);

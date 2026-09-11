@@ -15,14 +15,16 @@ public final class ScopeLinkScreen extends Screen {
     private final int revision;
     private final ScopeLinkPacket.LinkView primary;
     private final List<ScopeLinkPacket.LinkView> secondary;
+    private final ScopeLinkPacket.LinkView wireHub;
 
     public ScopeLinkScreen(BlockPos scope, int revision, ScopeLinkPacket.LinkView primary,
-                           List<ScopeLinkPacket.LinkView> secondary) {
+                           List<ScopeLinkPacket.LinkView> secondary, ScopeLinkPacket.LinkView wireHub) {
         super(Component.literal("Scope cannon links"));
         this.scope = scope;
         this.revision = revision;
         this.primary = primary;
         this.secondary = secondary;
+        this.wireHub = wireHub;
     }
 
     @Override
@@ -51,6 +53,18 @@ public final class ScopeLinkScreen extends Screen {
                     .bounds(width / 2 + 100, y, 50, 20).build());
             y += 25;
         }
+
+        y += 8;
+        addRenderableWidget(Button.builder(Component.literal(wireHub == null
+                        ? "Controller: none" : "Controller: " + describe(wireHub)), button -> { })
+                .bounds(width / 2 - 150, y, 245, 20).build());
+        addRenderableWidget(Button.builder(Component.literal("Add controller"), button -> arm(2))
+                .bounds(width / 2 + 100, y, 50, 20).build());
+        if (wireHub != null) {
+            addRenderableWidget(Button.builder(Component.literal("Remove"), button -> delete(-2))
+                    .bounds(width / 2 + 152, y, 55, 20).build());
+        }
+        y += 25;
         addRenderableWidget(Button.builder(Component.literal("Close"), button -> onClose())
                 .bounds(width / 2 - 50, Math.min(height - 28, y + 8), 100, 20).build());
     }

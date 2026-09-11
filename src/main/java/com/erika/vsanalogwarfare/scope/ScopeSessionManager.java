@@ -38,6 +38,7 @@ public final class ScopeSessionManager {
             session.update(level);
         }
         SESSIONS.put(player.getUUID(), session);
+        WireControllerManager.equip(player, session, scope);
         ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), scope.getZeroDistance(), scope.getHighAngleZero(), session.maxDepressionDeg(), session.maxElevationDeg()));
         return true;
     }
@@ -47,6 +48,8 @@ public final class ScopeSessionManager {
         if (session == null) {
             return;
         }
+        com.erika.vsanalogwarfare.scope.ScopeWireRelease.releaseChannels(player, session);
+        WireControllerManager.unequip(player, session);
         ModNetwork.sendToPlayer(player, ScopeStatePacket.inactive());
     }
 
@@ -59,7 +62,7 @@ public final class ScopeSessionManager {
         if (player.level() instanceof net.minecraft.server.level.ServerLevel level) {
             session.update(level);
         }
-        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), session.zeroDistance(), session.highAngleZero()));
+        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), session.zeroDistance(), session.highAngleZero(), session.maxDepressionDeg(), session.maxElevationDeg()));
     }
 
     public static Optional<ScopeSession> activeSession(ServerPlayer player) {
@@ -107,6 +110,8 @@ public final class ScopeSessionManager {
             if (player == null || !session.isValid(player)) {
                 iter.remove();
                 if (player != null) {
+                    com.erika.vsanalogwarfare.scope.ScopeWireRelease.releaseChannels(player, session);
+                    WireControllerManager.unequip(player, session);
                     ModNetwork.sendToPlayer(player, ScopeStatePacket.inactive());
                 }
                 continue;
