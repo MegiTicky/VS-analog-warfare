@@ -130,11 +130,11 @@ public final class CommonConfig {
         TURRET_KP = builder
                 .comment("Turret-mode yaw servo proportional gain: RPM commanded per degree of "
                         + "aim error, before the input-speed cap.")
-                .defineInRange("kp", 0.22D, 0.0D, 10.0D);
+                .defineInRange("kp", 0.4D, 0.0D, 10.0D);
         TURRET_KD = builder
                 .comment("Turret-mode yaw servo derivative gain: damping RPM per degree-per-tick of "
                         + "error change, before the input-speed cap.")
-                .defineInRange("kd", 0.95D, 0.0D, 10.0D);
+                .defineInRange("kd", 1.2D, 0.0D, 10.0D);
         TURRET_FEED_FORWARD = builder
                 .comment("Turret-mode feed-forward gain: RPM per degree-per-tick of aim sweep, "
                         + "before the input-speed cap.")
