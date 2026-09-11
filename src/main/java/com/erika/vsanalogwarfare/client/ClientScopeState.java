@@ -560,17 +560,19 @@ public final class ClientScopeState {
                 applyCachedCameraPose(CameraPose.looking(
                         cachedSightPose.position(),
                         directionFromYawPitch(cachedSightPose.yaw(), (float)(cachedSightPose.pitch() + zeroPitch)),
-                        cachedSightPose.up()
+                        shipWorldUpHint()
                 ));
             } else {
-                applyCachedCameraPose(cachedSightPose);
+                applyCachedCameraPose(CameraPose.looking(
+                        cachedSightPose.position(), cachedSightPose.direction(), shipWorldUpHint()));
             }
         } else {
-            // FreeLook is ON - use sight pose's up to preserve roll from ship orientation
+            // FreeLook is ON - hull-up hint: ship roll still carries into the picture, but turret
+            // yaw at high elevation cannot spin the horizon (see shipWorldUpHint).
             applyCachedCameraPose(CameraPose.looking(
                     cachedSightPose.position(),
                     directionFromYawPitch(freeLookYaw, freeLookPitch),
-                    cachedSightPose.up()
+                    shipWorldUpHint()
             ));
         }
     }
@@ -585,6 +587,24 @@ public final class ClientScopeState {
      * transform quaternion VS2 itself uses is taken for the pre-division, so
      * the cancellation is exact (no lag, no drift, roll handled correctly).
      */
+    /**
+     * Camera up hint: the hull's world up instead of the bore-projected gun up. As the bore
+     * approaches vertical, the gun's projected up becomes locked to the turret's yaw ring, so
+     * yawing the cannon spins the camera about its own view axis and the sight picture rolls.
+     * The hull up keeps ship roll in the picture without that coupling. Matches the
+     * ship-compensation condition so the hint lands in the same frame the angles render in.
+     */
+    private static Vec3 shipWorldUpHint() {
+        if (ClientConfig.scopeMountedRotationCompensation()) {
+            Quaternionf shipRotation = com.erika.vsanalogwarfare.scope.compat.VsCompat.playerMountedShipRotation();
+            if (shipRotation != null) {
+                Vector3f up = shipRotation.transform(new Vector3f(0.0f, 1.0f, 0.0f));
+                return new Vec3(up.x(), up.y(), up.z()).normalize();
+            }
+        }
+        return new Vec3(0.0, 1.0, 0.0);
+    }
+
     private static void applyCachedCameraPose(CameraPose pose) {
         cachedCameraPose = pose;
         Quaternionf rotation = new Quaternionf(pose.qx(), pose.qy(), pose.qz(), pose.qw()).normalize();
