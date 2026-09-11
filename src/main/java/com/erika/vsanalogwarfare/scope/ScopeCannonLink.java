@@ -40,6 +40,11 @@ public record ScopeCannonLink(long shipId, @Nullable BlockPos shipOffset, BlockP
         return fallbackPos;
     }
 
+    /** Re-points this link at the ship it became after a schematic paste; shipOffset carries over. */
+    public ScopeCannonLink rebased(long newShipId, BlockPos newFallbackPos) {
+        return new ScopeCannonLink(newShipId, shipOffset, newFallbackPos);
+    }
+
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putLong("FallbackPos", fallbackPos.asLong());

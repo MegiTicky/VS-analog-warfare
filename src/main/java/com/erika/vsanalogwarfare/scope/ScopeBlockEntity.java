@@ -220,9 +220,47 @@ public class ScopeBlockEntity extends BlockEntity {
     public void initializeAfterSchematicPlacement(Map<Long, Object> placedShips) {
         this.placedShips = placedShips;
         captureVsAnchor();
+        rebaseLinksAfterPaste(placedShips);
         initializeDefaultPrimaryLink();
         refreshBallisticProfile();
         synchronizeSecondaryCannons();
+    }
+
+    /**
+     * Schematic NBT carries the ship ids of the world it was saved in, which never match the
+     * freshly allocated ids of the pasted ships. Rebase every link onto the pasted ship (the
+     * same rewrite the setup block applies to recorded actions) so resolution via the persisted
+     * VS2 ship id keeps working after the placement and across server restarts, where the
+     * transient placedShips map is gone.
+     */
+    private void rebaseLinksAfterPaste(Map<Long, Object> placedShips) {
+        if (placedShips == null || placedShips.isEmpty() || this.level == null || this.level.isClientSide) return;
+        boolean changed = false;
+        if (this.primaryLink != null) {
+            ScopeCannonLink rebased = rebaseLink(this.primaryLink, placedShips);
+            if (rebased != null) { this.primaryLink = rebased; changed = true; }
+        }
+        if (this.wireHubLink != null) {
+            ScopeCannonLink rebased = rebaseLink(this.wireHubLink, placedShips);
+            if (rebased != null) { this.wireHubLink = rebased; changed = true; }
+        }
+        for (int i = 0; i < this.secondaryLinks.size(); i++) {
+            ScopeCannonLink rebased = rebaseLink(this.secondaryLinks.get(i), placedShips);
+            if (rebased != null) { this.secondaryLinks.set(i, rebased); changed = true; }
+        }
+        if (changed) markLinkChanged();
+    }
+
+    @Nullable
+    private static ScopeCannonLink rebaseLink(ScopeCannonLink link, Map<Long, Object> placedShips) {
+        if (link.shipId() < 0L || link.shipOffset() == null) return null;
+        Object ship = placedShips.get(link.shipId());
+        if (ship == null) return null;
+        long newShipId = VsCompat.getShipId(ship);
+        if (newShipId == link.shipId()) return null;
+        BlockPos resolved = com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection.positionOnShip(ship, link.shipOffset());
+        if (resolved == null) return null;
+        return link.rebased(newShipId, resolved.immutable());
     }
 
     private void synchronizeSecondaryCannons() {
