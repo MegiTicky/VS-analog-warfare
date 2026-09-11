@@ -23,30 +23,38 @@ public final class BallisticSolver {
     }
 
     public static ReticleMark solvePitch(BallisticProfile profile, int targetDistance, double maxPitchDeg) {
-        return solvePitch(profile, targetDistance, maxPitchDeg, false);
+        return solvePitch(profile, targetDistance, maxPitchDeg, false, 45.0);
     }
 
     // High arc = the steeper of the two solutions for the same distance (artillery / mortar fire).
-    public static ReticleMark solvePitch(BallisticProfile profile, int targetDistance, double maxPitchDeg, boolean highArc) {
-        double lowPitch = Double.NaN;
-        double lowError = Double.POSITIVE_INFINITY;
-        double arcPitch = Double.NaN;
-        double arcError = Double.POSITIVE_INFINITY;
-        // Coarse + fine scan is stable for both low and high arcs; low arc keeps the lowest valid pitch
-        // (strict <), the high-arc candidate lets the highest pitch win ties (<=).
-        for (double pitch = 0.0; pitch <= maxPitchDeg; pitch += 0.5) {
-            double err = rangeError(profile, targetDistance, pitch);
-            if (err < lowError) {
-                lowError = err;
-                lowPitch = pitch;
+    // apexPitchDeg = pitch of the flattest-arc maximum range (the branch point); the high arc always
+    // sits above it. Pass the cached apex pitch when available.
+    public static ReticleMark solvePitch(BallisticProfile profile, int targetDistance, double maxPitchDeg, boolean highArc, double apexPitchDeg) {
+        double bestPitch = Double.NaN;
+        double bestError = Double.POSITIVE_INFINITY;
+        if (highArc) {
+            // Scan only the region ABOVE the apex pitch, top-down. Selecting the highest
+            // minimal-error sample across the whole sweep fails: both arcs' sampled errors converge
+            // near zero and the low arc is sampled first, so the comparison never switches to the
+            // steep solution and the gun would pitch down instead of up.
+            double floor = Math.max(0.0, apexPitchDeg - 1.0);
+            for (double pitch = maxPitchDeg; pitch >= floor; pitch -= 0.5) {
+                double err = rangeError(profile, targetDistance, pitch);
+                if (err < bestError) {
+                    bestError = err;
+                    bestPitch = pitch;
+                }
             }
-            if (err <= arcError) {
-                arcError = err;
-                arcPitch = pitch;
+        } else {
+            // Coarse scan keeps the lowest valid pitch (strict <) - the low arc.
+            for (double pitch = 0.0; pitch <= maxPitchDeg; pitch += 0.5) {
+                double err = rangeError(profile, targetDistance, pitch);
+                if (err < bestError) {
+                    bestError = err;
+                    bestPitch = pitch;
+                }
             }
         }
-        double bestPitch = highArc ? arcPitch : lowPitch;
-        double bestError = highArc ? arcError : lowError;
         double start = Math.max(0.0, bestPitch - 0.35);
         double end = Math.min(maxPitchDeg, bestPitch + 0.35);
         for (double pitch = start; pitch <= end; pitch += 0.1) {

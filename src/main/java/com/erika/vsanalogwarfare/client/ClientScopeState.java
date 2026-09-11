@@ -821,9 +821,12 @@ public final class ClientScopeState {
                 double cap = elevationCapPitch();
                 double maxPitch = highAngleZero ? cap
                         : Math.min(com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG, cap);
+                if (highAngleZero) {
+                    apexRange(); // populate the apex cache - the high-arc scan is bounded by apexPitch()
+                }
                 com.erika.vsanalogwarfare.scope.ballistics.ReticleMark mark =
                         com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
-                                ballisticProfile, sightZeroDistance, maxPitch, highAngleZero
+                                ballisticProfile, sightZeroDistance, maxPitch, highAngleZero, apexPitch()
                         );
                 // Unsolvable zero: hold the last commanded elevation. The zero wheel drives the cannon by
                 // pitch deltas, so a 0.0 fallback here would slam the cannon flat on one scroll notch.
