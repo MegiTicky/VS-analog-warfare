@@ -539,10 +539,13 @@ public final class ClientScopeState {
             // level while the ship rolls under the camera.
             LocalPlayer player = mc.player;
             if (player != null) {
+                // World-up hint (the 2-arg looking overload), NOT the sight's up:
+                // an orbit camera must stay gravity-up. With the sight's up, an
+                // elevated cannon couples elevation x turret-yaw-lag into the
+                // render roll and the horizon rolls while the turret slews.
                 applyCachedCameraPose(CameraPose.looking(
                         cachedSightPose.position(),
-                        directionFromYawPitch(player.getYRot(), player.getXRot()),
-                        cachedSightPose.up()
+                        directionFromYawPitch(player.getYRot(), player.getXRot())
                 ));
             } else {
                 applyCachedCameraPose(cachedSightPose);

@@ -157,9 +157,10 @@ public abstract class CameraMixin {
     /**
      * VS recomputes the third-person back-off along its ship-combined forwards
      * (shipRot · look), while this view renders along the stabilized world look.
-     * Redo VS's orbit along the stabilized direction: same anchor (VS2's entity
-     * mixin ship-corrects getEyePosition to the anchor VS itself used), same max
-     * distance formula, same ship-aware collision that ignores the mounted ship.
+     * Redo VS's orbit along the stabilized direction: the orbit pivot is the
+     * world-Y raised eye (the lift is part of the pivot, not appended after),
+     * so the collision rays test the exact path the camera travels — VS2 tests
+     * the path its own camera takes and never clips into untested geometry.
      */
     private void vs_analog_warfare$applyStabilizedThirdPerson(BlockGetter level, Entity entity, float partialTick,
                                                               ClientShip shipMountedTo) {
@@ -167,7 +168,8 @@ public abstract class CameraMixin {
         if (!(level instanceof net.minecraft.world.level.Level mcLevel)) {
             return;
         }
-        Vec3 eye = entity.getEyePosition(partialTick);
+        Vec3 pivot = entity.getEyePosition(partialTick)
+                .add(0.0, ClientConfig.scopeThirdPersonCameraLift(), 0.0);
         Vec3 dir = new Vec3(this.f_90554_.x(), this.f_90554_.y(), this.f_90554_.z());
 
         org.joml.primitives.AABBi aabb = (org.joml.primitives.AABBi) shipMountedTo.getShipVoxelAABB();
@@ -180,22 +182,21 @@ public abstract class CameraMixin {
             float fx = (float) ((i & 1) * 2 - 1) * 0.1F;
             float fy = (float) ((i >> 1 & 1) * 2 - 1) * 0.1F;
             float fz = (float) ((i >> 2 & 1) * 2 - 1) * 0.1F;
-            Vec3 from = eye.add(fx, fy, fz);
-            Vec3 to = new Vec3(eye.x - dir.x * maxZoom + fx + fz,
-                    eye.y - dir.y * maxZoom + fy,
-                    eye.z - dir.z * maxZoom + fz);
+            Vec3 from = pivot.add(fx, fy, fz);
+            Vec3 to = new Vec3(pivot.x - dir.x * maxZoom + fx + fz,
+                    pivot.y - dir.y * maxZoom + fy,
+                    pivot.z - dir.z * maxZoom + fz);
             HitResult hitResult = org.valkyrienskies.mod.common.world.RaycastUtilsKt.clipIncludeShips(mcLevel,
                     new ClipContext(from, to, ClipContext.Block.VISUAL, ClipContext.Fluid.NONE, entity),
                     true, shipMountedTo.getId());
             if (hitResult.getType() != HitResult.Type.MISS) {
-                double dist = hitResult.getLocation().distanceTo(eye);
+                double dist = hitResult.getLocation().distanceTo(pivot);
                 if (dist < maxZoom) {
                     maxZoom = dist;
                 }
             }
         }
 
-        double lift = ClientConfig.scopeThirdPersonCameraLift();
-        m_90581_(eye.subtract(dir.scale(maxZoom)).add(0.0, lift, 0.0));
+        m_90581_(pivot.subtract(dir.scale(maxZoom)));
     }
 }
