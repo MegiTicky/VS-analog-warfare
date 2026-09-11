@@ -560,6 +560,9 @@ public final class StabilizerController {
     /** Scope elevation lock: aim-rail time constant (seconds) and divergence cap (degrees). */
     private static final double SCOPE_ELEV_RAIL_TAU_SECONDS = 0.08;
     private static final double SCOPE_ELEV_LOCK_MAX_DEG = 8.0;
+    // Above this world elevation the yaw/elevation rebuild and the world-up projection are
+    // noise-amplified by 1/cos(elev); mirrors the servo Jacobian's cos floor (0.05 ~ 87.2 deg).
+    private static final double SCOPE_ELEV_LOCK_POLE_DEG = 87.0;
 
     /**
      * Client render path: pin the scope camera's world-space pitch to the
@@ -633,8 +636,12 @@ public final class StabilizerController {
 
         state.renderScopeElevBlend = glideBlend(state.renderScopeElevBlend, 1.0f, 0.5f);
         double lockedElev = worldElev + state.renderScopeElevBlend * err;
-        float worldYaw = (float) Math.toDegrees(Math.atan2(-worldForward.x, worldForward.z));
-        Vec3 worldFinal = CbcCompat.directionFromYawPitch(worldYaw, (float) lockedElev);
+        boolean nearPole = Math.abs(worldElev) > SCOPE_ELEV_LOCK_POLE_DEG;
+        // Near gimbal pole the azimuth of a near-zero horizontal vector swings wildly, so the
+        // rebuild would convert tiny bore wobble into large direction changes; keep the true bore.
+        Vec3 worldFinal = nearPole ? worldForward
+                : CbcCompat.directionFromYawPitch(
+                        (float) Math.toDegrees(Math.atan2(-worldForward.x, worldForward.z)), (float) lockedElev);
         Matrix4dc inverse = new Matrix4d(rotation).invert();
         Vec3 forwardFinal = StabilizerMath.transformDirection(inverse, worldFinal);
 
@@ -642,7 +649,7 @@ public final class StabilizerController {
         // toward world-up-projected-on-the-view-plane (level horizon) by the
         // same lock factor, so engage/release can never snap the roll.
         Vec3 shipUp = projectPerpendicular(localUp, forwardFinal);
-        Vec3 worldUpProjected = projectPerpendicular(new Vec3(0.0, 1.0, 0.0), worldFinal);
+        Vec3 worldUpProjected = nearPole ? null : projectPerpendicular(new Vec3(0.0, 1.0, 0.0), worldFinal);
         Vec3 levelUp = worldUpProjected == null
                 ? null : StabilizerMath.transformDirection(inverse, worldUpProjected);
         Vec3 up;
