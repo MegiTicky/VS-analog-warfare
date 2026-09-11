@@ -12,6 +12,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4dc;
 
+import javax.annotation.Nullable;
 import java.util.Optional;
 
 /**
@@ -35,7 +36,8 @@ import java.util.Optional;
  * full validated response, and the command always tapers with the error.
  * The derivative term damps the settle, the feed-forward term keeps tracking
  * a sweeping aim, and the slew limiter keeps the physics bearing from being
- * shocked.
+ * shocked. The gains come from the block's {@link TurretTuning} — the global
+ * config template until a calibration stores per-block values.
  *
  * <p><b>Sign:</b> a Clockwork physics bearing facing up applies omega along
  * its facing normal, so positive RPM decreases the Minecraft azimuth
@@ -59,6 +61,31 @@ final class TurretYawController {
     private int debugTimer;
 
     /**
+     * World-frame azimuth of the cannon bore, or {@code null} when it cannot
+     * be resolved this tick (no ship, no cannon angle, bore vertical). Shared
+     * with {@link TurretAutotuner}, which drives the same measurement.
+     */
+    @Nullable
+    static Double measuredBoreYawDeg(Level level, BlockPos mountPos) {
+        Object turretShip = VsCompat.findShip(level, mountPos);
+        Direction initialOrientation = CbcCompat.getInitialOrientationFromCannon(level, mountPos);
+        if (turretShip == null || initialOrientation == null) {
+            return null;
+        }
+        Optional<Vec3> boreLocal = CbcCompat.getAimDirection(level, mountPos, initialOrientation, 1.0F, false);
+        Matrix4dc turretToWorld = StabilizerMath.getTickShipToWorld(turretShip);
+        if (boreLocal.isEmpty() || turretToWorld == null) {
+            return null;
+        }
+        Vec3 boreWorld = StabilizerMath.transformDirection(turretToWorld, boreLocal.get());
+        if (boreWorld.horizontalDistanceSqr() < 1.0e-6) {
+            // Bore is straight up or down; azimuth is undefined.
+            return null;
+        }
+        return azimuthDeg(boreWorld);
+    }
+
+    /**
      * Computes this tick's output command.
      *
      * @param targetDirection the aim direction from the client packet (world frame)
@@ -70,26 +97,17 @@ final class TurretYawController {
         if (level == null) {
             return lastOutputRpm;
         }
-
-        Object turretShip = VsCompat.findShip(level, mountPos);
-        Direction initialOrientation = CbcCompat.getInitialOrientationFromCannon(level, mountPos);
-        if (turretShip == null || initialOrientation == null) {
-            return lastOutputRpm;
-        }
-        Optional<Vec3> boreLocal = CbcCompat.getAimDirection(level, mountPos, initialOrientation, 1.0F, false);
-        Matrix4dc turretToWorld = StabilizerMath.getTickShipToWorld(turretShip);
-        if (boreLocal.isEmpty() || turretToWorld == null) {
-            return lastOutputRpm;
-        }
-        Vec3 boreWorld = StabilizerMath.transformDirection(turretToWorld, boreLocal.get());
-        if (boreWorld.horizontalDistanceSqr() < 1.0e-6) {
-            // Bore is straight up or down; azimuth is undefined, hold.
+        Double measured = measuredBoreYawDeg(level, mountPos);
+        if (measured == null) {
             return lastOutputRpm;
         }
 
+        TurretTuning tuning = controller.getEffectiveTuning();
         double setpointYaw = azimuthDeg(targetDirection);
-        double measuredYaw = azimuthDeg(boreWorld);
-        double err = horizontalErrorDeg(targetDirection, boreWorld);
+        // The horizontal angle between two directions is the difference of
+        // their azimuths (identical to the vector form this replaces).
+        double measuredYaw = measured;
+        double err = wrapDegrees(setpointYaw - measuredYaw);
 
         double derivative = hasHistory ? wrapDegrees(err - prevErr) : 0.0D;
         double setpointRate = hasHistory ? wrapDegrees(setpointYaw - prevSetpointYaw) : 0.0D;
@@ -99,9 +117,9 @@ final class TurretYawController {
         prevErr = err;
         hasHistory = true;
 
-        double core = CommonConfig.turretKp() * err
-                + CommonConfig.turretKd() * derivativeLpf
-                + CommonConfig.turretFeedForward() * setpointRateLpf;
+        double core = tuning.kp() * err
+                + tuning.kd() * derivativeLpf
+                + tuning.feedForward() * setpointRateLpf;
         if (Math.abs(err) < CommonConfig.turretDeadbandDeg()
                 && Math.abs(setpointRateLpf) < HOLD_FEED_RATE_THRESHOLD) {
             core = 0.0D;
@@ -115,7 +133,7 @@ final class TurretYawController {
         float cap = (float) Math.min(CommonConfig.turretMaxOutputRpm(), Math.abs(controller.getSpeed()));
         float rpmSign = CommonConfig.turretYawInvert() ? 1.0F : -1.0F;
         float raw = (float) Mth.clamp(rpmSign * core, -cap, cap);
-        float slew = (float) CommonConfig.turretOutputSlewPerTick();
+        float slew = (float) tuning.slewPerTick();
         lastOutputRpm = (float) Mth.clamp(raw, lastOutputRpm - slew, lastOutputRpm + slew);
 
         debugTick(controller, err, setpointYaw, measuredYaw, raw, lastOutputRpm, cap);
@@ -123,17 +141,25 @@ final class TurretYawController {
     }
 
     /**
-     * Steps the output toward zero at the slew rate; called while no aim
-     * target is active so the turret coasts to a stop instead of freezing.
+     * Steps the output toward zero at the given slew rate; called while no
+     * aim target is active so the turret coasts to a stop instead of freezing.
      */
-    float idle() {
+    float idle(float slewPerTick) {
         if (Math.abs(lastOutputRpm) <= ZERO_SPEED_EPSILON_RPM) {
             lastOutputRpm = 0.0F;
             return 0.0F;
         }
-        float slew = (float) CommonConfig.turretOutputSlewPerTick();
-        lastOutputRpm -= Math.signum(lastOutputRpm) * Math.min(Math.abs(lastOutputRpm), slew);
+        lastOutputRpm -= Math.signum(lastOutputRpm) * Math.min(Math.abs(lastOutputRpm), slewPerTick);
         return lastOutputRpm;
+    }
+
+    /**
+     * Adopts a command produced outside the control law (the auto-calibration
+     * step test) so the servo resumes by slewing from where the turret
+     * actually is instead of jumping from a stale internal state.
+     */
+    void syncOutput(float externalRpm) {
+        lastOutputRpm = externalRpm;
     }
 
     /** Clears the loop history (called when the target is dropped entirely). */
@@ -147,22 +173,6 @@ final class TurretYawController {
 
     float lastOutputRpm() {
         return lastOutputRpm;
-    }
-
-    private static double horizontalErrorDeg(Vec3 target, Vec3 bore) {
-        double targetLength = target.horizontalDistance();
-        double boreLength = bore.horizontalDistance();
-        if (targetLength < 1.0e-6 || boreLength < 1.0e-6) {
-            return 0.0D;
-        }
-
-        double targetX = target.x / targetLength;
-        double targetZ = target.z / targetLength;
-        double boreX = bore.x / boreLength;
-        double boreZ = bore.z / boreLength;
-        double sin = targetZ * boreX - targetX * boreZ;
-        double cos = targetX * boreX + targetZ * boreZ;
-        return Math.toDegrees(Math.atan2(sin, cos));
     }
 
     private static double azimuthDeg(Vec3 direction) {

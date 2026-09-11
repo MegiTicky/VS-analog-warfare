@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.client;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimMode;
 import com.erika.vsanalogwarfare.network.ModNetwork;
 import com.erika.vsanalogwarfare.network.MouseAimConfigPacket;
+import com.erika.vsanalogwarfare.network.MouseAimTuningPacket;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -58,6 +59,16 @@ public class MouseAimConfigScreen extends Screen {
                     () -> selectMode(value), () -> mode == value));
         }
 
+        // Servo tuning: only the turret mode drives the calibration loop.
+        if (mode == MouseAimMode.TURRET) {
+            addRenderableWidget(new OptionButton(left + 4, 146, buttonWidth, 18,
+                    Component.translatable("vs_analog_warfare.mouse_aim.ui.calibrate"),
+                    this::calibrate, () -> false));
+            addRenderableWidget(new OptionButton(left + 8 + buttonWidth, 146, buttonWidth, 18,
+                    Component.translatable("vs_analog_warfare.mouse_aim.ui.reset_tuning"),
+                    this::resetTuning, () -> false));
+        }
+
         addRenderableWidget(Button.builder(Component.translatable("vs_analog_warfare.mouse_aim.ui.done"), b -> onClose())
                 .bounds(width / 2 - 40, height - 28, 80, 18)
                 .build());
@@ -69,6 +80,19 @@ public class MouseAimConfigScreen extends Screen {
         }
         mode = value;
         send();
+        // The tuning section is mode-gated; re-init to show or hide it.
+        rebuildWidgets();
+    }
+
+    private void calibrate() {
+        ModNetwork.sendToServer(new MouseAimTuningPacket(pos, MouseAimTuningPacket.Action.CALIBRATE));
+        // The test reports progress on the action bar, which the screen hides.
+        onClose();
+    }
+
+    private void resetTuning() {
+        ModNetwork.sendToServer(new MouseAimTuningPacket(pos, MouseAimTuningPacket.Action.RESET));
+        onClose();
     }
 
     private void send() {
@@ -96,6 +120,11 @@ public class MouseAimConfigScreen extends Screen {
         graphics.drawCenteredString(font,
                 Component.translatable("vs_analog_warfare.mouse_aim.ui.strength_hint").withStyle(ChatFormatting.GRAY),
                 width / 2, top + 108, COLOR_HINT);
+
+        if (mode == MouseAimMode.TURRET) {
+            graphics.drawString(font, Component.translatable("vs_analog_warfare.mouse_aim.ui.tuning_section"),
+                    left + 6, top + 126, COLOR_LABEL, false);
+        }
 
         super.render(graphics, mouseX, mouseY, partialTick);
     }

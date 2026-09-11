@@ -29,6 +29,7 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.DoubleValue TURRET_FEED_FORWARD;
     public static final ForgeConfigSpec.DoubleValue TURRET_DEADBAND_DEG;
     public static final ForgeConfigSpec.DoubleValue TURRET_OUTPUT_SLEW_PER_TICK;
+    public static final ForgeConfigSpec.DoubleValue TURRET_CALIBRATION_REFERENCE_LAG;
     public static final ForgeConfigSpec.DoubleValue TURRET_STRESS_CAPACITY;
     public static final ForgeConfigSpec.BooleanValue TURRET_YAW_INVERT;
     public static final ForgeConfigSpec.BooleanValue TURRET_DEBUG;
@@ -128,23 +129,32 @@ public final class CommonConfig {
                 .defineInRange("maxOutputRpm", 16.0D, 1.0D, 256.0D);
         TURRET_KP = builder
                 .comment("Turret-mode yaw servo proportional gain: RPM commanded per degree of "
-                        + "aim error, before the block's strength scaling.")
-                .defineInRange("kp", 0.5D, 0.0D, 10.0D);
+                        + "aim error, before the input-speed cap.")
+                .defineInRange("kp", 0.22D, 0.0D, 10.0D);
         TURRET_KD = builder
                 .comment("Turret-mode yaw servo derivative gain: damping RPM per degree-per-tick of "
-                        + "error change, before the block's strength scaling.")
-                .defineInRange("kd", 0.35D, 0.0D, 10.0D);
+                        + "error change, before the input-speed cap.")
+                .defineInRange("kd", 0.95D, 0.0D, 10.0D);
         TURRET_FEED_FORWARD = builder
                 .comment("Turret-mode feed-forward gain: RPM per degree-per-tick of aim sweep, "
-                        + "before the block's strength scaling.")
-                .defineInRange("feedForward", 0.8D, 0.0D, 10.0D);
+                        + "before the input-speed cap.")
+                .defineInRange("feedForward", 0.05D, 0.0D, 10.0D);
         TURRET_DEADBAND_DEG = builder
                 .comment("Aim errors smaller than this (degrees) command no rotation, preventing dither.")
                 .defineInRange("deadbandDeg", 0.05D, 0.0D, 5.0D);
         TURRET_OUTPUT_SLEW_PER_TICK = builder
                 .comment("Maximum change of the commanded output per tick, in RPM. Also the ramp-down "
-                        + "rate when aiming stops. Keep low so the physics bearing is not shocked.")
-                .defineInRange("outputSlewRpmPerTick", 2.0D, 0.0D, 64.0D);
+                        + "rate when aiming stops. Higher values respond faster to input changes; "
+                        + "very high values can shock the physics bearing.")
+                .defineInRange("outputSlewRpmPerTick", 10.0D, 0.0D, 64.0D);
+        TURRET_CALIBRATION_REFERENCE_LAG = builder
+                .comment("Spin-up lag in game ticks of the turret the kp/kd template above was "
+                        + "hand-tuned on (the Calibrate button measures and reports it as "
+                        + "'lag N.N ticks'). Calibration scores a turret at 100% while its "
+                        + "measured lag is within 1.25x of this, and de-rates kp down to a "
+                        + "floor of 50% for slower turrets (multi-ship drag). Set this to the "
+                        + "lag your reference turret measures so it calibrates at 100%.")
+                .defineInRange("calibrationReferenceLagTicks", 75.0D, 5.0D, 600.0D);
         TURRET_STRESS_CAPACITY = builder
                 .comment("Stress capacity provided by the turret rotation output network.")
                 .defineInRange("stressCapacity", 4096.0D, 0.0D, 65536.0D);
@@ -190,6 +200,7 @@ public final class CommonConfig {
     public static double turretFeedForward() { return TURRET_FEED_FORWARD.get(); }
     public static double turretDeadbandDeg() { return TURRET_DEADBAND_DEG.get(); }
     public static double turretOutputSlewPerTick() { return TURRET_OUTPUT_SLEW_PER_TICK.get(); }
+    public static double turretCalibrationReferenceLagTicks() { return TURRET_CALIBRATION_REFERENCE_LAG.get(); }
     public static double turretStressCapacity() { return TURRET_STRESS_CAPACITY.get(); }
     public static boolean turretYawInvert() { return TURRET_YAW_INVERT.get(); }
     public static boolean turretDebug() { return TURRET_DEBUG.get(); }

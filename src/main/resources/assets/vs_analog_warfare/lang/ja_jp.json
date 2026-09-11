@@ -4,6 +4,19 @@
   "vs_analog_warfare.mouse_aim.mode.turret": "タレット（pitch 操作、yaw は上面回転出力）",
 
   "vs_analog_warfare.mouse_aim.ui.strength_hint": "入力軸は動力源であり、旋回速度は maxOutputRpm 設定で固定されます",
+  "vs_analog_warfare.mouse_aim.ui.tuning_section": "サーボ調整",
+  "vs_analog_warfare.mouse_aim.ui.calibrate": "キャリブレーション",
+  "vs_analog_warfare.mouse_aim.ui.reset_tuning": "調整をリセット",
+  "vs_analog_warfare.mouse_aim.calibrate.started": "タレットをキャリブレーション中 - 船を動かさないでください...",
+  "vs_analog_warfare.mouse_aim.calibrate.busy": "キャリブレーションが既に実行中です",
+  "vs_analog_warfare.mouse_aim.calibrate.unpowered": "キャリブレーションにはマウスエイムブロックへの動力入力が必要です",
+  "vs_analog_warfare.mouse_aim.calibrate.no_mount": "キャリブレーション対象の隣接キャノンマウントがありません",
+  "vs_analog_warfare.mouse_aim.calibrate.no_bore": "キャリブレーション中断 - 砲身方向を取得できません",
+  "vs_analog_warfare.mouse_aim.calibrate.stuck": "キャリブレーション中断 - タレットが動きません。ベアリングを確認してください",
+  "vs_analog_warfare.mouse_aim.calibrate.runaway": "キャリブレーション中断 - タレットが動きすぎました",
+  "vs_analog_warfare.mouse_aim.calibrate.done": "キャリブレーション完了: 応答は理想の %s%% (遅延 %s tick) - 設定を保存しました",
+  "vs_analog_warfare.mouse_aim.calibrate.slow_hint": "応答が理想より大幅に遅いです - 引きずられる艦かベアリング軸のズレを確認してください",
+  "vs_analog_warfare.mouse_aim.tuning.reset": "タレット調整をグローバル既定にリセットしました",
   "block.vs_analog_warfare.invisible_seat": "透明な座席",
   "item.vs_analog_warfare.invisible_seat": "透明な座席"
 }

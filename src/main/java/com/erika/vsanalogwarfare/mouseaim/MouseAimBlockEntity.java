@@ -7,6 +7,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.Vec3i;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -37,6 +39,11 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
 
     /** Aim mode, set from the config screen. */
     private MouseAimMode mode = MouseAimMode.CANNON;
+
+    private final TurretAutotuner autotuner = new TurretAutotuner();
+    /** Per-block servo gains from a calibration; {@code null} runs the global config template. */
+    @Nullable
+    private TurretTuning tuning;
 
     public MouseAimBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.MOUSE_AIM.get(), pos, state);
@@ -92,6 +99,57 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         setChanged();
     }
 
+    /** Gains the yaw servo runs this tick: calibrated values or the global template. */
+    public TurretTuning getEffectiveTuning() {
+        return tuning == null ? TurretTuning.fromConfig() : tuning;
+    }
+
+    /** Adopts calibrated gains. Called by {@link TurretAutotuner} on completion. */
+    void storeTuning(TurretTuning values) {
+        this.tuning = values;
+        setChanged();
+    }
+
+    public boolean isCalibrating() {
+        return autotuner.active();
+    }
+
+    /**
+     * Starts a step-test calibration. Prefers the mount of a fresh aim
+     * target, falling back to any adjacent cannon mount. Reports progress and
+     * the result to the triggering player via the action bar.
+     */
+    public void startCalibration(ServerPlayer player) {
+        if (level == null) {
+            return;
+        }
+        BlockPos mount = targetMountPos;
+        if (mount == null
+                || level.getGameTime() - lastTargetGameTime > CommonConfig.mouseAimTargetTimeoutTicks()) {
+            mount = MouseAimController.findAdjacentMount(level, worldPosition).orElse(null);
+        }
+        if (mount == null) {
+            player.displayClientMessage(
+                    Component.translatable("vs_analog_warfare.mouse_aim.calibrate.no_mount"), true);
+            return;
+        }
+        String error = autotuner.start(this, mount, player);
+        if (error != null) {
+            player.displayClientMessage(Component.translatable(error), true);
+        }
+    }
+
+    /** Drops calibrated gains (and any running calibration), back to the global template. */
+    public void resetTuning(ServerPlayer player) {
+        autotuner.cancel();
+        if (tuning != null) {
+            tuning = null;
+            setChanged();
+        }
+        player.displayClientMessage(
+                Component.translatable("vs_analog_warfare.mouse_aim.tuning.reset"), true);
+    }
+
     /** Latest PID output command for the turret rotation face, in RPM. */
     public float getTurretOutputRpm() {
         return turretOutputRpm;
@@ -116,7 +174,8 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
             attachKinetics();
         }
         if (getMode() == MouseAimMode.CANNON) {
-            float idleRpm = turretYaw.idle();
+            autotuner.cancel();
+            float idleRpm = turretYaw.idle((float) getEffectiveTuning().slewPerTick());
             if (idleRpm == 0.0F) {
                 turretYaw.reset();
             }
@@ -139,12 +198,22 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     }
 
     private void tickTurretMode() {
+        if (autotuner.active()) {
+            // Calibration drives the output itself; normal aiming resumes
+            // (slewing from the test's last command) once it finishes.
+            float command = autotuner.tick(this);
+            if (!autotuner.active()) {
+                turretYaw.syncOutput(command);
+            }
+            applyTurretOutput(command);
+            return;
+        }
         boolean fresh = isMouseAimActive()
                 && targetDirection != null && targetMountPos != null && targetScopePos != null
                 && level.getGameTime() - lastTargetGameTime <= CommonConfig.mouseAimTargetTimeoutTicks();
         if (!fresh) {
             clearTarget();
-            applyTurretOutput(turretYaw.idle());
+            applyTurretOutput(turretYaw.idle((float) getEffectiveTuning().slewPerTick()));
             return;
         }
         Vec3 target = targetDirection.normalize();
@@ -234,6 +303,9 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         if (!clientPacket) {
             compound.putString("Mode", mode.name());
             compound.put("OutputInterface", outputInterface.writeServer(new CompoundTag()));
+            if (tuning != null) {
+                compound.put("Tuning", tuning.write());
+            }
         }
     }
 
@@ -249,5 +321,6 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         if (compound.contains("OutputInterface")) {
             outputInterface.readServer(compound.getCompound("OutputInterface"));
         }
+        tuning = TurretTuning.read(compound.contains("Tuning") ? compound.getCompound("Tuning") : null);
     }
 }
