@@ -23,16 +23,30 @@ public final class BallisticSolver {
     }
 
     public static ReticleMark solvePitch(BallisticProfile profile, int targetDistance, double maxPitchDeg) {
-        double bestPitch = Double.NaN;
-        double bestError = Double.POSITIVE_INFINITY;
-        // Coarse + fine scan is stable for both low and high arcs; reticle uses the lowest valid arc.
+        return solvePitch(profile, targetDistance, maxPitchDeg, false);
+    }
+
+    // High arc = the steeper of the two solutions for the same distance (artillery / mortar fire).
+    public static ReticleMark solvePitch(BallisticProfile profile, int targetDistance, double maxPitchDeg, boolean highArc) {
+        double lowPitch = Double.NaN;
+        double lowError = Double.POSITIVE_INFINITY;
+        double arcPitch = Double.NaN;
+        double arcError = Double.POSITIVE_INFINITY;
+        // Coarse + fine scan is stable for both low and high arcs; low arc keeps the lowest valid pitch
+        // (strict <), the high-arc candidate lets the highest pitch win ties (<=).
         for (double pitch = 0.0; pitch <= maxPitchDeg; pitch += 0.5) {
             double err = rangeError(profile, targetDistance, pitch);
-            if (err < bestError) {
-                bestError = err;
-                bestPitch = pitch;
+            if (err < lowError) {
+                lowError = err;
+                lowPitch = pitch;
+            }
+            if (err <= arcError) {
+                arcError = err;
+                arcPitch = pitch;
             }
         }
+        double bestPitch = highArc ? arcPitch : lowPitch;
+        double bestError = highArc ? arcError : lowError;
         double start = Math.max(0.0, bestPitch - 0.35);
         double end = Math.min(maxPitchDeg, bestPitch + 0.35);
         for (double pitch = start; pitch <= end; pitch += 0.1) {
@@ -44,6 +58,43 @@ public final class BallisticSolver {
         }
         if (!Double.isFinite(bestPitch) || bestError > Math.max(25.0, targetDistance * 0.20)) return null;
         return new ReticleMark(targetDistance, bestPitch, bestError);
+    }
+
+    public record ApexSolution(double range, double pitchDegrees) {}
+
+    // Apex = the flattest-trajectory maximum range; the zero wheel reverses direction when it crosses this.
+    public static ApexSolution maxRangeApex(BallisticProfile profile) {
+        if (profile == null || !profile.valid()) return null;
+        double bestRange = -1.0;
+        double bestPitch = 45.0;
+        for (double pitch = 0.0; pitch <= 90.0; pitch += 0.5) {
+            double range = impactRange(profile, pitch);
+            if (range > bestRange) {
+                bestRange = range;
+                bestPitch = pitch;
+            }
+        }
+        if (bestRange <= 0.0) return null;
+        return new ApexSolution(bestRange, bestPitch);
+    }
+
+    public static double impactRange(BallisticProfile profile, double pitchDeg) {
+        double pitch = Math.toRadians(pitchDeg);
+        Vec3 pos = Vec3.ZERO;
+        Vec3 velocity = new Vec3(Math.cos(pitch) * profile.muzzleSpeed(), Math.sin(pitch) * profile.muzzleSpeed(), 0.0);
+        int maxTicks = profile.lifetimeTicks() > 0 ? Math.min(profile.lifetimeTicks(), 2000) : 2000;
+        Vec3 last = pos;
+        for (int tick = 0; tick < maxTicks; tick++) {
+            last = pos;
+            pos = pos.add(velocity);
+            if (pos.y < 0.0 && last.y >= 0.0) {
+                double dy = pos.y - last.y;
+                double t = Math.abs(dy) < 1.0e-8 ? 0.0 : (0.0 - last.y) / dy;
+                return last.x + (pos.x - last.x) * t;
+            }
+            velocity = applyForces(profile, velocity);
+        }
+        return pos.x;
     }
 
     private static double rangeError(BallisticProfile profile, double targetDistance, double pitchDeg) {

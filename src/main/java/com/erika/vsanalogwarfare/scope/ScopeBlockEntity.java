@@ -39,6 +39,7 @@ public class ScopeBlockEntity extends BlockEntity {
     private BallisticProfile currentProfile = BallisticProfile.EMPTY;
     private BallisticProfile lastValidProfile = BallisticProfile.EMPTY;
     private int zeroDistance = 0;
+    private boolean highAngleZero = false;
 
     public ScopeBlockEntity(BlockPos pos, BlockState state) {
         super(ModBlockEntities.SCOPE.get(), pos, state);
@@ -267,6 +268,15 @@ public class ScopeBlockEntity extends BlockEntity {
         setChanged();
     }
 
+    public boolean getHighAngleZero() {
+        return highAngleZero;
+    }
+
+    public void setHighAngleZero(boolean highAngleZero) {
+        this.highAngleZero = highAngleZero;
+        setChanged();
+    }
+
     @Override
     protected void saveAdditional(CompoundTag tag) {
         super.saveAdditional(tag);
@@ -291,6 +301,7 @@ public class ScopeBlockEntity extends BlockEntity {
         tag.put("CurrentBallisticProfile", this.currentProfile.save());
         tag.put("LastValidBallisticProfile", this.lastValidProfile.save());
         tag.putInt("ZeroDistance", this.zeroDistance);
+        tag.putBoolean("HighAngleZero", this.highAngleZero);
     }
 
     @Override
@@ -321,6 +332,7 @@ public class ScopeBlockEntity extends BlockEntity {
         this.currentProfile = tag.contains("CurrentBallisticProfile") ? BallisticProfile.load(tag.getCompound("CurrentBallisticProfile")) : BallisticProfile.EMPTY;
         this.lastValidProfile = tag.contains("LastValidBallisticProfile") ? BallisticProfile.load(tag.getCompound("LastValidBallisticProfile")) : BallisticProfile.EMPTY;
         this.zeroDistance = tag.contains("ZeroDistance") ? tag.getInt("ZeroDistance") : 0;
+        this.highAngleZero = tag.getBoolean("HighAngleZero");
     }
 
     private static ControlMode parseControlMode(String name) {

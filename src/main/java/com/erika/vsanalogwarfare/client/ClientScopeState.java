@@ -407,7 +407,8 @@ public final class ClientScopeState {
 
     public static void set(boolean active, float fov, int zoomMagnification, @Nullable BlockPos scopePos, @Nullable BlockPos mountPos,
                            double x, double y, double z, float yaw, float pitch,
-                           float qx, float qy, float qz, float qw, BallisticProfile profile, int zeroDistance) {
+                           float qx, float qy, float qz, float qw, BallisticProfile profile, int zeroDistance,
+                           boolean highAngle) {
         boolean wasActive = ClientScopeState.active;
         ClientScopeState.active = active;
         int newZoom = active ? zoomMagnification : 3;
@@ -419,6 +420,7 @@ public final class ClientScopeState {
         }
         if (active) {
             sightZeroDistance = zeroDistance;
+            highAngleZero = highAngle;
             zeroPitchDirty = true;
         }
         if (!wasActive || !active) {
@@ -451,6 +453,7 @@ public final class ClientScopeState {
         if (!newProfile.equals(ClientScopeState.ballisticProfile)) {
             ClientScopeState.ballisticProfile = newProfile;
             zeroPitchDirty = true;
+            apexSolution = null;
             ReticleCache.markDirty();
             ClientScopeState.reticleMarks = newProfile.valid()
                     ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
@@ -682,9 +685,33 @@ public final class ClientScopeState {
     }
 
     private static int sightZeroDistance = 0;
+    // High-angle (artillery) branch: zeroing past the cannon's apex range keeps elevating while the
+    // zero distance walks back down. The two branches share the apex point.
+    private static boolean highAngleZero = false;
+    private static com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.ApexSolution apexSolution = null;
 
     public static int sightZeroDistance() {
         return sightZeroDistance;
+    }
+
+    public static boolean highAngleZero() {
+        return highAngleZero;
+    }
+
+    public static void setHighAngleZero(boolean high) {
+        if (highAngleZero != high) {
+            highAngleZero = high;
+            zeroPitchDirty = true; // Mark for recalculation
+        }
+    }
+
+    /** Flattest-arc maximum range of the current profile in meters, or -1 when no valid profile is known. */
+    public static int apexRange() {
+        if (ballisticProfile == null || !ballisticProfile.valid()) return -1;
+        if (apexSolution == null) {
+            apexSolution = com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.maxRangeApex(ballisticProfile);
+        }
+        return apexSolution != null ? (int) Math.round(apexSolution.range()) : -1;
     }
 
     public static void setSightZeroDistance(int dist) {
@@ -699,12 +726,21 @@ public final class ClientScopeState {
     public static double getZeroPitch() {
         if (zeroPitchDirty) {
             if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
+                double maxPitch = highAngleZero
+                        ? com.erika.vsanalogwarfare.config.ClientConfig.maxZeroPitchDegrees()
+                        : com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG;
                 com.erika.vsanalogwarfare.scope.ballistics.ReticleMark mark =
                         com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
-                                ballisticProfile, sightZeroDistance,
-                                com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG
+                                ballisticProfile, sightZeroDistance, maxPitch, highAngleZero
                         );
-                cachedZeroPitch = mark != null ? mark.pitchDegrees() : 0.0;
+                // Unsolvable zero: hold the last commanded elevation. The zero wheel drives the cannon by
+                // pitch deltas, so a 0.0 fallback here would slam the cannon flat on one scroll notch.
+                if (mark != null) {
+                    cachedZeroPitch = mark.pitchDegrees();
+                }
+            } else if (sightZeroDistance <= 0 && highAngleZero && ballisticProfile != null && ballisticProfile.valid()) {
+                // Zero 0 on the high branch means the muzzle straight up.
+                cachedZeroPitch = com.erika.vsanalogwarfare.config.ClientConfig.maxZeroPitchDegrees();
             } else {
                 cachedZeroPitch = 0.0;
             }

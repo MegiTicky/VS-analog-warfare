@@ -14,17 +14,17 @@ import java.util.function.Supplier;
 public record ScopeStatePacket(boolean active, float fov, int zoomMagnification, BlockPos scopePos, BlockPos mountPos,
                                double x, double y, double z, float yaw, float pitch,
                                float qx, float qy, float qz, float qw,
-                               BallisticProfile ballisticProfile, int zeroDistance) {
-    public static ScopeStatePacket active(float fov, int zoomMagnification, BlockPos scopePos, BlockPos mountPos, CameraPose pose, BallisticProfile profile, int zeroDistance) {
+                               BallisticProfile ballisticProfile, int zeroDistance, boolean highAngleZero) {
+    public static ScopeStatePacket active(float fov, int zoomMagnification, BlockPos scopePos, BlockPos mountPos, CameraPose pose, BallisticProfile profile, int zeroDistance, boolean highAngleZero) {
         Vec3 pos = pose.position();
         return new ScopeStatePacket(true, fov, zoomMagnification, scopePos, mountPos, pos.x, pos.y, pos.z, pose.yaw(), pose.pitch(),
-                pose.qx(), pose.qy(), pose.qz(), pose.qw(), profile == null ? BallisticProfile.EMPTY : profile, zeroDistance);
+                pose.qx(), pose.qy(), pose.qz(), pose.qw(), profile == null ? BallisticProfile.EMPTY : profile, zeroDistance, highAngleZero);
     }
 
     public static ScopeStatePacket inactive() {
         return new ScopeStatePacket(false, 70.0f, 3, BlockPos.ZERO, BlockPos.ZERO,
                 0.0, 0.0, 0.0, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0);
+                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0, false);
     }
 
     public static void encode(ScopeStatePacket packet, FriendlyByteBuf buf) {
@@ -44,13 +44,14 @@ public record ScopeStatePacket(boolean active, float fov, int zoomMagnification,
         buf.writeFloat(packet.qw);
         (packet.ballisticProfile == null ? BallisticProfile.EMPTY : packet.ballisticProfile).encode(buf);
         buf.writeInt(packet.zeroDistance);
+        buf.writeBoolean(packet.highAngleZero);
     }
 
     public static ScopeStatePacket decode(FriendlyByteBuf buf) {
         return new ScopeStatePacket(buf.readBoolean(), buf.readFloat(), buf.readInt(), buf.readBlockPos(), buf.readBlockPos(),
                 buf.readDouble(), buf.readDouble(), buf.readDouble(),
                 buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(), buf.readFloat(),
-                BallisticProfile.decode(buf), buf.readInt());
+                BallisticProfile.decode(buf), buf.readInt(), buf.readBoolean());
     }
 
     public static void handle(ScopeStatePacket packet, Supplier<NetworkEvent.Context> contextSupplier) {

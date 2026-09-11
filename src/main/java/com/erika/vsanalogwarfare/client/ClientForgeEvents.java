@@ -54,7 +54,7 @@ public final class ClientForgeEvents {
         AnalogScrewdriverOverlay.reset();
         ClientScopeState.set(false, 70.0f, 3, null, null,
                 0.0, 0.0, 0.0, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0);
+                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0, false);
     }
 
     @SubscribeEvent
@@ -527,6 +527,18 @@ public final class ClientForgeEvents {
         int currentZeroDistance = ClientScopeState.sightZeroDistance();
         double zeroOffsetPixels = ClientScopeState.getZeroPitch() * pxPerDegree;
 
+        if (ClientScopeState.highAngleZero()) {
+            // The ladder texture is a low-arc table and only spans ~50 deg around center; in the
+            // artillery branch it no longer describes the firing arc, so show the readout instead.
+            double zeroPitch = ClientScopeState.getZeroPitch();
+            net.minecraft.client.gui.Font font = mc.font;
+            String zeroText = String.format("ZRN: %dm HI  QE %.1f", currentZeroDistance, zeroPitch);
+            int textX = (int) Math.round(cx - 65);
+            int textY = (int) Math.round((y0 + h / 2.0) + 30);
+            graphics.drawString(font, zeroText, textX, textY, 0xFFFFAA00, false);
+            return;
+        }
+
         java.util.List<ReticleMark> marks = ClientScopeState.reticleMarks();
 
         ReticleCache.rebuildIfNeeded(h, ClientScopeState.fov(), profile, marks);
@@ -601,17 +613,37 @@ public final class ClientForgeEvents {
             if (ClientKeyMappings.SCOPE_ZEROING.isDown()) {
                 double scrollDelta = event.getScrollDelta();
                 if (scrollDelta != 0) {
-                    int currentZero = ClientScopeState.sightZeroDistance();
                     int step = ClientConfig.zeroingStep();
-                    int change = scrollDelta > 0 ? step : -step;
-                    int newZero = currentZero + change;
+                    int currentZero = ClientScopeState.sightZeroDistance();
+                    boolean currentHigh = ClientScopeState.highAngleZero();
+                    int apex = ClientScopeState.apexRange();
 
-                    double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
-                    newZero = Math.max(0, Math.min((int) maxDist, newZero));
+                    int newZero;
+                    boolean newHigh;
+                    if (apex > 0) {
+                        // Wheel position over the cannon's total elevation travel: 0..apex is the low arc
+                        // walking out to max range, apex..2*apex is the high arc walking back down in range.
+                        // Scroll up always elevates the cannon; the zero distance reverses at the apex.
+                        int wheel = currentHigh ? 2 * apex - currentZero : currentZero;
+                        wheel = Math.max(0, Math.min(2 * apex, wheel + (scrollDelta > 0 ? step : -step)));
+                        if (wheel <= apex) {
+                            newHigh = false;
+                            newZero = wheel;
+                        } else {
+                            newHigh = true;
+                            newZero = 2 * apex - wheel;
+                        }
+                    } else {
+                        // No ballistic profile yet: fall back to the distance-only clamp.
+                        double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
+                        newZero = Math.max(0, Math.min((int) maxDist, currentZero + (scrollDelta > 0 ? step : -step)));
+                        newHigh = currentHigh;
+                    }
 
-                    if (newZero != currentZero) {
-                        // Calculate how much the angle drops between the old distance and the new distance
+                    if (newZero != currentZero || newHigh != currentHigh) {
+                        // Calculate how much the angle changes between the old zero and the new zero
                         double oldPitch = ClientScopeState.getZeroPitch();
+                        ClientScopeState.setHighAngleZero(newHigh);
                         ClientScopeState.setSightZeroDistance(newZero);
                         double newPitch = ClientScopeState.getZeroPitch();
 
@@ -629,7 +661,7 @@ public final class ClientForgeEvents {
                         // Sync zero distance to server for persistence
                         if (scopePos != null) {
                             com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
-                                    new com.erika.vsanalogwarfare.network.SetZeroDistancePacket(scopePos, newZero)
+                                    new com.erika.vsanalogwarfare.network.SetZeroDistancePacket(scopePos, newZero, newHigh)
                             );
                         }
 

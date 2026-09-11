@@ -7,6 +7,7 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.DoubleValue SCOPE_ZOOM_SENSITIVITY_MULTIPLIER;
     public static final ForgeConfigSpec.BooleanValue DISABLE_PLAYER_BLOCK_INTERACTION_WHILE_SCOPED;
     public static final ForgeConfigSpec.IntValue ZEROING_STEP;
+    public static final ForgeConfigSpec.DoubleValue MAX_ZERO_PITCH_DEGREES;
     public static final ForgeConfigSpec.BooleanValue IGNORE_TALLYHO_ENTITY_PLACEMENT;
     public static final ForgeConfigSpec.BooleanValue SCOPE_MOUNTED_ROTATION_COMPENSATION;
     public static final ForgeConfigSpec.DoubleValue SCOPE_THIRD_PERSON_CAMERA_LIFT;
@@ -23,6 +24,12 @@ public final class ClientConfig {
         ZEROING_STEP = builder
                 .comment("Distance increment (in meters) when adjusting sight zero with scroll wheel while holding the zeroing key.")
                 .defineInRange("zeroingStep", 50, 10, 500);
+        MAX_ZERO_PITCH_DEGREES = builder
+                .comment("Highest elevation (degrees) the high-angle (artillery) zero branch may command. Zeroing past\n"
+                        + "the cannon's maximum range flips to the high arc and keeps elevating up to this limit.\n"
+                        + "Match this to your CBC cannon mount's elevation limit, otherwise solutions above the\n"
+                        + "physical limit will not converge.")
+                .defineInRange("maxZeroPitchDegrees", 89.0D, 45.0D, 89.0D);
         SCOPE_MOUNTED_ROTATION_COMPENSATION = builder
                 .comment("When true and the player is seated on a ship, the scope camera pre-divides its world-frame\n"
                         + "orientation by the ship's render rotation so Valkyrien Skies' mounted-camera transform\n"
@@ -54,6 +61,10 @@ public final class ClientConfig {
 
     public static int zeroingStep() {
         return ZEROING_STEP.get();
+    }
+
+    public static double maxZeroPitchDegrees() {
+        return MAX_ZERO_PITCH_DEGREES.get();
     }
 
     public static boolean ignoreTallyhoEntityPlacement() {
