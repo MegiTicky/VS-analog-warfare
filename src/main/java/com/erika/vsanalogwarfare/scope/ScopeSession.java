@@ -23,6 +23,8 @@ public class ScopeSession {
     private BallisticProfile displayProfile;
     private int zeroDistance;
     private boolean highAngleZero;
+    private float maxDepressionDeg;
+    private float maxElevationDeg;
 
     public ScopeSession(ServerPlayer player, ScopeBlockEntity scope, BlockPos mountPos) {
         this.playerId = player.getUUID();
@@ -34,6 +36,9 @@ public class ScopeSession {
         this.displayProfile = scope.getDisplayProfile();
         this.zeroDistance = scope.getZeroDistance();
         this.highAngleZero = scope.getHighAngleZero();
+        float[] limits = com.erika.vsanalogwarfare.scope.compat.CbcCompat.getMountPitchLimits(player.level(), mountPos);
+        this.maxDepressionDeg = limits[0];
+        this.maxElevationDeg = limits[1];
     }
 
     public UUID playerId() { return playerId; }
@@ -47,6 +52,8 @@ public class ScopeSession {
     public BlockPos mountPos() { return mountPos; }
     public int zeroDistance() { return zeroDistance; }
     public boolean highAngleZero() { return highAngleZero; }
+    public float maxDepressionDeg() { return maxDepressionDeg; }
+    public float maxElevationDeg() { return maxElevationDeg; }
 
     public boolean isValid(ServerPlayer player) {
         if (!player.isAlive() || player.isRemoved()) return false;
@@ -63,5 +70,8 @@ public class ScopeSession {
             zeroDistance = scope.getZeroDistance();
             highAngleZero = scope.getHighAngleZero();
         }
+        float[] limits = com.erika.vsanalogwarfare.scope.compat.CbcCompat.getMountPitchLimits(level, mountPos);
+        maxDepressionDeg = limits[0];
+        maxElevationDeg = limits[1];
     }
 }

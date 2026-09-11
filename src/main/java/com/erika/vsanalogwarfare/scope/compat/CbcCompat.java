@@ -343,6 +343,38 @@ public final class CbcCompat {
         return false;
     }
 
+    /**
+     * {@code [maxDepression, maxElevation]} in degrees for the cannon mounted at {@code mountPos},
+     * resolved through CBC's no-arg limit accessors on the mounted contraption entity (both sides —
+     * CBC syncs its mount property tables to the client). The 89/89 fallback mirrors
+     * {@code MouseAimController.clampPitchToMount} when the mount has no contraption attached yet.
+     */
+    public static float[] getMountPitchLimits(@Nullable Level level, @Nullable BlockPos mountPos) {
+        float[] fallback = {89.0f, 89.0f};
+        if (level == null || mountPos == null) {
+            return fallback;
+        }
+        BlockEntity be = level.getBlockEntity(mountPos);
+        if (be == null) {
+            return fallback;
+        }
+        try {
+            Object contraption = callNoArg(be, "getContraption");
+            if (contraption == null) {
+                return fallback;
+            }
+            float depression = (float) callNoArg(contraption, "maximumDepression");
+            float elevation = (float) callNoArg(contraption, "maximumElevation");
+            if (!Float.isFinite(depression) || !Float.isFinite(elevation)
+                    || depression < 0.0f || elevation <= 0.0f) {
+                return fallback;
+            }
+            return new float[]{depression, elevation};
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return fallback;
+        }
+    }
+
     public static Optional<Vec3> getAimDirection(Level level, BlockPos mountPos, Direction fallbackFacing, float partialTicks) {
         return getAimDirection(level, mountPos, fallbackFacing, partialTicks, true);
     }

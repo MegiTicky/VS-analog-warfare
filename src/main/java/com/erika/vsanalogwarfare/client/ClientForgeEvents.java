@@ -54,7 +54,7 @@ public final class ClientForgeEvents {
         AnalogScrewdriverOverlay.reset();
         ClientScopeState.set(false, 70.0f, 3, null, null,
                 0.0, 0.0, 0.0, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0, false);
+                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0, false, 0.0f, 0.0f);
     }
 
     @SubscribeEvent
@@ -540,7 +540,6 @@ public final class ClientForgeEvents {
         }
 
         java.util.List<ReticleMark> marks = ClientScopeState.reticleMarks();
-
         ReticleCache.rebuildIfNeeded(h, ClientScopeState.fov(), profile, marks);
 
         com.mojang.blaze3d.pipeline.TextureTarget reticleTarget = ReticleCache.getReticleTarget();
@@ -552,7 +551,9 @@ public final class ClientForgeEvents {
         int textureHeight = ReticleCache.getTextureHeight();
         double textureCy = textureHeight / 2.0;
 
-        double zeroPitch = ClientScopeState.getZeroPitch();
+        // Same smoothed signal the camera counter-rotation uses: reticle and camera move in
+        // lockstep, so a scroll step glides instead of kicking the sight picture.
+        double zeroPitch = ClientScopeState.renderZeroPitch();
         double textureZeroOffset = zeroPitch * (ReticleCache.getCachedPxPerDegree());
 
         double sourceY = textureCy - textureZeroOffset - h / 2.0;
@@ -596,7 +597,9 @@ public final class ClientForgeEvents {
         graphics.pose().popPose();
 
         net.minecraft.client.gui.Font font = mc.font;
-        String zeroText = "ZRN: " + currentZeroDistance + "m";
+        String zeroText = currentZeroDistance < 0
+                ? String.format("DEP: %.1f\u00b0", -ClientScopeState.getZeroPitch())
+                : "ZRN: " + currentZeroDistance + "m";
         int textX = (int) Math.round(cx - 65);
         int textY = (int) Math.round((y0 + h / 2.0) + 30);
         graphics.drawString(font, zeroText, textX, textY, 0xFF22FF22, false);
@@ -617,16 +620,25 @@ public final class ClientForgeEvents {
                     int currentZero = ClientScopeState.sightZeroDistance();
                     boolean currentHigh = ClientScopeState.highAngleZero();
                     int apex = ClientScopeState.apexRange();
+                    int depSpan = ClientScopeState.depressionSpan();
 
                     int newZero;
                     boolean newHigh;
                     if (apex > 0) {
-                        // Wheel position over the cannon's total elevation travel: 0..apex is the low arc
-                        // walking out to max range, apex..2*apex is the high arc walking back down in range.
-                        // Scroll up always elevates the cannon; the zero distance reverses at the apex.
+                        // Wheel position over the cannon's total elevation travel, in zero-distance
+                        // units: -depSpan..0 depresses below bore in fixed steps, 0..lowCeiling is the
+                        // low arc, and (when the mount elevates past the apex pitch) up to 2*apex-capRange
+                        // is the high arc walking back down in range. Scroll up always elevates, and
+                        // every segment end is the mount's REAL pitch limit.
+                        double elevCap = ClientScopeState.elevationCapPitch();
+                        int capRange = ClientScopeState.elevationCapRange();
+                        boolean canCross = capRange >= 0 && elevCap > ClientScopeState.apexPitch() + 0.25;
+                        int lowCeiling = canCross ? apex : (capRange >= 0 ? Math.min(apex, capRange) : apex);
+                        int wheelMax = canCross ? 2 * apex - Math.max(capRange, 0) : lowCeiling;
+
                         int wheel = currentHigh ? 2 * apex - currentZero : currentZero;
-                        wheel = Math.max(0, Math.min(2 * apex, wheel + (scrollDelta > 0 ? step : -step)));
-                        if (wheel <= apex) {
+                        wheel = Math.max(-depSpan, Math.min(wheelMax, wheel + (scrollDelta > 0 ? step : -step)));
+                        if (wheel <= lowCeiling) {
                             newHigh = false;
                             newZero = wheel;
                         } else {
@@ -636,7 +648,7 @@ public final class ClientForgeEvents {
                     } else {
                         // No ballistic profile yet: fall back to the distance-only clamp.
                         double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
-                        newZero = Math.max(0, Math.min((int) maxDist, currentZero + (scrollDelta > 0 ? step : -step)));
+                        newZero = Math.max(-depSpan, Math.min((int) maxDist, currentZero + (scrollDelta > 0 ? step : -step)));
                         newHigh = currentHigh;
                     }
 

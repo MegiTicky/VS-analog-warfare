@@ -38,7 +38,7 @@ public final class ScopeSessionManager {
             session.update(level);
         }
         SESSIONS.put(player.getUUID(), session);
-        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), scope.getZeroDistance(), scope.getHighAngleZero()));
+        ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), scope.getZeroDistance(), scope.getHighAngleZero(), session.maxDepressionDeg(), session.maxElevationDeg()));
         return true;
     }
 
@@ -113,7 +113,7 @@ public final class ScopeSessionManager {
             }
             if (player.level() instanceof net.minecraft.server.level.ServerLevel level && level.getGameTime() % 5L == 0L) {
                 session.update(level);
-                ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), session.zeroDistance(), session.highAngleZero()));
+                ModNetwork.sendToPlayer(player, ScopeStatePacket.active(session.fov(), session.zoomMagnification(), session.scopePos(), session.mountPos(), session.currentPose(), session.displayProfile(), session.zeroDistance(), session.highAngleZero(), session.maxDepressionDeg(), session.maxElevationDeg()));
             }
         }
     }

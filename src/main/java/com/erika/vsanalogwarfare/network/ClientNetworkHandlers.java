@@ -35,7 +35,7 @@ public final class ClientNetworkHandlers {
         ClientScopeState.set(packet.active(), packet.fov(), packet.zoomMagnification(), packet.scopePos(), packet.mountPos(),
                 packet.x(), packet.y(), packet.z(), packet.yaw(), packet.pitch(),
                 packet.qx(), packet.qy(), packet.qz(), packet.qw(), packet.ballisticProfile(), packet.zeroDistance(),
-                packet.highAngleZero());
+                packet.highAngleZero(), packet.maxDepressionDeg(), packet.maxElevationDeg());
     }
 
     public static void openVehicleSetupEditor(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket packet) {

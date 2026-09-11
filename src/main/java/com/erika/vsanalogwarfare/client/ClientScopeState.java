@@ -408,7 +408,7 @@ public final class ClientScopeState {
     public static void set(boolean active, float fov, int zoomMagnification, @Nullable BlockPos scopePos, @Nullable BlockPos mountPos,
                            double x, double y, double z, float yaw, float pitch,
                            float qx, float qy, float qz, float qw, BallisticProfile profile, int zeroDistance,
-                           boolean highAngle) {
+                           boolean highAngle, float mountMaxDepressionDeg, float mountMaxElevationDeg) {
         boolean wasActive = ClientScopeState.active;
         ClientScopeState.active = active;
         int newZoom = active ? zoomMagnification : 3;
@@ -417,10 +417,27 @@ public final class ClientScopeState {
             freeLookEnabled = false;
             viewMode = ViewMode.SCOPE;
             restoreCameraType();
+            renderZeroPitchSmoothed = Double.NaN;
+        }
+        // Correctly initialize newProfile and check for updates
+        BallisticProfile newProfile = active && profile != null ? profile : BallisticProfile.EMPTY;
+        if (!newProfile.equals(ClientScopeState.ballisticProfile)) {
+            ClientScopeState.ballisticProfile = newProfile;
+            zeroPitchDirty = true;
+            apexSolution = null;
+            capRangeSolution = null;
+            ReticleCache.markDirty();
+            ClientScopeState.reticleMarks = newProfile.valid()
+                    ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
+                    : List.of();
         }
         if (active) {
-            sightZeroDistance = zeroDistance;
+            // Zero is clamped with the FRESH profile so the packet echo can never re-inject a value
+            // the wheel clamp would reject (that divergence used to reverse the pitch deltas).
+            sightZeroDistance = Math.max(-depressionSpan(), Math.min(zeroCap(), zeroDistance));
             highAngleZero = highAngle;
+            if (mountMaxDepressionDeg > 0.0f) maxDepressionDeg = mountMaxDepressionDeg;
+            if (mountMaxElevationDeg > 0.0f) maxElevationDeg = mountMaxElevationDeg;
             zeroPitchDirty = true;
         }
         if (!wasActive || !active) {
@@ -447,18 +464,6 @@ public final class ClientScopeState {
         ClientScopeState.scopePos = scopePos;
         ClientScopeState.mountPos = mountPos;
         ClientScopeState.fallbackPose = new CameraPose(new Vec3(x, y, z), yaw, pitch, qx, qy, qz, qw);
-
-        // Correctly initialize newProfile and check for updates
-        BallisticProfile newProfile = active && profile != null ? profile : BallisticProfile.EMPTY;
-        if (!newProfile.equals(ClientScopeState.ballisticProfile)) {
-            ClientScopeState.ballisticProfile = newProfile;
-            zeroPitchDirty = true;
-            apexSolution = null;
-            ReticleCache.markDirty();
-            ClientScopeState.reticleMarks = newProfile.valid()
-                    ? BallisticSolver.generateMarks(newProfile, BallisticSolver.DEFAULT_INTERVAL, BallisticSolver.DEFAULT_MAX_RANGE)
-                    : List.of();
-        }
 
         if (!active) {
             ReticleCache.cleanup();
@@ -543,9 +548,12 @@ public final class ClientScopeState {
                 applyCachedCameraPose(cachedSightPose);
             }
         } else if (!freeLookEnabled()) {
-            // FreeLook is OFF: Counter-rotate the camera down to match the gun elevating!
-            double zeroPitch = getZeroPitch();
-            if (zeroPitch > 0) {
+            // FreeLook is OFF: Counter-rotate the camera down to match the gun elevating (or up
+            // when the zero depresses below bore). Uses the SMOOTHED zero pitch — the same signal
+            // the reticle offset uses — so a scroll step does not kick the camera ahead of the
+            // filtered bore and jiggle the sight picture.
+            double zeroPitch = renderZeroPitch();
+            if (Math.abs(zeroPitch) > 1.0e-4) {
                 applyCachedCameraPose(CameraPose.looking(
                         cachedSightPose.position(),
                         directionFromYawPitch(cachedSightPose.yaw(), (float)(cachedSightPose.pitch() + zeroPitch)),
@@ -604,7 +612,7 @@ public final class ClientScopeState {
             direction = freeLookDirection();
         } else {
             double zeroPitch = getZeroPitch();
-            if (zeroPitch > 0) {
+            if (Math.abs(zeroPitch) > 1.0e-4) {
                 Vec3 zeroedDir = directionFromYawPitch(cachedSightPose.yaw(), (float)(cachedSightPose.pitch() + zeroPitch));
                 if (com.erika.vsanalogwarfare.scope.compat.VsCompat.isPlayerMountedToShip()) {
                     direction = com.erika.vsanalogwarfare.scope.compat.VsCompat
@@ -689,6 +697,18 @@ public final class ClientScopeState {
     // zero distance walks back down. The two branches share the apex point.
     private static boolean highAngleZero = false;
     private static com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.ApexSolution apexSolution = null;
+    private static Integer capRangeSolution = null;
+    // Mount's real pitch limits, resolved server-side and synced via ScopeStatePacket (degrees).
+    private static float maxDepressionDeg = 89.0f;
+    private static float maxElevationDeg = 89.0f;
+    // Degrees of depression commanded per zeroing notch below ZRN 0 (bore).
+    public static final float DEPRESSION_DEGREES_PER_STEP = 5.0f;
+    // Per-frame low-passed zero pitch (tau ~0.1 s, the g-h filter's settling window): the camera
+    // counter-rotation and the reticle offset both consume this, so an instant scroll step no longer
+    // kicks the camera before the filtered bore catches up.
+    private static final double RENDER_ZERO_TAU_SECONDS = 0.1;
+    private static double renderZeroPitchSmoothed = Double.NaN;
+    private static long renderZeroPitchStamp = 0L;
 
     public static int sightZeroDistance() {
         return sightZeroDistance;
@@ -696,6 +716,14 @@ public final class ClientScopeState {
 
     public static boolean highAngleZero() {
         return highAngleZero;
+    }
+
+    public static float maxDepressionDeg() {
+        return maxDepressionDeg;
+    }
+
+    public static float maxElevationDeg() {
+        return maxElevationDeg;
     }
 
     public static void setHighAngleZero(boolean high) {
@@ -714,9 +742,69 @@ public final class ClientScopeState {
         return apexSolution != null ? (int) Math.round(apexSolution.range()) : -1;
     }
 
+    /** Pitch of the flattest-arc maximum-range solution (the wheel's branch crossing point). */
+    public static double apexPitch() {
+        return apexSolution != null ? apexSolution.pitchDegrees() : 45.0;
+    }
+
+    /** The pitch ceiling the zeroing wheel may command: client config AND the mount's real elevation. */
+    public static double elevationCapPitch() {
+        float mountCap = maxElevationDeg > 0.0f ? maxElevationDeg : 89.0f;
+        return Math.min(com.erika.vsanalogwarfare.config.ClientConfig.maxZeroPitchDegrees(), mountCap);
+    }
+
+    /**
+     * Range of the shell when fired at the mount's elevation cap. Below the apex pitch this is the
+     * mount-limited maximum range; above it, the high branch's zero floor. -1 when unknown.
+     */
+    public static int elevationCapRange() {
+        if (ballisticProfile == null || !ballisticProfile.valid()) return -1;
+        if (capRangeSolution == null) {
+            double range = com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver
+                    .impactRange(ballisticProfile, elevationCapPitch());
+            capRangeSolution = Double.isFinite(range) ? (int) Math.round(range) : -1;
+        }
+        return capRangeSolution;
+    }
+
+    /**
+     * Upper bound for the stored zero: the wheel's full elevation travel when a profile exists
+     * (two apex crossings), otherwise the rangefinder clamp.
+     */
+    public static int zeroCap() {
+        int apex = apexRange();
+        if (apex > 0) return Math.min(2 * apex, 10000);
+        return (int) com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
+    }
+
+    /** Negative end of the wheel: the mount's real depression, DEPRESSION_DEGREES_PER_STEP per notch. */
+    public static int depressionSpan() {
+        if (maxDepressionDeg <= 0.01f) return 0;
+        int step = Math.max(1, com.erika.vsanalogwarfare.config.ClientConfig.zeroingStep());
+        return (int) (maxDepressionDeg / DEPRESSION_DEGREES_PER_STEP) * step;
+    }
+
+    /**
+     * Zero pitch smoothed for render-time consumers. Both the camera counter-rotation and the
+     * reticle texture offset must use THIS value so they move in lockstep with each other and
+     * spread a scroll step over the same window the filtered bore moves in.
+     */
+    public static double renderZeroPitch() {
+        long now = System.nanoTime();
+        double target = getZeroPitch();
+        if (Double.isNaN(renderZeroPitchSmoothed)) {
+            renderZeroPitchSmoothed = target;
+        } else {
+            double dt = Math.max(0.0, (now - renderZeroPitchStamp) / 1.0e9);
+            double k = 1.0 - Math.exp(-dt / RENDER_ZERO_TAU_SECONDS);
+            renderZeroPitchSmoothed += (target - renderZeroPitchSmoothed) * k;
+        }
+        renderZeroPitchStamp = now;
+        return renderZeroPitchSmoothed;
+    }
+
     public static void setSightZeroDistance(int dist) {
-        double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
-        int newDist = Math.max(0, Math.min((int) maxDist, dist));
+        int newDist = Math.max(-depressionSpan(), Math.min(zeroCap(), dist));
         if (sightZeroDistance != newDist) {
             sightZeroDistance = newDist;
             zeroPitchDirty = true; // Mark for recalculation
@@ -725,10 +813,14 @@ public final class ClientScopeState {
 
     public static double getZeroPitch() {
         if (zeroPitchDirty) {
-            if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
-                double maxPitch = highAngleZero
-                        ? com.erika.vsanalogwarfare.config.ClientConfig.maxZeroPitchDegrees()
-                        : com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG;
+            if (sightZeroDistance < 0) {
+                // Depression segment: each notch below bore is a fixed number of degrees.
+                int step = Math.max(1, com.erika.vsanalogwarfare.config.ClientConfig.zeroingStep());
+                cachedZeroPitch = sightZeroDistance * (DEPRESSION_DEGREES_PER_STEP / (double) step);
+            } else if (sightZeroDistance > 0 && ballisticProfile != null && ballisticProfile.valid()) {
+                double cap = elevationCapPitch();
+                double maxPitch = highAngleZero ? cap
+                        : Math.min(com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.DEFAULT_MAX_PITCH_DEG, cap);
                 com.erika.vsanalogwarfare.scope.ballistics.ReticleMark mark =
                         com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver.solvePitch(
                                 ballisticProfile, sightZeroDistance, maxPitch, highAngleZero
@@ -739,11 +831,11 @@ public final class ClientScopeState {
                     cachedZeroPitch = mark.pitchDegrees();
                 }
             } else if (sightZeroDistance <= 0 && highAngleZero && ballisticProfile != null && ballisticProfile.valid()) {
-                // Zero 0 on the high branch means the muzzle straight up.
-                cachedZeroPitch = com.erika.vsanalogwarfare.config.ClientConfig.maxZeroPitchDegrees();
-            } else {
+                // Legacy state (high branch parked at/below bore): muzzle at the elevation cap.
+                cachedZeroPitch = elevationCapPitch();
+            } else if (sightZeroDistance == 0) {
                 cachedZeroPitch = 0.0;
-            }
+            } // else: no valid profile - hold the last commanded elevation
             zeroPitchDirty = false;
         }
         return cachedZeroPitch;

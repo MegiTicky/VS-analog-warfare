@@ -268,9 +268,12 @@ public final class BallisticProfileResolver {
         double muzzleSpeed = accum.charges > 0.0 ? accum.charges : number(invokeNoArg(accum.projectile, "getInitVel"), 0.0);
         if (muzzleSpeed <= 0.0) muzzleSpeed = number(invokeNoArg(accum.projectile, "minimumChargePower"), 0.0);
         if (muzzleSpeed <= 0.0) return Optional.empty();
-        debug(level, "[Ballistics][Big {}] profile muzzleSpeed={} charges={} projectileInitVel={} projectileId={}",
-                source, muzzleSpeed, accum.charges, number(invokeNoArg(accum.projectile, "getInitVel"), 0.0), accum.projectileId);
-        return Optional.of(BallisticProfile.of(muzzleSpeed, parts.gravity, parts.drag, parts.quadraticDrag, 0,
+        // CBC's projectile lifetime (ticks) — a fast shell that despawns at 65 ticks must not be
+        // simulated as eternal, or the apex/zero solutions overstate its real reach.
+        int lifetime = (int) number(invokeNoArg(accum.projectile, "getLifetime"), 0.0);
+        debug(level, "[Ballistics][Big {}] profile muzzleSpeed={} charges={} projectileInitVel={} lifetime={} projectileId={}",
+                source, muzzleSpeed, accum.charges, number(invokeNoArg(accum.projectile, "getInitVel"), 0.0), lifetime, accum.projectileId);
+        return Optional.of(BallisticProfile.of(muzzleSpeed, parts.gravity, parts.drag, parts.quadraticDrag, lifetime,
                 accum.projectileId, cannonType, "block loaded " + source + " speed=" + String.format(java.util.Locale.ROOT, "%.2f", muzzleSpeed)
                         + " charge=" + String.format(java.util.Locale.ROOT, "%.2f", accum.charges)));
     }
