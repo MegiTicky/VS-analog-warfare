@@ -317,7 +317,10 @@ public final class CbcCompat {
             }
             float yaw = callFloat(mount, "getYawOffset", partialTicks);
             float pitch = callFloat(mount, "getPitchOffset", partialTicks);
-            Vec3 result = directionFromYawPitch(baseDir.toYRot() + yaw, pitch);
+            // cannonYaw/getYawOffset is an ABSOLUTE compass yaw (CBC initializes it
+            // to getContraptionDirection().toYRot() at assembly) — never add the
+            // base direction again or the bore flips by the assembly heading.
+            Vec3 result = directionFromYawPitch(yaw, pitch);
             LOGGER.debug("[VSAW_SCOPE] tryDirectionFromMountOffsetsQuiet: baseDir={} yaw={} pitch={} result={}", baseDir, yaw, pitch, result);
             return Optional.of(result);
         } catch (ReflectiveOperationException | LinkageError e) {
@@ -561,7 +564,8 @@ public final class CbcCompat {
             float yaw = callFloat(mount, "getYawOffset", partialTicks);
             float pitch = callFloat(mount, "getPitchOffset", partialTicks);
             LOGGER.debug("[VSAW_SCOPE] tryDirectionFromMountOffsets: baseDir={} yaw={} pitch={}", baseDir, yaw, pitch);
-            return Optional.of(directionFromYawPitch(baseDir.toYRot() + yaw, pitch));
+            // See the absolute-yaw note in tryDirectionFromMountOffsetsQuiet.
+            return Optional.of(directionFromYawPitch(yaw, pitch));
         } catch (ReflectiveOperationException | LinkageError e) {
             LOGGER.debug("[VSAW_SCOPE] tryDirectionFromMountOffsets: exception - {}", e.getClass().getSimpleName(), e);
             return Optional.empty();
@@ -634,7 +638,8 @@ public final class CbcCompat {
                     // glide) in the loop even when the barrel itself is frustum-culled
                     // while scoped; with a base of 0 this returns exactly the correction.
                     + StabilizerController.computeRenderPitchOffset(be, 0.0f);
-            return directionFromYawPitch(baseDir.toYRot() + yaw, pitch);
+            // See the absolute-yaw note in tryDirectionFromMountOffsetsQuiet.
+            return directionFromYawPitch(yaw, pitch);
         } catch (ReflectiveOperationException | LinkageError e) {
             return null;
         }
