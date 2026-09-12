@@ -36,6 +36,17 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     /** Last seen input end; a change re-routes the output face. */
     @Nullable
     private Direction lastInputFace;
+    /**
+     * Output end as of the last time the block had input, persisted so the
+     * power persona keeps excluding the output end after a world reload.
+     * Create re-walks kinetic networks on the first tick after load from
+     * NBT-restored state; until the input network re-forms, a live-derived
+     * output face is null and claiming both axis ends lets the input walk
+     * bridge into the transmitter chain, where the two networks' sources
+     * conflict and Create destroys blocks.
+     */
+    @Nullable
+    private Direction storedOutputFace;
 
     /** Aim mode, set from the config screen. */
     private MouseAimMode mode = MouseAimMode.CANNON;
@@ -69,12 +80,18 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
 
     /**
      * Direction toward the current rotation-output end — the input end's
-     * opposite — or {@code null} when the block has no input.
+     * opposite — or {@code null} when the block has no input. Falls back to
+     * the persisted output face while unpowered so the personas keep their
+     * input/output split across a world reload (see {@link #storedOutputFace}).
      */
     @Nullable
     public Direction getOutputFace() {
         Direction input = getInputFace();
-        return input == null ? null : input.getOpposite();
+        if (input != null) {
+            return input.getOpposite();
+        }
+        Direction.Axis axis = getBlockState().getValue(MouseAimBlock.AXIS);
+        return storedOutputFace != null && storedOutputFace.getAxis() == axis ? storedOutputFace : null;
     }
 
     public MouseAimMode getMode() {
@@ -169,6 +186,10 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         Direction inputFace = getInputFace();
         if (inputFace != lastInputFace) {
             lastInputFace = inputFace;
+            if (inputFace != null) {
+                storedOutputFace = inputFace.getOpposite();
+                setChanged();
+            }
             outputInterface.refreshConnections();
             detachKinetics();
             attachKinetics();
@@ -232,8 +253,18 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         return Math.abs(getSpeed()) >= CommonConfig.mouseAimMinSpeed() && !isOverStressed();
     }
 
+    /**
+     * Cannon-mode chase rate in degrees per tick: the input shaft speed scaled
+     * by the multiplier, clamped to the same ceiling the turret servo uses
+     * ({@code maxOutputRpm}) — without the clamp, a 256 RPM input chases at
+     * 9.6 deg/tick and the physical mount actuator slings past the target.
+     * The input speed still sets the rate below the ceiling, so a slow crank
+     * fine-aims.
+     */
     public double getMouseAimRateDegreesPerTick() {
-        return Math.abs(convertToAngular(getSpeed())) * CommonConfig.mouseAimRateMultiplier();
+        double ceiling = Math.abs(convertToAngular((float) CommonConfig.turretMaxOutputRpm()))
+                * CommonConfig.mouseAimRateMultiplier();
+        return Math.min(Math.abs(convertToAngular(getSpeed())) * CommonConfig.mouseAimRateMultiplier(), ceiling);
     }
 
     public void setTarget(UUID playerId, BlockPos mountPos, BlockPos scopePos, Vec3 direction) {
@@ -306,6 +337,10 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
             if (tuning != null) {
                 compound.put("Tuning", tuning.write());
             }
+            if (storedOutputFace != null) {
+                compound.putByte("OutputFace", (byte) storedOutputFace.get3DDataValue());
+            }
+            compound.putFloat("TurretOutput", turretOutputRpm);
         }
     }
 
@@ -322,5 +357,14 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
             outputInterface.readServer(compound.getCompound("OutputInterface"));
         }
         tuning = TurretTuning.read(compound.contains("Tuning") ? compound.getCompound("Tuning") : null);
+        if (compound.contains("OutputFace")) {
+            storedOutputFace = Direction.from3DDataValue(compound.getByte("OutputFace"));
+        }
+        if (compound.contains("TurretOutput")) {
+            turretOutputRpm = compound.getFloat("TurretOutput");
+        }
+        // Seed from the restored source so the flip-repair does not fire
+        // spuriously on the first tick after a world load.
+        lastInputFace = getInputFace();
     }
 }
