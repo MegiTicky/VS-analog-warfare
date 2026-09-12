@@ -71,7 +71,7 @@ public final class VehicleSetupExecutor {
                     action.positionOffset(), action.tallyhoEntity(), action.yaw(), action.tallyhoVariant(),
                     action.tallyhoState());
             case SPAWN_VEHICLE_CREW -> StevesArmyCompat.spawnCrew(level, target(level, anchor, action, ships),
-                    action.positionOffset(), player);
+                    action.positionOffset(), player, action.crewState());
             case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
             case GENERIC_BLOCK_LEFT_CLICK -> leftClick(level, anchor, player, action, ships);
             case CONFIGURE_ENDER_TRANSMITTER -> EnderTransmissionCompat.configure(

@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 
 public final class VehicleSetupAction {
-    public static final int FORMAT_VERSION = 9;
+    public static final int FORMAT_VERSION = 10;
 
     private final VehicleSetupActionType type;
     @Nullable private final BlockPos targetOffset;
@@ -39,6 +39,8 @@ public final class VehicleSetupAction {
     private final int transmitterChannel;
     @Nullable private final String transmitterPassword;
     private final int delayBeforeTicks;
+    /** Recorded crew loadout/cosmetics for SPAWN_VEHICLE_CREW; null on older saves. */
+    @Nullable private final CompoundTag crewState;
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
@@ -58,13 +60,30 @@ public final class VehicleSetupAction {
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
                                long targetShipId, long secondaryShipId,
-                               @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
-                               float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
-                               @Nullable CompoundTag tallyhoState, int tallyhoVariant,
-                               double positionOffsetX, double positionOffsetY, double positionOffsetZ,
-                               @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
-                               boolean interactionSneaking, int transmitterChannel,
+                                 @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
+                                 float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
+                                 @Nullable CompoundTag tallyhoState, int tallyhoVariant,
+                                 double positionOffsetX, double positionOffsetY, double positionOffsetZ,
+                                   @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
+                                 boolean interactionSneaking, int transmitterChannel,
                                 @Nullable String transmitterPassword, int delayBeforeTicks) {
+        this(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId, blockState, controller,
+                stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant, positionOffsetX,
+                positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace,
+                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, null);
+    }
+
+    private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
+                               @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
+                               long targetShipId, long secondaryShipId,
+                                 @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
+                                 float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
+                                 @Nullable CompoundTag tallyhoState, int tallyhoVariant,
+                                 double positionOffsetX, double positionOffsetY, double positionOffsetZ,
+                                   @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
+                                   boolean interactionSneaking, int transmitterChannel,
+                                @Nullable String transmitterPassword, int delayBeforeTicks,
+                                @Nullable CompoundTag crewState) {
         this.type = type;
         this.targetOffset = targetOffset;
         this.secondaryOffset = secondaryOffset;
@@ -89,6 +108,7 @@ public final class VehicleSetupAction {
         this.transmitterChannel = transmitterChannel;
         this.transmitterPassword = transmitterPassword;
         this.delayBeforeTicks = Math.max(0, delayBeforeTicks);
+        this.crewState = crewState == null ? null : crewState.copy();
     }
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
@@ -160,9 +180,15 @@ public final class VehicleSetupAction {
 
     public static VehicleSetupAction spawnVehicleCrew(long shipId, @Nullable BlockPos shipOffset,
                                                       BlockPos anchorOffset, Vec3 positionOffset) {
+        return spawnVehicleCrew(shipId, shipOffset, anchorOffset, positionOffset, null);
+    }
+
+    public static VehicleSetupAction spawnVehicleCrew(long shipId, @Nullable BlockPos shipOffset,
+                                                      BlockPos anchorOffset, Vec3 positionOffset,
+                                                      @Nullable CompoundTag crewState) {
         return new VehicleSetupAction(VehicleSetupActionType.SPAWN_VEHICLE_CREW, anchorOffset, null, shipOffset,
                 shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0,
-                positionOffset.x, positionOffset.y, positionOffset.z, null, 0, 0);
+                positionOffset.x, positionOffset.y, positionOffset.z, null, 0, 0, false, 0, null, 0, crewState);
     }
 
     public static VehicleSetupAction interactWithBlock(long shipId, @Nullable BlockPos shipOffset,
@@ -227,12 +253,13 @@ public final class VehicleSetupAction {
     public int transmitterChannel() { return transmitterChannel; }
     @Nullable public String transmitterPassword() { return transmitterPassword; }
     public int delayBeforeTicks() { return delayBeforeTicks; }
+    @Nullable public CompoundTag crewState() { return crewState == null ? null : crewState.copy(); }
 
     public VehicleSetupAction withDelayBeforeTicks(int delayBeforeTicks) {
         return new VehicleSetupAction(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId,
                 blockState, controller, stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant,
                 positionOffsetX, positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace,
-                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks);
+                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState);
     }
 
     public CompoundTag save() {
@@ -260,6 +287,7 @@ public final class VehicleSetupAction {
         tag.putInt("InteractionFace", interactionFace);
         tag.putBoolean("InteractionSneaking", interactionSneaking);
         tag.putInt("DelayBeforeTicks", delayBeforeTicks);
+        if (crewState != null) tag.put("CrewState", crewState.copy());
         if (type == VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) {
             tag.putInt("TransmitterChannel", transmitterChannel);
             if (transmitterPassword != null) tag.putString("TransmitterPassword", transmitterPassword);
@@ -293,7 +321,8 @@ public final class VehicleSetupAction {
                      tag.getInt("InteractionHand"), tag.getInt("InteractionFace"), tag.getBoolean("InteractionSneaking"),
                       tag.getInt("TransmitterChannel"),
                       tag.contains("TransmitterPassword") ? tag.getString("TransmitterPassword") : null,
-                      tag.getInt("DelayBeforeTicks"));
+                      tag.getInt("DelayBeforeTicks"),
+                      tag.contains("CrewState") ? tag.getCompound("CrewState").copy() : null);
         } catch (IllegalArgumentException ignored) {
             return null;
         }

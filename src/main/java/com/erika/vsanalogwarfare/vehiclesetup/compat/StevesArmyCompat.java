@@ -3,6 +3,7 @@ package com.erika.vsanalogwarfare.vehiclesetup.compat;
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -69,6 +70,19 @@ public final class StevesArmyCompat {
     @Nullable
     public static String spawnCrew(Level level, BlockPos supportPosition, Vec3 positionOffset,
                                    @Nullable ServerPlayer player) {
+        return spawnCrew(level, supportPosition, positionOffset, player, null);
+    }
+
+    /**
+     * {@link #spawnCrew} with the crew state captured by {@link #captureCrewState} at
+     * record time: Steve's Army restores the recorded loadout (and cosmetics) onto the
+     * replayed crew. Ownership stays with {@code player} — the recorded tag carries no
+     * owner or squad. When {@code crewState} is null the loadout-less 4-arg API is
+     * used, so setups recorded before loadout capture still replay on any version.
+     */
+    @Nullable
+    public static String spawnCrew(Level level, BlockPos supportPosition, Vec3 positionOffset,
+                                   @Nullable ServerPlayer player, @Nullable CompoundTag crewState) {
         if (!isLoaded()) return "Steve's Army is not installed";
         if (!(level instanceof ServerLevel serverLevel)) return "vehicle crew can only be spawned on the server";
         if (player == null) return "vehicle crew spawn requires the schematic placer to be online";
@@ -77,8 +91,13 @@ public final class StevesArmyCompat {
             if (!nearbyCrewIds(serverLevel, target, IDEMPOTENCY_SEARCH_RADIUS).isEmpty()) {
                 return null;
             }
-            VehicleSetupReflection.invokeStatic(Class.forName(API_CLASS), "spawnCrewOnVehicle",
-                    player, serverLevel, supportPosition, positionOffset);
+            if (crewState != null) {
+                VehicleSetupReflection.invokeStatic(Class.forName(API_CLASS), "spawnCrewOnVehicle",
+                        player, serverLevel, supportPosition, positionOffset, crewState);
+            } else {
+                VehicleSetupReflection.invokeStatic(Class.forName(API_CLASS), "spawnCrewOnVehicle",
+                        player, serverLevel, supportPosition, positionOffset);
+            }
             if (nearbyCrewIds(serverLevel, target, IDEMPOTENCY_SEARCH_RADIUS).isEmpty()) {
                 return "Steve's Army did not spawn a vehicle crew near " + supportPosition;
             }
@@ -86,6 +105,28 @@ public final class StevesArmyCompat {
         } catch (ReflectiveOperationException | LinkageError error) {
             return "Steve's Army crew integration failed: " + error.getClass().getSimpleName();
         }
+    }
+
+    /** Entity keys worth replaying onto a fresh crew; deliberately excludes owner/squad state. */
+    private static final Set<String> CREW_STATE_KEYS = Set.of(
+            "Inventory", "FireDiscipline", "Skin", "YsmModelId", "YsmTextureId");
+
+    /**
+     * Captures the loadout (and cosmetic) state of a just-spawned crew entity so the
+     * vehicle setup can replay it. Ownership, squad, position, and VS2 transport state
+     * are intentionally not captured: the replayed crew belongs to the schematic placer.
+     */
+    @Nullable
+    public static CompoundTag captureCrewState(Entity crew) {
+        CompoundTag full = new CompoundTag();
+        crew.saveWithoutId(full);
+        CompoundTag state = new CompoundTag();
+        for (String key : CREW_STATE_KEYS) {
+            if (full.contains(key)) {
+                state.put(key, full.get(key).copy());
+            }
+        }
+        return state.isEmpty() ? null : state;
     }
 
     /**

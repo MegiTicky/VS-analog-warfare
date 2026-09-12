@@ -655,7 +655,8 @@ public final class VehicleSetupRecordingManager {
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), supportPosition);
         recordAction(player, setup, VehicleSetupAction.spawnVehicleCrew(ship == null ? -1L : ship.shipId(),
                 ship == null ? null : ship.offset(), supportPosition.subtract(setup.getBlockPos()),
-                crew.position().subtract(Vec3.atCenterOf(supportPosition))));
+                crew.position().subtract(Vec3.atCenterOf(supportPosition)),
+                StevesArmyCompat.captureCrewState(crew)));
     }
 
     public static void beginInteractionReplay(ServerPlayer player) {
