@@ -54,7 +54,7 @@ public final class VehicleSetupExecutor {
                              @Nullable Map<Long, Object> ships, @Nullable String placementId, int actionIndex) {
         BlockPos debugTarget = debugTarget(level, anchor, action, ships);
         String before = debugTarget == null ? null : level.getBlockState(debugTarget).toString();
-        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action begin: placementId={}, index={}, type={}, anchor={}, "
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action begin: placementId={}, index={}, type={}, anchor={}, "
                         + "originalShipId={}, shipOffset={}, targetOffset={}, target={}, before={}",
                 placementId, actionIndex, action.type(), anchor, action.targetShipId(), action.shipOffset(),
                 action.targetOffset(), debugTarget, before);
@@ -80,7 +80,7 @@ public final class VehicleSetupExecutor {
                     target(level, anchor, action, ships), player);
         };
         String after = debugTarget == null ? null : level.getBlockState(debugTarget).toString();
-        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action end: placementId={}, index={}, type={}, target={}, "
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action end: placementId={}, index={}, type={}, target={}, "
                         + "result={}, after={}, changed={}",
                 placementId, actionIndex, action.type(), debugTarget, result == null ? "success" : result,
                 after, before == null ? "unknown" : !before.equals(after));
@@ -117,7 +117,7 @@ public final class VehicleSetupExecutor {
                     }
                     return anchorResolved;
                 }
-                VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action target resolved: type={}, anchor={}, "
+                VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action target resolved: type={}, anchor={}, "
                                 + "shipId={}, shipOffset={}, targetOffset={}, resolved={}",
                         action.type(), anchor, action.targetShipId(), action.shipOffset(), action.targetOffset(), resolved);
                 return resolved;
@@ -127,7 +127,7 @@ public final class VehicleSetupExecutor {
                     action.type(), anchor, action.targetShipId(), action.shipOffset(), action.targetOffset(), ship != null);
         }
         BlockPos fallback = action.targetOffset() == null ? anchor : anchor.offset(action.targetOffset());
-        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action anchor target resolved: type={}, anchor={}, "
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action anchor target resolved: type={}, anchor={}, "
                         + "targetOffset={}, resolved={}",
                 action.type(), anchor, action.targetOffset(), fallback);
         return fallback;
@@ -153,13 +153,13 @@ public final class VehicleSetupExecutor {
             if (recorded == null) return null;
             BlockPos found = findBlockNearby(level, pos, recorded);
             if (found == null) return "temporary block not found near " + pos;
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
                     pos, found, BuiltInRegistries.BLOCK.getKey(recorded.getBlock()));
             pos = found;
         } else if (recorded != null && current.getBlock() != recorded.getBlock()) {
             BlockPos found = findBlockNearby(level, pos, recorded);
             if (found == null) return "temporary block not found near " + pos;
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
                     pos, found, BuiltInRegistries.BLOCK.getKey(recorded.getBlock()));
             pos = found;
         }

@@ -127,7 +127,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         if (level == null || level.isClientSide) return;
         if (!CbcCompat.isCannonMount(level.getBlockEntity(newMount))) return;
         linkedMount = ScopeCannonLink.fromTarget(level, newMount);
-        LOGGER.info("[VSAW_DBC] bearing at {} re-linked to mount at {} (shipId={}, offset={})",
+        LOGGER.debug("[VSAW_DBC] bearing at {} re-linked to mount at {} (shipId={}, offset={})",
                 worldPosition, newMount, linkedMount.shipId(), linkedMount.shipOffset());
         mountRepairCooldown = 100;
         mountRepairFailures = 0;
@@ -154,7 +154,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         BlockPos found = CbcCompat.findNearestMount(level, worldPosition, 16).orElse(null);
         if (found == null) {
             mountRepairFailures++;
-            LOGGER.info("[VSAW_DBC] bearing at {}: nearest-mount scan found nothing (attempt {})",
+            LOGGER.debug("[VSAW_DBC] bearing at {}: nearest-mount scan found nothing (attempt {})",
                     worldPosition, mountRepairFailures);
             return false;
         }
@@ -176,13 +176,13 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         try {
             assembled = contraption.assemble(level, worldPosition);
         } catch (AssemblyException e) {
-            LOGGER.info("[VSAW_DBC] assemble: AssemblyException at {}", worldPosition, e);
+            LOGGER.debug("[VSAW_DBC] assemble: AssemblyException at {}", worldPosition, e);
             lastException = e;
             sendData();
             return;
         }
         if (!assembled) {
-            LOGGER.info("[VSAW_DBC] assemble: contraption.assemble() returned false at {}", worldPosition);
+            LOGGER.debug("[VSAW_DBC] assemble: contraption.assemble() returned false at {}", worldPosition);
             return;
         }
         lastException = null;
@@ -195,7 +195,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         Object cbcEntity = CbcCompat.resolveLiveCbcEntity(level, mount);
         CbcCompat.CbcPoseData pose = cbcEntity != null ? CbcCompat.readCbcPoseData(cbcEntity) : null;
         if (pose == null) {
-            LOGGER.info("[VSAW_DBC] assemble: live CBC entity unavailable at {} (mount={}, mountBE={}, reason={})",
+            LOGGER.debug("[VSAW_DBC] assemble: live CBC entity unavailable at {} (mount={}, mountBE={}, reason={})",
                     worldPosition, mount,
                     mount != null ? level.getBlockEntity(mount) : null,
                     CbcCompat.describeResolutionFailure(level, mount));

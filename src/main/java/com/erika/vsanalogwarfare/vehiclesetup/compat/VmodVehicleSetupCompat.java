@@ -39,7 +39,7 @@ public final class VmodVehicleSetupCompat {
             Object shipsValue = VehicleSetupReflection.invoke(item, "getShips");
             if (!(levelValue instanceof ServerLevel level) || !(shipsValue instanceof List<?> ships)) return;
             UUID player = PLACERS.remove(System.identityHashCode(ships));
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] VMod placement complete: gameTime={}, player={}, shipPairs={}",
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] VMod placement complete: gameTime={}, player={}, shipPairs={}",
                     level.getGameTime(), player, ships.size());
              // VMod may load schematic block-entity tags in a delayed task.
              level.getServer().execute(() -> level.getServer().execute(() -> register(level, ships)));
@@ -58,7 +58,7 @@ public final class VmodVehicleSetupCompat {
             }
         }
         String placementId = EnderTransmissionCompat.newPlacementId();
-        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] VMod registration: gameTime={}, placementId={}, mappedShips={}",
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] VMod registration: gameTime={}, placementId={}, mappedShips={}",
                 level.getGameTime(), placementId, ships.size());
         for (Object ship : ships.values()) scanShip(level, ship, ships, placementId);
     }
@@ -83,7 +83,7 @@ public final class VmodVehicleSetupCompat {
                 PLACEMENT_IDS.get(setupPos), actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
         if (actions.isEmpty()) run.removing = true;
         PENDING_RUNS.put(setupPos, run);
-        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Setup started: gameTime={}, placementId={}, setup={}, "
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Setup started: gameTime={}, placementId={}, setup={}, "
                         + "actions={}, removals={}, mappedShips={}",
                 level.getGameTime(), run.placementId, setupPos, actions.size(), removals.size(), ships.size());
     }
@@ -140,7 +140,7 @@ public final class VmodVehicleSetupCompat {
             Object box = VehicleSetupReflection.invoke(ship, "getShipAABB"); if (box == null) return;
             int minX = coordinate(box, "minX"), minY = coordinate(box, "minY"), minZ = coordinate(box, "minZ");
             int maxX = coordinate(box, "maxX"), maxY = coordinate(box, "maxY"), maxZ = coordinate(box, "maxZ");
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Scanning pasted ship: runtimeShipId={}, aabbMin=({}, {}, {}), "
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Scanning pasted ship: runtimeShipId={}, aabbMin=({}, {}, {}), "
                             + "aabbMax=({}, {}, {}), gameTime={}",
                     id, minX, minY, minZ, maxX, maxY, maxZ, level.getGameTime());
             if ((long) (maxX - minX + 1) * (maxY - minY + 1) * (maxZ - minZ + 1) > 1_000_000L) return;
@@ -155,7 +155,7 @@ public final class VmodVehicleSetupCompat {
                     BlockPos setupPos = pos.immutable();
                     PLACED_SHIP_MAPPINGS.put(setupPos, ships);
                     PLACEMENT_IDS.put(setupPos, placementId);
-                    VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Setup discovered: gameTime={}, setup={}, "
+                    VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Setup discovered: gameTime={}, setup={}, "
                                     + "runtimeShipId={}, placementId={}",
                             level.getGameTime(), setupPos, id, placementId);
                     runEnderTransmitterActions(level, setupPos, (VehicleSetupBlockEntity) entity, ships, placementId);
@@ -176,17 +176,17 @@ public final class VmodVehicleSetupCompat {
             Object runtimeId = VehicleSetupReflection.invoke(ship, "getId");
             Object box = VehicleSetupReflection.invoke(ship, "getShipAABB");
             if (box == null) {
-                VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId={}, aabb=missing",
+                VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId={}, aabb=missing",
                         label, originalShipId, runtimeId);
                 return;
             }
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId={}, "
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId={}, "
                             + "aabbMin=({}, {}, {}), aabbMax=({}, {}, {})",
                     label, originalShipId, runtimeId,
                     coordinate(box, "minX"), coordinate(box, "minY"), coordinate(box, "minZ"),
                     coordinate(box, "maxX"), coordinate(box, "maxY"), coordinate(box, "maxZ"));
         } catch (ReflectiveOperationException ignored) {
-            VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId=unknown, aabb=unavailable",
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId=unknown, aabb=unavailable",
                     label, originalShipId);
         }
     }
