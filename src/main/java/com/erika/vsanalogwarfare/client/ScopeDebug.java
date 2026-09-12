@@ -16,6 +16,7 @@ public final class ScopeDebug {
     public static final String BUILD_MARKER = "scope-client-frame-debug-2026-06-13-vs-agnostic";
 
     private static final ThreadLocal<Boolean> IN_VS_MOUNTED_CAMERA_WRAPPER = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private static final ThreadLocal<Quaternionf> MOUNTED_SHIP_ROTATION = new ThreadLocal<>();
 
     private static String lastHook = "none";
     private static float lastShipYaw = Float.NaN;
@@ -63,12 +64,7 @@ public final class ScopeDebug {
                 + " fwdYaw=" + fmt(liveForwardYaw);
     }
 
-    public static boolean shouldSkipVsMountedPoseRotation() {
-        if (!ClientScopeState.active()) {
-            return false;
-        }
-        return IN_VS_MOUNTED_CAMERA_WRAPPER.get();
-    }
+    public static boolean shouldSkipVsMountedPoseRotation() { return false; }
 
     public static void poseRotationSkipped(Quaternionf quaternion) {
         long now = System.currentTimeMillis();
@@ -85,6 +81,13 @@ public final class ScopeDebug {
 
     public static void exitVsMountedCameraWrapper() {
         IN_VS_MOUNTED_CAMERA_WRAPPER.set(Boolean.FALSE);
+        MOUNTED_SHIP_ROTATION.remove();
+    }
+
+    public static boolean consumeVsMountedPoseRotationSkip() { return false; }
+
+    public static void mountedShipRotation(Quaternionf rotation) {
+        MOUNTED_SHIP_ROTATION.set(new Quaternionf(rotation).normalize());
     }
 
     public static void logScopeReappliedAfterVs() {

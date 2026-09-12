@@ -119,6 +119,7 @@ public final class VmodVehicleSetupCompat {
                                 ? "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed."
                                 : "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. " + run.firstError)
                                 .append(run.removals.isEmpty() ? "" : " Temporary blocks removed: " + run.removalSucceeded + "/" + run.removals.size() + "."), true);
+                        StevesArmyCompat.notifySetupCompleted(run.player, run.level, entry.getKey());
                         PENDING_RUNS.remove(entry.getKey(), run);
                         PLACED_SHIP_MAPPINGS.remove(entry.getKey(), run.ships);
                         if (run.placementId != null) PLACEMENT_IDS.remove(entry.getKey(), run.placementId);

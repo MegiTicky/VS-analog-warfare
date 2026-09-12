@@ -462,6 +462,8 @@ public class VehicleSetupEditorScreen extends Screen {
             case SET_TRACKWORK_STIFFNESS -> trackToolKit();
             case SPAWN_TALLYHO_HULL_MG -> optionalItem("tallyho", "hull_mg", Items.DISPENSER);
             case SPAWN_TALLYHO_ENTITY -> new ItemStack(Items.EGG);
+            case SPAWN_VEHICLE_CREW -> optionalItem("steves_army", "vehicle_crew_spawn_egg", Items.EGG);
+            case LINK_CBCTB_GOGGLES -> optionalItem("cbc_terminal_ballistics", "ballistic_goggles", Items.SPYGLASS);
             default -> new ItemStack(Items.PAPER);
         };
     }
@@ -490,9 +492,11 @@ public class VehicleSetupEditorScreen extends Screen {
             case SET_TRACKWORK_STIFFNESS -> "Set track stiffness to " + action.stiffness() + "x";
             case SPAWN_TALLYHO_HULL_MG -> "Spawn Tallyho hull MG";
             case SPAWN_TALLYHO_ENTITY -> "Spawn " + action.tallyhoEntity();
+            case SPAWN_VEHICLE_CREW -> "Spawn vehicle crew";
             case GENERIC_BLOCK_INTERACTION -> "Use " + ItemStack.of(action.interactionItem()).getHoverName().getString();
             case GENERIC_BLOCK_LEFT_CLICK -> "Left-click with " + ItemStack.of(action.interactionItem()).getHoverName().getString();
             case CONFIGURE_ENDER_TRANSMITTER -> "Configure Ender transmitter";
+            case LINK_CBCTB_GOGGLES -> "Link ballistic goggles";
         };
     }
 

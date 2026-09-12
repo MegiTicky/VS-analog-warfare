@@ -60,7 +60,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         markAndSync();
     }
     public String actionSummary() {
-        int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, tallyho = 0,
+        int placements = 0, removals = 0, dbw = 0, stiffness = 0, hullMgs = 0, tallyho = 0, crew = 0,
                 interactions = 0, leftClicks = 0, transmitters = 0, other = 0;
         for (VehicleSetupAction action : actions) {
             switch (action.type()) {
@@ -70,6 +70,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
                 case SET_TRACKWORK_STIFFNESS -> stiffness++;
                 case SPAWN_TALLYHO_HULL_MG -> hullMgs++;
                 case SPAWN_TALLYHO_ENTITY -> tallyho++;
+                case SPAWN_VEHICLE_CREW -> crew++;
                 case GENERIC_BLOCK_INTERACTION -> interactions++;
                 case GENERIC_BLOCK_LEFT_CLICK -> leftClicks++;
                 case CONFIGURE_ENDER_TRANSMITTER -> transmitters++;
@@ -84,6 +85,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         appendCount(summary, stiffness, "suspension setting");
         appendCount(summary, hullMgs, "hull MG");
         appendCount(summary, tallyho, "Tallyho entity");
+        appendCount(summary, crew, "vehicle crew");
         appendCount(summary, interactions, "block interaction");
         appendCount(summary, leftClicks, "left-click interaction");
         appendCount(summary, transmitters, "Ender transmitter");

@@ -6,6 +6,8 @@ import com.erika.vsanalogwarfare.network.ModNetwork;
 import com.erika.vsanalogwarfare.network.ScrewdriverHudPacket;
 import com.erika.vsanalogwarfare.registry.ModBlocks;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.CbctbCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.StevesArmyCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TallyhoCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
@@ -23,7 +25,9 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.BlockEvent;
@@ -46,6 +50,7 @@ public final class VehicleSetupRecordingManager {
     private static final Map<UUID, BlockPos> ACTIVE_RECORDINGS = new HashMap<>();
     private static final Map<UUID, PendingInteraction> PENDING_INTERACTIONS = new HashMap<>();
     private static final Map<UUID, PendingTallyhoPlacement> PENDING_TALLYHO_PLACEMENTS = new HashMap<>();
+    private static final Map<UUID, PendingCrewPlacement> PENDING_CREW_PLACEMENTS = new HashMap<>();
     private static final Map<UUID, PendingLeftClick> PENDING_LEFT_CLICKS = new HashMap<>();
     private static final Set<UUID> REPLAYING_INTERACTIONS = new HashSet<>();
     private static final Map<UUID, Long> LAST_RECORDED_TICKS = new HashMap<>();
@@ -117,6 +122,21 @@ public final class VehicleSetupRecordingManager {
         recordAction(serverPlayer, setup, VehicleSetupAction.setTrackworkStiffness(
                 ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(),
                 clicked.subtract(setup.getBlockPos()), stiffness));
+    }
+
+    /**
+     * Records a ballistic goggle link while a setup recording is active. Fired
+     * when the player right-clicks a cannon mount with CBCTB's ballistic
+     * goggles; the goggles item performs its own live link — this only files
+     * the action so the setup re-applies the link (ship-anchored) after a
+     * schematic paste.
+     */
+    public static void recordGoggleLink(ServerPlayer player, VehicleSetupBlockEntity setup, BlockPos mount) {
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), mount);
+        recordAction(player, setup, VehicleSetupAction.linkCbctbGoggles(
+                ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(),
+                mount.subtract(setup.getBlockPos())));
+        player.displayClientMessage(Component.literal("Recorded ballistic goggle link."), true);
     }
     public static void toggleRemovalRecording(ServerPlayer player, VehicleSetupBlockEntity setup) {
         if (setup.getBlockPos().equals(ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID()))) {
@@ -209,9 +229,11 @@ public final class VehicleSetupRecordingManager {
             case SET_TRACKWORK_STIFFNESS -> "Set suspension to " + action.stiffness() + "x" + offset;
             case SPAWN_TALLYHO_HULL_MG -> "Spawn hull MG" + offset;
             case SPAWN_TALLYHO_ENTITY -> "Spawn " + (action.tallyhoEntity() == null ? "Tallyho entity" : action.tallyhoEntity()) + offset;
+            case SPAWN_VEHICLE_CREW -> "Spawn vehicle crew" + offset;
             case GENERIC_BLOCK_INTERACTION -> "Interact with block" + offset;
             case GENERIC_BLOCK_LEFT_CLICK -> "Left-click block" + offset;
             case CONFIGURE_ENDER_TRANSMITTER -> "Configure Ender transmitter" + offset;
+            case LINK_CBCTB_GOGGLES -> "Link ballistic goggles" + offset;
         };
     }
 
@@ -382,8 +404,25 @@ public final class VehicleSetupRecordingManager {
                             hitPosition, Vec3.atCenterOf(event.getPos()))));
             return;
         }
+        if (StevesArmyCompat.isCrewSpawnEgg(item)) {
+            if (setup == null || event.getPos().equals(setup.getBlockPos())) {
+                return;
+            }
+            if (event.getUseItem() == Event.Result.DENY) {
+                return;
+            }
+            queueCrewPlacement(player, setup, event.getHitVec().getLocation());
+            return;
+        }
         if (setup == null || event.getPos().equals(setup.getBlockPos()) || item.getItem() instanceof BlockItem
                 || item.getItem() instanceof AnalogScrewdriverItem) return;
+        // CBCTB ballistic goggles on a cannon mount: file a dedicated link
+        // action instead of a generic interaction (the goggles item performs
+        // its own live link in its useOn, which is not canceled here).
+        if (CbctbCompat.isGogglesItem(item) && CbctbCompat.isCannonMount(player.level(), event.getPos())) {
+            recordGoggleLink(player, setup, event.getPos());
+            return;
+        }
         BlockPos pos = event.getPos();
         BlockState state = event.getLevel().getBlockState(pos);
         if (state.isAir()) return;
@@ -402,6 +441,18 @@ public final class VehicleSetupRecordingManager {
                         + "canceled={} result={} useBlock={} useItem={}", blockId, pos,
                 player.getGameProfile().getName(), event.getHand(), BuiltInRegistries.ITEM.getKey(item.getItem()),
                 event.isCanceled(), event.getCancellationResult(), event.getUseBlock(), event.getUseItem());
+    }
+
+    /** Crew egg right-click in air: Steve's Army resolves the seat via its own 6-block raytrace (use path). */
+    @SubscribeEvent
+    public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)) return;
+        if (!StevesArmyCompat.isCrewSpawnEgg(event.getItemStack())) return;
+        VehicleSetupBlockEntity setup = activeSetup(player);
+        if (setup == null) return;
+        HitResult hit = player.pick(6.0, 1.0F, false);
+        Vec3 position = hit.getType() == HitResult.Type.BLOCK ? hit.getLocation() : player.position();
+        queueCrewPlacement(player, setup, position);
     }
 
     @SubscribeEvent
@@ -448,6 +499,27 @@ public final class VehicleSetupRecordingManager {
             }
             recordTallyhoEntity(player, setup, captured);
         }
+        Map<UUID, PendingCrewPlacement> crewPlacements = new HashMap<>(PENDING_CREW_PLACEMENTS);
+        PENDING_CREW_PLACEMENTS.clear();
+        for (Map.Entry<UUID, PendingCrewPlacement> entry : crewPlacements.entrySet()) {
+            ServerPlayer player = event.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player == null || player.level().getGameTime() < entry.getValue().captureTick()) {
+                if (player != null) PENDING_CREW_PLACEMENTS.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            PendingCrewPlacement placement = entry.getValue();
+            VehicleSetupBlockEntity setup = activeSetup(player);
+            if (setup == null || !setup.getBlockPos().equals(placement.anchor())) continue;
+            Entity crew = StevesArmyCompat.findNewCrew((net.minecraft.server.level.ServerLevel) player.level(),
+                    placement.position(), null, placement.existingCrewIds());
+            if (crew == null) {
+                if (placement.attempt() < 4) {
+                    PENDING_CREW_PLACEMENTS.put(entry.getKey(), placement.withNextAttempt());
+                }
+                continue;
+            }
+            recordCrewSpawn(player, setup, crew);
+        }
         for (java.util.Iterator<Map.Entry<BlockPos, PendingRun>> iterator = PENDING_RUNS.entrySet().iterator(); iterator.hasNext();) {
             Map.Entry<BlockPos, PendingRun> entry = iterator.next();
             PendingRun run = entry.getValue();
@@ -466,12 +538,13 @@ public final class VehicleSetupRecordingManager {
                         if (run.remainingTicks == 0) continue;
                         break;
                     }
-                    run.player.displayClientMessage(Component.literal(run.firstError == null
-                            ? "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed."
-                            : "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. " + run.firstError)
-                            .append(run.removals.isEmpty() ? "" : " Temporary blocks removed: " + run.removalSucceeded + "/" + run.removals.size() + "."), true);
-                    iterator.remove();
-                    break;
+                        run.player.displayClientMessage(Component.literal(run.firstError == null
+                                ? "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed."
+                                : "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. " + run.firstError)
+                                .append(run.removals.isEmpty() ? "" : " Temporary blocks removed: " + run.removalSucceeded + "/" + run.removals.size() + "."), true);
+                        StevesArmyCompat.notifySetupCompleted(run.player, run.level, entry.getKey());
+                        iterator.remove();
+                        break;
                 }
                 if (!run.removing) run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
                         + run.actions.size() + " completed."), true);
@@ -569,6 +642,22 @@ public final class VehicleSetupRecordingManager {
                 captured.positionOffset(), captured.entityId(), captured.baseYaw(), captured.variant(), captured.state()));
     }
 
+    private static void queueCrewPlacement(ServerPlayer player, VehicleSetupBlockEntity setup, Vec3 position) {
+        PENDING_CREW_PLACEMENTS.put(player.getUUID(), new PendingCrewPlacement(setup.getBlockPos(),
+                player.level().getGameTime() + 1L, 0, position,
+                StevesArmyCompat.nearbyCrewIds((net.minecraft.server.level.ServerLevel) player.level(),
+                        position, 5.0)));
+    }
+
+    private static void recordCrewSpawn(ServerPlayer player, VehicleSetupBlockEntity setup, Entity crew) {
+        Entity vehicle = crew.getVehicle();
+        BlockPos supportPosition = vehicle == null ? crew.blockPosition() : vehicle.blockPosition();
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), supportPosition);
+        recordAction(player, setup, VehicleSetupAction.spawnVehicleCrew(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), supportPosition.subtract(setup.getBlockPos()),
+                crew.position().subtract(Vec3.atCenterOf(supportPosition))));
+    }
+
     public static void beginInteractionReplay(ServerPlayer player) {
         REPLAYING_INTERACTIONS.add(player.getUUID());
     }
@@ -614,6 +703,13 @@ public final class VehicleSetupRecordingManager {
         private PendingTallyhoPlacement withNextAttempt() {
             return new PendingTallyhoPlacement(anchor, captureTick + 1L, attempt + 1,
                     position, alternatePosition, existingEntities);
+        }
+    }
+
+    private record PendingCrewPlacement(BlockPos anchor, long captureTick, int attempt, Vec3 position,
+                                        java.util.Set<UUID> existingCrewIds) {
+        private PendingCrewPlacement withNextAttempt() {
+            return new PendingCrewPlacement(anchor, captureTick + 1L, attempt + 1, position, existingCrewIds);
         }
     }
 

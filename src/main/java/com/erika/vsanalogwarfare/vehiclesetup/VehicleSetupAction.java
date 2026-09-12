@@ -158,6 +158,13 @@ public final class VehicleSetupAction {
                 positionOffset.x, positionOffset.y, positionOffset.z, null, 0, 0);
     }
 
+    public static VehicleSetupAction spawnVehicleCrew(long shipId, @Nullable BlockPos shipOffset,
+                                                      BlockPos anchorOffset, Vec3 positionOffset) {
+        return new VehicleSetupAction(VehicleSetupActionType.SPAWN_VEHICLE_CREW, anchorOffset, null, shipOffset,
+                shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0,
+                positionOffset.x, positionOffset.y, positionOffset.z, null, 0, 0);
+    }
+
     public static VehicleSetupAction interactWithBlock(long shipId, @Nullable BlockPos shipOffset,
                                                          BlockPos anchorOffset, ItemStack item,
                                                          InteractionHand hand, Direction face, Vec3 hitOffset,
@@ -187,6 +194,13 @@ public final class VehicleSetupAction {
         return new VehicleSetupAction(VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER, anchorOffset, null,
                 shipOffset, shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0,
                 0.0, 0.0, 0.0, null, 0, 0, false, channel, password, 0);
+    }
+
+    public static VehicleSetupAction linkCbctbGoggles(long shipId, @Nullable BlockPos shipOffset,
+                                                      BlockPos anchorOffset) {
+        return new VehicleSetupAction(VehicleSetupActionType.LINK_CBCTB_GOGGLES, anchorOffset, null,
+                shipOffset, shipId, -1L, null, null, 0.0f, 0.0f, 0, null, null, 0,
+                0.0, 0.0, 0.0, null, 0, 0);
     }
 
     public VehicleSetupActionType type() { return type; }

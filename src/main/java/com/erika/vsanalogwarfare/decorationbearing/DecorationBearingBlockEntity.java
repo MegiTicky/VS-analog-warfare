@@ -195,7 +195,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         Object cbcEntity = CbcCompat.resolveLiveCbcEntity(level, mount);
         CbcCompat.CbcPoseData pose = cbcEntity != null ? CbcCompat.readCbcPoseData(cbcEntity) : null;
         if (pose == null) {
-            LOGGER.debug("[VSAW_DBC] assemble: live CBC entity unavailable at {} (mount={}, mountBE={}, reason={})",
+            LOGGER.info("[VSAW_DBC] assemble: live CBC entity unavailable at {} (mount={}, mountBE={}, reason={})",
                     worldPosition, mount,
                     mount != null ? level.getBlockEntity(mount) : null,
                     CbcCompat.describeResolutionFailure(level, mount));

@@ -11,13 +11,16 @@ import com.mojang.blaze3d.vertex.VertexFormat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
 import org.joml.Matrix4f;
+import org.joml.Vector3f;
 
 /**
  * Reveal outline for the invisible seat: while the local player holds the
@@ -80,6 +83,23 @@ public final class ClientInvisibleSeatHighlight {
             }
         }
         return false;
+    }
+
+    /**
+     * Ambient reveal particles from the seat block's {@code animateTick} (the
+     * CombatGear spacer reveal mechanic): one amber dust puff per random
+     * display tick at the block center. VS2 ticks ship blocks' animateTick in
+     * shipyard space and transforms their particle spawns by the ship's render
+     * matrix, so this also works on ships — where vanilla's barrier-style
+     * marker-particle scan (world-space sampling) never finds ship blocks.
+     */
+    public static void spawnIndicatorParticles(Level level, BlockPos pos) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || !holdingRevealItem(minecraft)) {
+            return;
+        }
+        level.addParticle(new DustParticleOptions(new Vector3f(1.0F, 0.66F, 0.2F), 1.0F),
+                pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D, 0.0D, 0.0D, 0.0D);
     }
 
     private static void lineBox(BufferBuilder buffer, Matrix4f matrix, Vec3[] corners, float[] color) {

@@ -223,8 +223,8 @@ public final class ClientForgeEvents {
         if (ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON) {
             // The scope session is still live in third-person view; show a minimal
             // hint instead of the scope HUD so the mode is not mistaken for an exit.
-            graphics.drawString(mc.font, "Third-Person View  [B] Scope  [Shift] Exit", 6, 6, 0xFF80FF80);
-            drawWireKeyStatus(graphics, mc, 6, 18);
+            graphics.drawString(mc.font, hudHelpLines()[0], 6, 6, 0xFF80FF80);
+            drawKeybindHelp(graphics, mc, 6, 18);
             drawFreeLookTargetCircle(graphics, screenW, screenH);
             return;
         }
@@ -247,7 +247,7 @@ public final class ClientForgeEvents {
         drawFreeLookTargetCircle(graphics, screenW, screenH);
 
         drawRangefinderText(graphics, mc, sightScopeX, sightScopeY, scopeW, scopeH);
-        drawWireKeyStatus(graphics, mc, 6, 18);
+        drawKeybindHelp(graphics, mc, 6, 18);
 
         // Disabled: per-frame debug overlay is expensive (Font rendering + formatting) and was a major hotspot in spark.
         // String debug = ScopeDebug.overlayLine(mc.gameRenderer.getMainCamera());
@@ -317,15 +317,43 @@ public final class ClientForgeEvents {
         }
     }
 
-    private static void drawWireKeyStatus(GuiGraphics graphics, Minecraft mc, int x, int y) {
-        short mask = TweakedControllerInputCompat.handlerButtonMask();
-        StringBuilder line = new StringBuilder("CTRL");
-        for (int i = 0; i < TweakedControllerInputCompat.BUTTON_LABELS.length; i++) {
-            boolean pressed = (mask & (1 << i)) != 0;
-            line.append(pressed ? " [" + TweakedControllerInputCompat.BUTTON_LABELS[i] + "]"
-                                : "  " + TweakedControllerInputCompat.BUTTON_LABELS[i]);
+    /**
+     * Instruction lines for the scope HUD, built from the actual keymappings so
+     * they follow rebinds. Strings are cached and rebuilt only when a bind's
+     * translated key changes.
+     */
+    private static String[] hudHelpCache;
+    private static String hudHelpSignature;
+
+    private static String[] hudHelpLines() {
+        String view = keyLabel(ClientKeyMappings.SCOPE_VIEW_TOGGLE);
+        String signature = view
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_FREE_LOOK)
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_ZOOM)
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_RANGEFINDER)
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_ZEROING);
+        if (hudHelpCache == null || !signature.equals(hudHelpSignature)) {
+            hudHelpSignature = signature;
+            hudHelpCache = new String[]{
+                    "[" + view + "] Scope  [Shift] Exit",
+                    "[" + view + "] 3rd Person  [" + keyLabel(ClientKeyMappings.SCOPE_FREE_LOOK) + "] Free Look",
+                    "[" + keyLabel(ClientKeyMappings.SCOPE_ZOOM) + "] Zoom  ["
+                            + keyLabel(ClientKeyMappings.SCOPE_RANGEFINDER) + "] Rangefind",
+                    "[" + keyLabel(ClientKeyMappings.SCOPE_ZEROING) + "]+Scroll Zeroing  [Shift] Exit"
+            };
         }
-        graphics.drawString(mc.font, line.toString(), x, y, 0xFFE6E6E6, true);
+        return hudHelpCache;
+    }
+
+    private static String keyLabel(net.minecraft.client.KeyMapping mapping) {
+        return mapping.getTranslatedKeyMessage().getString().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private static void drawKeybindHelp(GuiGraphics graphics, Minecraft mc, int x, int y) {
+        String[] lines = hudHelpLines();
+        for (int i = 1; i < lines.length; i++) {
+            graphics.drawString(mc.font, lines[i], x, y + (i - 1) * 11, 0xFFE6E6E6, true);
+        }
     }
 
     /** The scope view replaces the player's hands; this also hides the fake

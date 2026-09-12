@@ -1,6 +1,8 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
+import com.erika.vsanalogwarfare.vehiclesetup.compat.CbctbCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.StevesArmyCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TallyhoCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
@@ -68,10 +70,14 @@ public final class VehicleSetupExecutor {
             case SPAWN_TALLYHO_ENTITY -> TallyhoCompat.spawnEntity(level, target(level, anchor, action, ships),
                     action.positionOffset(), action.tallyhoEntity(), action.yaw(), action.tallyhoVariant(),
                     action.tallyhoState());
+            case SPAWN_VEHICLE_CREW -> StevesArmyCompat.spawnCrew(level, target(level, anchor, action, ships),
+                    action.positionOffset(), player);
             case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
             case GENERIC_BLOCK_LEFT_CLICK -> leftClick(level, anchor, player, action, ships);
             case CONFIGURE_ENDER_TRANSMITTER -> EnderTransmissionCompat.configure(
                     level, target(level, anchor, action, ships), action, placementId);
+            case LINK_CBCTB_GOGGLES -> CbctbCompat.linkGoggles(level,
+                    target(level, anchor, action, ships), player);
         };
         String after = debugTarget == null ? null : level.getBlockState(debugTarget).toString();
         VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Action end: placementId={}, index={}, type={}, target={}, "
@@ -86,8 +92,8 @@ public final class VehicleSetupExecutor {
                                         @Nullable Map<Long, Object> ships) {
         return switch (action.type()) {
             case PLACE_BLOCK, REMOVE_BLOCK, SET_TRACKWORK_STIFFNESS, SPAWN_TALLYHO_HULL_MG,
-                    SPAWN_TALLYHO_ENTITY, GENERIC_BLOCK_INTERACTION, GENERIC_BLOCK_LEFT_CLICK,
-                    CONFIGURE_ENDER_TRANSMITTER -> target(level, anchor, action, ships);
+                    SPAWN_TALLYHO_ENTITY, SPAWN_VEHICLE_CREW, GENERIC_BLOCK_INTERACTION, GENERIC_BLOCK_LEFT_CLICK,
+                    CONFIGURE_ENDER_TRANSMITTER, LINK_CBCTB_GOGGLES -> target(level, anchor, action, ships);
             default -> null;
         };
     }

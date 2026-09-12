@@ -92,6 +92,17 @@ public final class OptionalModCompatibility {
                                     new ResourceLocation("create_tweaked_controllers", "tweaked_linked_controller"))
                                     .equals(Items.AIR);
                         } catch (Throwable ignored) { return false; }
+                    }),
+            new Integration("cbc_terminal_ballistics", "CBC Terminal Ballistics", "0.4.0-vs2.3",
+                    "recorded ballistic goggle links cannot be re-applied after placement.",
+                    () -> {
+                        try {
+                            Class<?> manager = Class.forName(
+                                    "com.cbc_terminal_ballistics.goggles.GoggleLinkManager");
+                            Method relink = manager.getMethod("setupRelink",
+                                    ServerPlayer.class, List.class);
+                            return relink.getReturnType() == int.class;
+                        } catch (Throwable ignored) { return false; }
                     })
     );
 

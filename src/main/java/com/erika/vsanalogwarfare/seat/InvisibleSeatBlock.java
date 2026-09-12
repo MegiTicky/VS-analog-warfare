@@ -2,10 +2,12 @@ package com.erika.vsanalogwarfare.seat;
 
 import java.util.List;
 
+import com.erika.vsanalogwarfare.client.ClientInvisibleSeatHighlight;
 import com.simibubi.create.content.contraptions.actors.seat.SeatBlock;
 import com.simibubi.create.content.contraptions.actors.seat.SeatEntity;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
@@ -50,6 +52,17 @@ public class InvisibleSeatBlock extends SeatBlock {
         return Shapes.empty();
     }
 
+    /**
+     * Held-item reveal (client only): a dust puff per random display tick
+     * marks the seat while the player holds the reveal item. Delegates to a
+     * client-only helper — the body never runs on dedicated servers, so the
+     * client class is never classloaded there.
+     */
+    @Override
+    public void animateTick(BlockState state, Level level, BlockPos pos, RandomSource random) {
+        ClientInvisibleSeatHighlight.spawnIndicatorParticles(level, pos);
+    }
+
     @Override
     public InteractionResult use(BlockState state, Level world, BlockPos pos, Player player, InteractionHand hand,
             BlockHitResult hit) {
@@ -82,7 +95,7 @@ public class InvisibleSeatBlock extends SeatBlock {
             return;
         }
         InvisibleSeatEntity seat = new InvisibleSeatEntity(world, pos);
-        seat.setPos(pos.getX() + 0.5F, pos.getY(), pos.getZ() + 0.5F);
+        seat.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
         // No ship handling here: the entity is a VS2 shipyard entity (shipyard
         // coordinates are exactly what setPos receives, since VS2 remaps the
         // interaction position), so VS2 keeps it attached to the ship.

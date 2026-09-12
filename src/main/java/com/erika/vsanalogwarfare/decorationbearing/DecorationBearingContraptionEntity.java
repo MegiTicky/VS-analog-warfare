@@ -350,7 +350,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                 CbcCompat.CbcPoseData pose = CbcCompat.readCbcPoseData(cbcEntity);
                 if (pose == null) {
                     unresolvedTicks++;
-                    LOGGER.debug("[VSAW_DBC] tick: readCbcPoseData returned null for {}",
+                    LOGGER.info("[VSAW_DBC] tick: readCbcPoseData returned null for {}",
                             cbcEntity.getClass().getSimpleName());
                 } else {
                     unresolvedTicks = 0;
@@ -453,7 +453,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         }
         var be = level().getBlockEntity(controllerPos);
         if (!(be instanceof DecorationBearingBlockEntity bearing)) {
-            LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: controller BE at {} is {}",
+            LOGGER.info("[VSAW_DBC] resolveLinkedCbcEntity: controller BE at {} is {}",
                     controllerPos, be != null ? be.getClass().getSimpleName() : "null");
             return null;
         }
@@ -476,7 +476,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                 }
             }
         }
-        LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: no live CBC entity (bearing at {}, mount={})",
+        LOGGER.info("[VSAW_DBC] resolveLinkedCbcEntity: no live CBC entity (bearing at {}, mount={})",
                 controllerPos, mount);
         return null;
     }
