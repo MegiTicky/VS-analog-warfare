@@ -252,7 +252,7 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     }
 
     public boolean isMouseAimActive() {
-        return Math.abs(getSpeed()) >= CommonConfig.mouseAimMinSpeed() && !isOverStressed();
+        return !isOverStressed();
     }
 
     /**
