@@ -14,10 +14,7 @@
     "client.CameraMixin",
     "client.GameRendererMixin",
     "client.MouseHandlerMixin",
-    "client.PoseStackMixin",
-    "client.MixinSchematicToolBase",
-    "client.MixinSchematicTransformation",
-    "client.MixinDeployTool"
+    "client.PoseStackMixin"
   ],
   "injectors": {
     "defaultRequire": 1
