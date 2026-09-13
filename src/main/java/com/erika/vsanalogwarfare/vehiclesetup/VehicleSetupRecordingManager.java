@@ -1,8 +1,12 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
+import com.erika.vsanalogwarfare.network.ModNetwork;
+import com.erika.vsanalogwarfare.network.ScrewdriverHudPacket;
 import com.erika.vsanalogwarfare.registry.ModBlocks;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.CbctbCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.StevesArmyCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
@@ -10,20 +14,22 @@ import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupShipPosition;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
-import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -31,6 +37,8 @@ import net.minecraftforge.fml.common.Mod;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -39,8 +47,13 @@ import java.util.UUID;
 public final class VehicleSetupRecordingManager {
     private static final Map<UUID, BlockPos> ACTIVE_RECORDINGS = new HashMap<>();
     private static final Map<UUID, PendingInteraction> PENDING_INTERACTIONS = new HashMap<>();
+    private static final Map<UUID, PendingCrewPlacement> PENDING_CREW_PLACEMENTS = new HashMap<>();
     private static final Map<UUID, PendingLeftClick> PENDING_LEFT_CLICKS = new HashMap<>();
     private static final Set<UUID> REPLAYING_INTERACTIONS = new HashSet<>();
+    private static final Map<UUID, Long> LAST_RECORDED_TICKS = new HashMap<>();
+    private static final Map<BlockPos, PendingRun> PENDING_RUNS = new HashMap<>();
+    private static final Map<UUID, BlockPos> ACTIVE_REMOVAL_RECORDINGS = new HashMap<>();
+    private static final Map<UUID, BlockPos> ACTIVE_TRANSMITTER_RECORDINGS = new HashMap<>();
 
     private VehicleSetupRecordingManager() { }
 
@@ -49,15 +62,16 @@ public final class VehicleSetupRecordingManager {
         BlockPos current = ACTIVE_RECORDINGS.get(playerId);
         if (setup.getBlockPos().equals(current)) {
             ACTIVE_RECORDINGS.remove(playerId);
-            player.displayClientMessage(Component.literal("Vehicle setup recording stopped: "
-                    + setup.actionSummary() + "."), true);
+            LAST_RECORDED_TICKS.remove(playerId);
+            sendHudState(player);
             return;
         }
-        setup.clearActions();
         OptionalModCompatibility.warnIfIssues(player);
+        ACTIVE_TRANSMITTER_RECORDINGS.remove(playerId);
+        ACTIVE_REMOVAL_RECORDINGS.remove(playerId);
         ACTIVE_RECORDINGS.put(playerId, setup.getBlockPos());
-        player.displayClientMessage(Component.literal("Vehicle setup recording started. Place or break blocks normally, "
-                + "then use the recorder on this block again to stop."), true);
+        LAST_RECORDED_TICKS.put(playerId, player.level().getGameTime());
+        sendHudState(player);
     }
 
     public static void inspect(ServerPlayer player, VehicleSetupBlockEntity setup) {
@@ -70,42 +84,203 @@ public final class VehicleSetupRecordingManager {
         VehicleSetupShipPosition sourcePosition = VehicleSetupShipPosition.at(player.level(), source);
         VehicleSetupShipPosition targetPosition = VehicleSetupShipPosition.at(player.level(), target);
         if (sourcePosition == null || targetPosition == null) {
-            player.displayClientMessage(Component.literal(
-                    "Vehicle setup could not record the DBW relink: both backups must be on loaded ships."), true);
+            player.displayClientMessage(Component.literal("Vehicle setup could not record the DBW relink: both backups must be on loaded ships."), true);
             return;
         }
-        setup.addAction(VehicleSetupAction.linkDbwBackups(sourcePosition.shipId(), sourcePosition.offset(),
+        recordAction(player, setup, VehicleSetupAction.linkDbwBackups(
+                sourcePosition.shipId(), sourcePosition.offset(),
                 targetPosition.shipId(), targetPosition.offset()));
-        player.displayClientMessage(Component.literal("Vehicle setup recorded DBW relink: "
-                + setup.actionSummary() + "."), true);
     }
 
-    public static void recordControllerLink(ServerPlayer player, BlockPos hub, ItemStack controller) {
-        VehicleSetupBlockEntity setup = activeSetup(player);
+    public static void recordControllerLink(net.minecraft.world.entity.player.Player player, BlockPos hub,
+                                            ItemStack controller) {
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+        if (!controller.hasTag() || !controller.getTag().contains("Hub")) return;
+        VehicleSetupBlockEntity setup = activeSetup(serverPlayer);
         if (setup == null) return;
-        claimGenericInteraction(player, hub);
-        VehicleSetupShipPosition hubPosition = VehicleSetupShipPosition.at(player.level(), hub);
+        claimGenericInteraction(serverPlayer, hub);
+        VehicleSetupShipPosition hubPosition = VehicleSetupShipPosition.at(serverPlayer.level(), hub);
         if (hubPosition == null) {
-            player.displayClientMessage(Component.literal(
-                    "Vehicle setup could not record controller link: hub is not on a loaded ship."), true);
+            serverPlayer.displayClientMessage(Component.literal("Vehicle setup could not record controller link: hub is not on a loaded ship."), true);
             return;
         }
-        setup.addAction(VehicleSetupAction.createTweakedController(hubPosition.shipId(), hubPosition.offset(), controller));
-        player.displayClientMessage(Component.literal("Vehicle setup recorded controller link: "
-                + setup.actionSummary() + "."), true);
+        recordAction(serverPlayer, setup, VehicleSetupAction.createTweakedController(
+                hubPosition.shipId(), hub.subtract(setup.getBlockPos()), controller));
     }
 
-    public static void recordTrackworkStiffness(ServerPlayer player, BlockPos clicked, ItemStack stack) {
-        if (!TrackworkCompat.isStiffnessTool(stack)
-                || !TrackworkCompat.isStiffnessTarget(player.level(), clicked)) return;
-        VehicleSetupBlockEntity setup = activeSetup(player);
+    public static void recordTrackworkStiffness(net.minecraft.world.entity.player.Player player,
+                                                BlockPos clicked, ItemStack stack, float stiffness) {
+        if (!(player instanceof ServerPlayer serverPlayer) || !TrackworkCompat.isStiffnessTool(stack)
+                || !TrackworkCompat.isStiffnessTarget(serverPlayer.level(), clicked)) return;
+        VehicleSetupBlockEntity setup = activeSetup(serverPlayer);
         if (setup == null) return;
-        claimGenericInteraction(player, clicked);
-        Float stiffness = TrackworkCompat.readStiffness(player.level(), clicked);
-        if (stiffness == null) return;
-        setup.addAction(VehicleSetupAction.setTrackworkStiffness(stiffness));
-        player.displayClientMessage(Component.literal("Vehicle setup recorded suspension stiffness "
-                + stiffness + "x: " + setup.actionSummary() + "."), true);
+        claimGenericInteraction(serverPlayer, clicked);
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(serverPlayer.level(), clicked);
+        recordAction(serverPlayer, setup, VehicleSetupAction.setTrackworkStiffness(
+                ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(),
+                clicked.subtract(setup.getBlockPos()), stiffness));
+    }
+
+    /**
+     * Records a ballistic goggle link while a setup recording is active. Fired
+     * when the player right-clicks a cannon mount with CBCTB's ballistic
+     * goggles; the goggles item performs its own live link — this only files
+     * the action so the setup re-applies the link (ship-anchored) after a
+     * schematic paste.
+     */
+    public static void recordGoggleLink(ServerPlayer player, VehicleSetupBlockEntity setup, BlockPos mount) {
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), mount);
+        recordAction(player, setup, VehicleSetupAction.linkCbctbGoggles(
+                ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(),
+                mount.subtract(setup.getBlockPos())));
+        player.displayClientMessage(Component.literal("Recorded ballistic goggle link."), true);
+    }
+    public static void toggleRemovalRecording(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        if (setup.getBlockPos().equals(ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID()))) {
+            ACTIVE_REMOVAL_RECORDINGS.remove(player.getUUID());
+            sendHudState(player);
+        }
+        else {
+            ACTIVE_RECORDINGS.remove(player.getUUID());
+            ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
+            ACTIVE_REMOVAL_RECORDINGS.put(player.getUUID(), setup.getBlockPos());
+            sendHudState(player);
+        }
+    }
+
+    public static void toggleTransmitterRecording(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        UUID playerId = player.getUUID();
+        if (setup.getBlockPos().equals(ACTIVE_TRANSMITTER_RECORDINGS.get(playerId))) {
+            ACTIVE_TRANSMITTER_RECORDINGS.remove(playerId);
+            sendHudState(player);
+            return;
+        }
+        ACTIVE_RECORDINGS.remove(playerId);
+        LAST_RECORDED_TICKS.remove(playerId);
+        ACTIVE_REMOVAL_RECORDINGS.remove(playerId);
+        ACTIVE_TRANSMITTER_RECORDINGS.put(playerId, setup.getBlockPos());
+        sendHudState(player);
+    }
+
+    public static void stopTransmitterRecording(ServerPlayer player) {
+        ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
+    }
+
+    public static void sendHudState(ServerPlayer player) {
+        ItemStack stack = player.getMainHandItem();
+        if (!(stack.getItem() instanceof AnalogScrewdriverItem)) return;
+
+        UUID playerId = player.getUUID();
+        int mode = AnalogScrewdriverItem.mode(stack);
+        int recordingMode = AnalogScrewdriverItem.REGULAR_MODE;
+        BlockPos anchor = ACTIVE_RECORDINGS.get(playerId);
+        if (anchor == null) {
+            recordingMode = AnalogScrewdriverItem.REMOVAL_MODE_VALUE;
+            anchor = ACTIVE_REMOVAL_RECORDINGS.get(playerId);
+        }
+        if (anchor == null) {
+            recordingMode = AnalogScrewdriverItem.TRANSMITTER_MODE;
+            anchor = ACTIVE_TRANSMITTER_RECORDINGS.get(playerId);
+        }
+        VehicleSetupBlockEntity setup = anchor == null ? null
+                : player.level().getBlockEntity(anchor) instanceof VehicleSetupBlockEntity value ? value : null;
+
+        if (setup == null) {
+            ModNetwork.sendToPlayer(player, new ScrewdriverHudPacket(false, mode, "", List.of(), null, List.of()));
+            return;
+        }
+
+        List<VehicleSetupAction> actions = recordingMode == AnalogScrewdriverItem.REMOVAL_MODE_VALUE
+                ? setup.markedRemovals()
+                : setup.actions();
+        List<String> entries = new ArrayList<>();
+        List<ScrewdriverHudPacket.HighlightRecord> highlights = new ArrayList<>();
+        for (VehicleSetupAction action : actions) {
+            if (recordingMode == AnalogScrewdriverItem.TRANSMITTER_MODE
+                    && action.type() != VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) continue;
+            entries.add(describeAction(action));
+            addHighlightRecords(action, highlights);
+        }
+        ModNetwork.sendToPlayer(player, new ScrewdriverHudPacket(true, recordingMode,
+                "Setup " + anchor.toShortString(), entries, anchor, highlights));
+    }
+
+    private static void addHighlightRecords(VehicleSetupAction action,
+                                            List<ScrewdriverHudPacket.HighlightRecord> highlights) {
+        if (highlights.size() >= ScrewdriverHudPacket.MAX_HIGHLIGHTS) return;
+        boolean removal = action.type() == VehicleSetupActionType.REMOVE_BLOCK;
+        if (action.targetOffset() != null) {
+            highlights.add(new ScrewdriverHudPacket.HighlightRecord(action.targetShipId(),
+                    action.shipOffset() == null ? 0L : action.shipOffset().asLong(),
+                    action.targetOffset().asLong(), removal));
+        }
+    }
+
+    private static String describeAction(VehicleSetupAction action) {
+        String offset = action.targetOffset() == null ? "" : " at " + action.targetOffset().toShortString();
+        return switch (action.type()) {
+            case PLACE_BLOCK -> "Place block" + offset;
+            case REMOVE_BLOCK -> "Remove block" + offset;
+            case LINK_DBW_BACKUPS -> "Link DBW backups";
+            case CREATE_TWEAKED_CONTROLLER -> "Create controller link" + offset;
+            case SET_TRACKWORK_STIFFNESS -> "Set suspension to " + action.stiffness() + "x" + offset;
+            case SPAWN_TALLYHO_HULL_MG -> "Spawn hull MG" + offset;
+            case SPAWN_TALLYHO_ENTITY -> "Spawn " + (action.tallyhoEntity() == null ? "Tallyho entity" : action.tallyhoEntity()) + offset;
+            case SPAWN_VEHICLE_CREW -> "Spawn vehicle crew" + offset;
+            case GENERIC_BLOCK_INTERACTION -> "Interact with block" + offset;
+            case GENERIC_BLOCK_LEFT_CLICK -> "Left-click block" + offset;
+            case CONFIGURE_ENDER_TRANSMITTER -> "Configure Ender transmitter" + offset;
+            case LINK_CBCTB_GOGGLES -> "Link ballistic goggles" + offset;
+        };
+    }
+
+    public static void recordEnderTransmitter(ServerPlayer player, BlockPos pos, int channel, String password) {
+        VehicleSetupBlockEntity setup = activeSetup(player);
+        if (setup == null || !EnderTransmissionCompat.isEnergyTransmitter(player.level().getBlockState(pos))) return;
+        claimGenericInteraction(player, pos);
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
+        if (ship == null) {
+            player.displayClientMessage(Component.literal(
+                    "Vehicle setup could not record the Ender transmitter: it must be on a loaded ship."), true);
+            return;
+        }
+        setup.upsertEnderTransmitter(timedAction(player, VehicleSetupAction.configureEnderTransmitter(
+                ship.shipId(), ship.offset(), pos.subtract(setup.getBlockPos()), channel, password)));
+    }
+
+    public static void recordEnderTransmitterConfiguration(ServerPlayer player, KineticBlockEntity transmitter) {
+        CompoundTag data = transmitter.getPersistentData();
+        recordEnderTransmitter(player, transmitter.getBlockPos(), data.getInt("channel"),
+                data.getString("password"));
+    }
+
+    public static void scanEnderTransmitters(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        scanEnderTransmitters(player, setup, setup.getBlockPos());
+    }
+
+    public static boolean scanTransmitterShip(ServerPlayer player, BlockPos scanOrigin) {
+        VehicleSetupBlockEntity setup = activeTransmitterSetup(player);
+        if (setup == null) return false;
+        scanEnderTransmitters(player, setup, scanOrigin);
+        return true;
+    }
+
+    private static void scanEnderTransmitters(ServerPlayer player, VehicleSetupBlockEntity setup, BlockPos scanOrigin) {
+        java.util.List<EnderTransmissionCompat.DetectedTransmitter> detected =
+                EnderTransmissionCompat.scan(player.level(), scanOrigin);
+        if (detected.isEmpty()) {
+            player.displayClientMessage(Component.literal(
+                    "No energy transmitters found on the clicked ship."), true);
+            return;
+        }
+        for (EnderTransmissionCompat.DetectedTransmitter transmitter : detected) {
+            setup.upsertEnderTransmitter(VehicleSetupAction.configureEnderTransmitter(
+                    transmitter.shipId(), transmitter.shipOffset(),
+                    transmitter.worldPos().subtract(setup.getBlockPos()),
+                    transmitter.channel(), transmitter.password()));
+        }
+        player.displayClientMessage(Component.literal("Added " + detected.size()
+                + " energy transmitter" + (detected.size() == 1 ? "" : "s") + " to the setup."), true);
     }
 
     @SubscribeEvent
@@ -119,28 +294,6 @@ public final class VehicleSetupRecordingManager {
         if (!(event.getPlayer() instanceof ServerPlayer player) || event.getState().isAir()) return;
         discardPendingLeftClick(player, event.getPos(), true);
         recordRemove(player, event.getPos());
-    }
-
-    public static void recordEnderTransmitterConfiguration(ServerPlayer player, KineticBlockEntity transmitter) {
-        CompoundTag data = transmitter.getPersistentData();
-        recordEnderTransmitter(player, transmitter.getBlockPos(), data.getInt("channel"),
-                data.getString("password"));
-    }
-
-    public static void recordEnderTransmitter(ServerPlayer player, BlockPos pos, int channel, String password) {
-        VehicleSetupBlockEntity setup = activeSetup(player);
-        if (setup == null || !EnderTransmissionCompat.isEnergyTransmitter(player.level().getBlockState(pos))) return;
-        claimGenericInteraction(player, pos);
-        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
-        if (ship == null) {
-            player.displayClientMessage(Component.literal(
-                    "Vehicle setup could not record the Ender transmitter: it must be on a loaded ship."), true);
-            return;
-        }
-        setup.upsertEnderTransmitter(VehicleSetupAction.configureEnderTransmitter(
-                ship.shipId(), ship.offset(), pos.subtract(setup.getBlockPos()), channel, password));
-        player.displayClientMessage(Component.literal("Vehicle setup recorded Ender transmitter: "
-                + setup.actionSummary() + "."), true);
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = true)
@@ -157,10 +310,12 @@ public final class VehicleSetupRecordingManager {
         if (event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.START) {
             if (player.level().getBlockState(pos).isAir()) return;
             if (pending != null && pending.pos().equals(pos)) return;
-            pending = new PendingLeftClick(setup.getBlockPos(), pos, player.level().getBlockState(pos),
-                    item.copy(), event.getFace(), player.isShiftKeyDown(), null);
+            pending = new PendingLeftClick(setup.getBlockPos(), pos,
+                    player.level().getBlockState(pos), item.copy(), event.getFace(), player.isShiftKeyDown(), null);
             PENDING_LEFT_CLICKS.put(player.getUUID(), pending);
-            logLeftClick("queued", player, pending, event);
+            VSAnalogWarfare.LOGGER.debug("[VSAW] Generic left-click queued: block={} pos={} player={} item={} canceled={} useBlock={} useItem={}",
+                    blockId(player.level().getBlockState(pos)), pos, player.getGameProfile().getName(),
+                    BuiltInRegistries.ITEM.getKey(item.getItem()), event.isCanceled(), event.getUseBlock(), event.getUseItem());
             if (event.isCanceled()) {
                 finalizeLeftClick(player, pending);
                 PENDING_LEFT_CLICKS.remove(player.getUUID());
@@ -168,44 +323,108 @@ public final class VehicleSetupRecordingManager {
         } else if (event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.ABORT) {
             discardPendingLeftClick(player, pos, false);
         } else if (event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.STOP) {
-            if (pending != null && !player.level().getBlockState(pos).isAir()) finalizeLeftClick(player, pending);
-            else discardPendingLeftClick(player, pos, true);
+            if (pending != null && player.level().getBlockState(pos).equals(pending.initialState())) {
+                finalizeLeftClick(player, pending);
+            } else if (pending != null && !player.level().getBlockState(pos).isAir()) {
+                finalizeLeftClick(player, pending);
+            } else {
+                discardPendingLeftClick(player, pos, true);
+            }
             PENDING_LEFT_CLICKS.remove(player.getUUID());
         }
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = true)
     public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
-        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)
-                || event.isCanceled() && !event.getCancellationResult().consumesAction()) return;
-        VehicleSetupBlockEntity setup = activeSetup(player);
+        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)) return;
         ItemStack item = event.getItemStack();
+        if (event.isCanceled() && !event.getCancellationResult().consumesAction()) {
+            return;
+        }
+        BlockPos removalAnchor = ACTIVE_REMOVAL_RECORDINGS.get(player.getUUID());
+        if (item.getItem() instanceof AnalogScrewdriverItem
+                && AnalogScrewdriverItem.removalMode(item) && removalAnchor != null) {
+            if (player.level().getBlockEntity(removalAnchor) instanceof VehicleSetupBlockEntity setup
+                    && event.getPos().equals(removalAnchor)) {
+                toggleRemovalRecording(player, setup);
+            } else if (player.level().getBlockEntity(removalAnchor) instanceof VehicleSetupBlockEntity setup) {
+                VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), event.getPos());
+                BlockPos targetOffset = event.getPos().subtract(removalAnchor);
+                boolean duplicate = setup.markedRemovals().stream().anyMatch(action ->
+                        targetOffset.equals(action.targetOffset())
+                                && (ship == null ? action.targetShipId() < 0L : action.targetShipId() == ship.shipId()
+                                && ship.offset().equals(action.shipOffset())));
+                if (!duplicate) {
+                    setup.addMarkedRemoval(VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
+                            ship == null ? null : ship.offset(), targetOffset,
+                            player.level().getBlockState(event.getPos())));
+                }
+            }
+            if (event.getPos().equals(removalAnchor) || player.level().getBlockState(event.getPos()).isAir()) {
+                event.setCanceled(true); event.setCancellationResult(InteractionResult.CONSUME); return;
+            }
+            event.setCanceled(true); event.setCancellationResult(InteractionResult.CONSUME); return;
+        }
+        VehicleSetupBlockEntity setup = activeSetup(player);
+        if (StevesArmyCompat.isCrewSpawnEgg(item)) {
+            if (setup == null || event.getPos().equals(setup.getBlockPos())) {
+                return;
+            }
+            if (event.getUseItem() == Event.Result.DENY) {
+                return;
+            }
+            queueCrewPlacement(player, setup, event.getHitVec().getLocation());
+            return;
+        }
         if (setup == null || event.getPos().equals(setup.getBlockPos()) || item.getItem() instanceof BlockItem
                 || item.getItem() instanceof AnalogScrewdriverItem) return;
+        // CBCTB ballistic goggles on a cannon mount: file a dedicated link
+        // action instead of a generic interaction (the goggles item performs
+        // its own live link in its useOn, which is not canceled here).
+        if (CbctbCompat.isGogglesItem(item) && CbctbCompat.isCannonMount(player.level(), event.getPos())) {
+            recordGoggleLink(player, setup, event.getPos());
+            return;
+        }
         BlockPos pos = event.getPos();
         BlockState state = event.getLevel().getBlockState(pos);
         if (state.isAir()) return;
-        String blockId = blockId(state);
+        String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
         if (!event.isCanceled() && event.getUseBlock() == Event.Result.DENY
                 && event.getUseItem() == Event.Result.DENY) {
-            VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction discarded: block={} player={} both uses denied.",
+            VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction discarded: block={} player={} both uses denied.",
                     blockId, player.getGameProfile().getName());
             return;
         }
         BlockHitResult hit = event.getHitVec();
         Vec3 hitOffset = hit.getLocation().subtract(pos.getX(), pos.getY(), pos.getZ());
-        PendingInteraction pending = new PendingInteraction(setup.getBlockPos(), pos, state, item.copy(),
-                event.getHand(), hit.getDirection(), hitOffset, event.isCanceled(), player.isShiftKeyDown());
-        PENDING_INTERACTIONS.put(player.getUUID(), pending);
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction queued: block={} pos={} player={} hand={} item={} "
+        PENDING_INTERACTIONS.put(player.getUUID(), new PendingInteraction(setup.getBlockPos(), pos, state,
+                item.copy(), event.getHand(), hit.getDirection(), hitOffset, event.isCanceled(), player.isShiftKeyDown()));
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction queued: block={} pos={} player={} hand={} item={} "
                         + "canceled={} result={} useBlock={} useItem={}", blockId, pos,
                 player.getGameProfile().getName(), event.getHand(), BuiltInRegistries.ITEM.getKey(item.getItem()),
                 event.isCanceled(), event.getCancellationResult(), event.getUseBlock(), event.getUseItem());
     }
 
+    /** Crew egg right-click in air: Steve's Army resolves the seat via its own 6-block raytrace (use path). */
+    @SubscribeEvent
+    public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
+        if (event.getLevel().isClientSide || !(event.getEntity() instanceof ServerPlayer player)) return;
+        if (!StevesArmyCompat.isCrewSpawnEgg(event.getItemStack())) return;
+        VehicleSetupBlockEntity setup = activeSetup(player);
+        if (setup == null) return;
+        HitResult hit = player.pick(6.0, 1.0F, false);
+        Vec3 position = hit.getType() == HitResult.Type.BLOCK ? hit.getLocation() : player.position();
+        queueCrewPlacement(player, setup, position);
+    }
+
     @SubscribeEvent
     public static void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        for (ServerPlayer player : event.getServer().getPlayerList().getPlayers()) {
+            if (player.tickCount % 5 == 0 && player.getMainHandItem().getItem() instanceof AnalogScrewdriverItem) {
+                sendHudState(player);
+            }
+        }
         Map<UUID, PendingInteraction> pending = new HashMap<>(PENDING_INTERACTIONS);
         PENDING_INTERACTIONS.clear();
         for (Map.Entry<UUID, PendingInteraction> entry : pending.entrySet()) {
@@ -213,14 +432,64 @@ public final class VehicleSetupRecordingManager {
             if (player == null) continue;
             PendingInteraction interaction = entry.getValue();
             VehicleSetupBlockEntity setup = activeSetup(player);
-            if (setup == null || !setup.getBlockPos().equals(interaction.anchor())) continue;
-            if (!interaction.handled() && player.level().getBlockState(interaction.pos()).equals(interaction.initialState())) {
-                VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction discarded: block={} pos={} player={} "
-                                + "was not canceled and BlockState did not change.", blockId(interaction.initialState()),
-                        interaction.pos(), player.getGameProfile().getName());
+            if (setup == null || !setup.getBlockPos().equals(interaction.anchor())) {
+                VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction discarded: recording anchor disappeared for player={}.",
+                        player.getGameProfile().getName());
                 continue;
             }
             recordGenericInteraction(player, setup, interaction);
+        }
+        Map<UUID, PendingCrewPlacement> crewPlacements = new HashMap<>(PENDING_CREW_PLACEMENTS);
+        PENDING_CREW_PLACEMENTS.clear();
+        for (Map.Entry<UUID, PendingCrewPlacement> entry : crewPlacements.entrySet()) {
+            ServerPlayer player = event.getServer().getPlayerList().getPlayer(entry.getKey());
+            if (player == null || player.level().getGameTime() < entry.getValue().captureTick()) {
+                if (player != null) PENDING_CREW_PLACEMENTS.put(entry.getKey(), entry.getValue());
+                continue;
+            }
+            PendingCrewPlacement placement = entry.getValue();
+            VehicleSetupBlockEntity setup = activeSetup(player);
+            if (setup == null || !setup.getBlockPos().equals(placement.anchor())) continue;
+            Entity crew = StevesArmyCompat.findNewCrew((net.minecraft.server.level.ServerLevel) player.level(),
+                    placement.position(), null, placement.existingCrewIds());
+            if (crew == null) {
+                if (placement.attempt() < 4) {
+                    PENDING_CREW_PLACEMENTS.put(entry.getKey(), placement.withNextAttempt());
+                }
+                continue;
+            }
+            recordCrewSpawn(player, setup, crew);
+        }
+        for (java.util.Iterator<Map.Entry<BlockPos, PendingRun>> iterator = PENDING_RUNS.entrySet().iterator(); iterator.hasNext();) {
+            Map.Entry<BlockPos, PendingRun> entry = iterator.next();
+            PendingRun run = entry.getValue();
+            if (run.remainingTicks > 0 && --run.remainingTicks > 0) continue;
+            do {
+                java.util.List<VehicleSetupAction> phaseActions = run.removing ? run.removals : run.actions;
+                VehicleSetupAction action = phaseActions.get(run.index++);
+                String error = VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action,
+                        null, null, run.index - 1);
+                if (error == null) { if (run.removing) run.removalSucceeded++; else run.succeeded++; }
+                else if (run.firstError == null) run.firstError = error;
+                if (run.index >= phaseActions.size()) {
+                    if (!run.removing && !run.removals.isEmpty()) {
+                        run.removing = true; run.index = 0; run.remainingTicks = run.removalDelay;
+                        run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. Removing temporary blocks in " + run.removalDelay + " ticks."), true);
+                        if (run.remainingTicks == 0) continue;
+                        break;
+                    }
+                        run.player.displayClientMessage(Component.literal(run.firstError == null
+                                ? "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed."
+                                : "Vehicle setup: " + run.actions.size() + "/" + run.actions.size() + " completed. " + run.firstError)
+                                .append(run.removals.isEmpty() ? "" : " Temporary blocks removed: " + run.removalSucceeded + "/" + run.removals.size() + "."), true);
+                        StevesArmyCompat.notifySetupCompleted(run.player, run.level, entry.getKey());
+                        iterator.remove();
+                        break;
+                }
+                if (!run.removing) run.player.displayClientMessage(Component.literal("Vehicle setup: " + run.index + "/"
+                        + run.actions.size() + " completed."), true);
+                run.remainingTicks = phaseActions.get(run.index).delayBeforeTicks();
+            } while (run.remainingTicks == 0);
         }
     }
 
@@ -229,9 +498,8 @@ public final class VehicleSetupRecordingManager {
         if (setup == null || state.is(ModBlocks.VEHICLE_SETUP.get())) return;
         BlockPos anchorOffset = pos.subtract(setup.getBlockPos());
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
-        setup.addAction(VehicleSetupAction.placeBlock(ship == null ? -1L : ship.shipId(),
+        recordAction(player, setup, VehicleSetupAction.placeBlock(ship == null ? -1L : ship.shipId(),
                 ship == null ? null : ship.offset(), anchorOffset, state));
-        player.displayClientMessage(Component.literal("Recorded placement: " + setup.actionSummary() + "."), true);
     }
 
     private static void recordRemove(ServerPlayer player, BlockPos pos) {
@@ -239,9 +507,8 @@ public final class VehicleSetupRecordingManager {
         if (setup == null || pos.equals(setup.getBlockPos())) return;
         BlockPos anchorOffset = pos.subtract(setup.getBlockPos());
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
-        setup.addAction(VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
-                ship == null ? null : ship.offset(), anchorOffset));
-        player.displayClientMessage(Component.literal("Recorded removal: " + setup.actionSummary() + "."), true);
+        recordAction(player, setup, VehicleSetupAction.removeBlock(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), anchorOffset, player.level().getBlockState(pos)));
     }
 
     private static VehicleSetupBlockEntity activeSetup(ServerPlayer player) {
@@ -254,35 +521,27 @@ public final class VehicleSetupRecordingManager {
         return null;
     }
 
-    private static void claimGenericInteraction(ServerPlayer player, BlockPos pos) {
-        PendingInteraction interaction = PENDING_INTERACTIONS.get(player.getUUID());
-        if (interaction != null && interaction.pos().equals(pos)) PENDING_INTERACTIONS.remove(player.getUUID());
-    }
-
-    private static void recordGenericInteraction(ServerPlayer player, VehicleSetupBlockEntity setup,
-                                                  PendingInteraction interaction) {
-        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), interaction.pos());
-        setup.addAction(VehicleSetupAction.interactWithBlock(ship == null ? -1L : ship.shipId(),
-                ship == null ? null : ship.offset(), interaction.pos().subtract(setup.getBlockPos()),
-                interaction.item(), interaction.hand(), interaction.face(), interaction.hitOffset(), interaction.sneaking()));
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic interaction recorded: block={} pos={} player={} handled={}.",
-                blockId(interaction.initialState()), interaction.pos(), player.getGameProfile().getName(), interaction.handled());
-        player.displayClientMessage(Component.literal("Vehicle setup recorded block interaction: "
-                + setup.actionSummary() + "."), true);
+    private static VehicleSetupBlockEntity activeTransmitterSetup(ServerPlayer player) {
+        if (REPLAYING_INTERACTIONS.contains(player.getUUID())) return null;
+        BlockPos anchor = ACTIVE_TRANSMITTER_RECORDINGS.get(player.getUUID());
+        if (anchor == null) return null;
+        if (player.level().getBlockEntity(anchor) instanceof VehicleSetupBlockEntity setup) return setup;
+        ACTIVE_TRANSMITTER_RECORDINGS.remove(player.getUUID());
+        return null;
     }
 
     private static void finalizeLeftClick(ServerPlayer player, PendingLeftClick pending) {
-        if (pending.recordedAction() != null || player.level().getBlockState(pending.pos()).isAir()) return;
+        if (pending.recordedAction() != null || !player.level().getBlockState(pending.pos()).equals(pending.initialState())) return;
         VehicleSetupBlockEntity setup = activeSetup(player);
         if (setup == null || !setup.getBlockPos().equals(pending.anchor())) return;
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pending.pos());
-        VehicleSetupAction action = VehicleSetupAction.leftClickBlock(ship == null ? -1L : ship.shipId(),
-                ship == null ? null : ship.offset(), pending.pos().subtract(setup.getBlockPos()), pending.item(),
-                pending.face(), pending.sneaking());
-        setup.addAction(action);
+        VehicleSetupAction action = VehicleSetupAction.leftClickBlock(
+                ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(),
+                pending.pos().subtract(setup.getBlockPos()), pending.item(), pending.face(), pending.sneaking());
+        recordAction(player, setup, action);
         pending.setRecordedAction(action);
-        player.displayClientMessage(Component.literal("Vehicle setup recorded block left-click: "
-                + setup.actionSummary() + "."), true);
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic left-click recorded: block={} pos={} player={}",
+                blockId(pending.initialState()), pending.pos(), player.getGameProfile().getName());
     }
 
     private static void discardPendingLeftClick(ServerPlayer player, BlockPos pos, boolean blockWasBroken) {
@@ -293,31 +552,123 @@ public final class VehicleSetupRecordingManager {
             if (setup != null && setup.getBlockPos().equals(pending.anchor())) setup.removeAction(pending.recordedAction());
         }
         PENDING_LEFT_CLICKS.remove(player.getUUID());
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic left-click discarded: block={} pos={} player={} reason={}",
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic left-click discarded: block={} pos={} player={} reason={}",
                 blockId(pending.initialState()), pos, player.getGameProfile().getName(),
                 blockWasBroken ? "block broken; recorded as removal" : "click aborted");
     }
 
-    private static void logLeftClick(String phase, ServerPlayer player, PendingLeftClick pending,
-                                     PlayerInteractEvent.LeftClickBlock event) {
-        VSAnalogWarfare.LOGGER.info("[VSAW] Generic left-click {}: block={} pos={} player={} item={} canceled={} useBlock={} useItem={}",
-                phase, blockId(pending.initialState()), pending.pos(), player.getGameProfile().getName(),
-                BuiltInRegistries.ITEM.getKey(pending.item().getItem()), event.isCanceled(), event.getUseBlock(), event.getUseItem());
+    private static void claimGenericInteraction(ServerPlayer player, BlockPos pos) {
+        PendingInteraction interaction = PENDING_INTERACTIONS.get(player.getUUID());
+        if (interaction != null && interaction.pos().equals(pos)) PENDING_INTERACTIONS.remove(player.getUUID());
+    }
+
+    private static void recordGenericInteraction(ServerPlayer player, VehicleSetupBlockEntity setup,
+                                                  PendingInteraction interaction) {
+        String blockId = BuiltInRegistries.BLOCK.getKey(
+                player.level().getBlockState(interaction.pos()).getBlock()).toString();
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), interaction.pos());
+        recordAction(player, setup, VehicleSetupAction.interactWithBlock(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), interaction.pos().subtract(setup.getBlockPos()),
+                interaction.item(), interaction.hand(), interaction.face(), interaction.hitOffset(), interaction.sneaking()));
+        VSAnalogWarfare.LOGGER.debug("[VSAW] Generic interaction recorded: block={} pos={} player={} handled={}.",
+                blockId, interaction.pos(), player.getGameProfile().getName(), interaction.handled());
+    }
+
+    private static void queueCrewPlacement(ServerPlayer player, VehicleSetupBlockEntity setup, Vec3 position) {
+        PENDING_CREW_PLACEMENTS.put(player.getUUID(), new PendingCrewPlacement(setup.getBlockPos(),
+                player.level().getGameTime() + 1L, 0, position,
+                StevesArmyCompat.nearbyCrewIds((net.minecraft.server.level.ServerLevel) player.level(),
+                        position, 5.0)));
+    }
+
+    private static void recordCrewSpawn(ServerPlayer player, VehicleSetupBlockEntity setup, Entity crew) {
+        Entity vehicle = crew.getVehicle();
+        BlockPos supportPosition = vehicle == null ? crew.blockPosition() : vehicle.blockPosition();
+        VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), supportPosition);
+        recordAction(player, setup, VehicleSetupAction.spawnVehicleCrew(ship == null ? -1L : ship.shipId(),
+                ship == null ? null : ship.offset(), supportPosition.subtract(setup.getBlockPos()),
+                crew.position().subtract(Vec3.atCenterOf(supportPosition)),
+                StevesArmyCompat.captureCrewState(crew)));
+    }
+
+    public static void beginInteractionReplay(ServerPlayer player) {
+        REPLAYING_INTERACTIONS.add(player.getUUID());
+    }
+
+    public static void endInteractionReplay(ServerPlayer player) {
+        REPLAYING_INTERACTIONS.remove(player.getUUID());
+    }
+
+    public static void runScheduled(ServerPlayer player, VehicleSetupBlockEntity setup) {
+        if (PENDING_RUNS.containsKey(setup.getBlockPos())) {
+            player.displayClientMessage(Component.literal("Vehicle setup is already running."), true);
+            return;
+        }
+        java.util.List<VehicleSetupAction> actions = setup.actions();
+        java.util.List<VehicleSetupAction> removals = setup.markedRemovals();
+        if (actions.isEmpty() && removals.isEmpty()) {
+            player.displayClientMessage(Component.literal("Vehicle setup has no saved actions."), true);
+            return;
+        }
+        PendingRun run = new PendingRun(player, player.level(), actions, removals, setup.removalDelayTicks(),
+                actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
+        if (actions.isEmpty()) run.removing = true;
+        PENDING_RUNS.put(setup.getBlockPos(), run);
+    }
+
+    private static void recordAction(ServerPlayer player, VehicleSetupBlockEntity setup, VehicleSetupAction action) {
+        setup.addAction(timedAction(player, action));
+    }
+
+    private static VehicleSetupAction timedAction(ServerPlayer player, VehicleSetupAction action) {
+        long now = player.level().getGameTime();
+        long previous = LAST_RECORDED_TICKS.getOrDefault(player.getUUID(), now);
+        LAST_RECORDED_TICKS.put(player.getUUID(), now);
+        return action.withDelayBeforeTicks((int) Math.min(Integer.MAX_VALUE, Math.max(0L, now - previous)));
+    }
+
+    private record PendingInteraction(BlockPos anchor, BlockPos pos, BlockState initialState, ItemStack item,
+                                      InteractionHand hand, Direction face, Vec3 hitOffset, boolean handled,
+                                        boolean sneaking) { }
+
+    private record PendingCrewPlacement(BlockPos anchor, long captureTick, int attempt, Vec3 position,
+                                        java.util.Set<UUID> existingCrewIds) {
+        private PendingCrewPlacement withNextAttempt() {
+            return new PendingCrewPlacement(anchor, captureTick + 1L, attempt + 1, position, existingCrewIds);
+        }
+    }
+
+    private static final class PendingRun {
+        private final ServerPlayer player;
+        private final Level level;
+        private final java.util.List<VehicleSetupAction> actions;
+        private final java.util.List<VehicleSetupAction> removals;
+        private final int removalDelay;
+        private boolean removing;
+        private int index;
+        private int remainingTicks;
+        private int succeeded;
+        private int removalSucceeded;
+        private String firstError;
+
+        private PendingRun(ServerPlayer player, Level level, java.util.List<VehicleSetupAction> actions,
+                           java.util.List<VehicleSetupAction> removals, int removalDelay, int remainingTicks) {
+            this.player = player;
+            this.level = level;
+            this.actions = actions;
+            this.removals = removals;
+            this.removalDelay = removalDelay;
+            this.remainingTicks = remainingTicks;
+        }
     }
 
     private static String blockId(BlockState state) {
         return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
     }
 
-    public static void beginInteractionReplay(ServerPlayer player) { REPLAYING_INTERACTIONS.add(player.getUUID()); }
-    public static void endInteractionReplay(ServerPlayer player) { REPLAYING_INTERACTIONS.remove(player.getUUID()); }
-
-    private record PendingInteraction(BlockPos anchor, BlockPos pos, BlockState initialState, ItemStack item,
-                                      InteractionHand hand, Direction face, Vec3 hitOffset, boolean handled,
-                                      boolean sneaking) { }
-
     private static final class PendingLeftClick {
-        private final BlockPos anchor, pos;
+        private final BlockPos anchor;
+        private final BlockPos pos;
         private final BlockState initialState;
         private final ItemStack item;
         private final Direction face;
@@ -334,6 +685,7 @@ public final class VehicleSetupRecordingManager {
             this.sneaking = sneaking;
             this.recordedAction = recordedAction;
         }
+
         private BlockPos anchor() { return anchor; }
         private BlockPos pos() { return pos; }
         private BlockState initialState() { return initialState; }

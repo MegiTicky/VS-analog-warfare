@@ -1,5 +1,10 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
+import com.erika.vsanalogwarfare.vehiclesetup.compat.OptionalModCompatibility;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountManager;
+import com.simibubi.create.content.contraptions.actors.seat.SeatBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -10,27 +15,56 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
+
+import javax.annotation.Nullable;
 
 public class AnalogScrewdriverItem extends Item {
     private static final String ANCHOR = "VehicleSetupAnchor";
     private static final String ENDER_PAIR_SOURCE = "VSAWEnderPairSource";
-
+    private static final String REMOVAL_MODE = "VSAWRemovalMode";
+    private static final String MODE = "VSAWScrewdriverMode";
+    private static final String STABILIZER_SOURCE = "VSAWStabilizerSource";
+    public static final int REGULAR_MODE = 0;
+    public static final int REMOVAL_MODE_VALUE = 1;
+    public static final int TRANSMITTER_MODE = 2;
     public AnalogScrewdriverItem(Properties properties) { super(properties); }
 
-    @Override
-    public InteractionResult useOn(UseOnContext context) {
+    @Override public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
-        if (level.isClientSide || !(context.getPlayer() instanceof ServerPlayer player)) {
-            return InteractionResult.SUCCESS;
-        }
+        if (level.isClientSide || !(context.getPlayer() instanceof ServerPlayer player)) return InteractionResult.SUCCESS;
         ItemStack recorder = context.getItemInHand();
         BlockPos clicked = context.getClickedPos();
-        BlockEntity entity = level.getBlockEntity(clicked);
-        if (entity instanceof VehicleSetupBlockEntity setup) {
+        if (mode(recorder) == TRANSMITTER_MODE
+                && !(level.getBlockEntity(clicked) instanceof VehicleSetupBlockEntity)) {
+            if (!VehicleSetupRecordingManager.scanTransmitterShip(player, clicked)) {
+                return fail(player, "Start transmitter recording by right-clicking a Vehicle Setup block first.");
+            }
+            return InteractionResult.CONSUME;
+        }
+        if (player.isShiftKeyDown() && recorder.getOrCreateTag().getLong("VehicleMountHandle") != 0L) {
+            if (level.getBlockState(clicked).getBlock() instanceof SeatBlock
+                    && VehicleMountManager.tryOpenSeatRoleName(player, recorder, clicked)) return InteractionResult.CONSUME;
+        }
+        if (level.getBlockEntity(clicked) instanceof GroundCollisionDisablerBlockEntity collisionDisabler) {
+            return collisionDisabler.enableGroundCollision((net.minecraft.server.level.ServerLevel) level, player)
+                    ? InteractionResult.CONSUME : InteractionResult.FAIL;
+        }
+        if (level.getBlockEntity(clicked) instanceof VehicleSetupBlockEntity setupBlock) {
+            OptionalModCompatibility.warnIfIssues(player);
             recorder.getOrCreateTag().putLong(ANCHOR, clicked.asLong());
-            if (player.isShiftKeyDown()) VehicleSetupRecordingManager.inspect(player, setup);
-            else VehicleSetupRecordingManager.toggle(player, setup);
+            if (removalMode(recorder)) VehicleSetupRecordingManager.toggleRemovalRecording(player, setupBlock);
+            else if (mode(recorder) == TRANSMITTER_MODE) VehicleSetupRecordingManager.toggleTransmitterRecording(player, setupBlock);
+            else if (player.isShiftKeyDown()) VehicleSetupRecordingManager.inspect(player, setupBlock);
+            else VehicleSetupRecordingManager.toggle(player, setupBlock);
+            return InteractionResult.CONSUME;
+        }
+        if (level.getBlockEntity(clicked) instanceof VehicleMountHandleBlockEntity) {
+            if (((VehicleMountHandleBlockEntity) level.getBlockEntity(clicked)).locked()) {
+                player.displayClientMessage(Component.literal("This vehicle mount handle is locked."), true);
+                return InteractionResult.FAIL;
+            }
+            recorder.getOrCreateTag().putLong("VehicleMountHandle", clicked.asLong());
+            player.displayClientMessage(Component.literal("Handle selected. Right-click a Create seat with the screwdriver to link it."), true);
             return InteractionResult.CONSUME;
         }
         if (EnderTransmissionCompat.isEnergyTransmitter(level.getBlockState(clicked))) {
@@ -50,12 +84,55 @@ public class AnalogScrewdriverItem extends Item {
                         : "Ender transmitter pairing failed: " + error), true);
                 return error == null ? InteractionResult.CONSUME : InteractionResult.FAIL;
             }
-            player.displayClientMessage(Component.literal(
-                    "Sneak-right-click an Ender transmitter first to select it for pairing."), true);
-            return InteractionResult.FAIL;
+            return fail(player, "Sneak-right-click an Ender transmitter first to select it for pairing.");
         }
-        player.displayClientMessage(Component.literal(
-                "Start recording, then use DBW and Trackwork tools normally."), true);
-        return InteractionResult.FAIL;
+        if (level.getBlockEntity(clicked) instanceof com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity stabilizer) {
+            if (player.isShiftKeyDown()) {
+                stabilizer.unlink();
+                recorder.getOrCreateTag().remove(STABILIZER_SOURCE);
+                player.displayClientMessage(Component.literal("Stabilizer unlinked."), true);
+                return InteractionResult.CONSUME;
+            }
+            recorder.getOrCreateTag().putLong(STABILIZER_SOURCE, clicked.asLong());
+            player.displayClientMessage(Component.literal(
+                    "Stabilizer selected. Right-click a cannon mount to link it (sneak-right-click the stabilizer to unlink)."), true);
+            return InteractionResult.CONSUME;
+        }
+        if (recorder.getOrCreateTag().contains(STABILIZER_SOURCE)
+                && com.erika.vsanalogwarfare.scope.compat.CbcCompat.isCannonMount(level.getBlockEntity(clicked))) {
+            BlockPos source = BlockPos.of(recorder.getOrCreateTag().getLong(STABILIZER_SOURCE));
+            recorder.getOrCreateTag().remove(STABILIZER_SOURCE);
+            if (level.getBlockEntity(source) instanceof com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity stabilizer) {
+                String error = stabilizer.linkMount(clicked);
+                player.displayClientMessage(Component.literal(error == null
+                        ? "Stabilizer linked. It will hold the cannon's world elevation when you stop rotating."
+                        : "Stabilizer link failed: " + error), true);
+                return error == null ? InteractionResult.CONSUME : InteractionResult.FAIL;
+            }
+            return fail(player, "Stabilizer link failed: the selected stabilizer block is gone.");
+        }
+        return InteractionResult.PASS;
     }
+
+    public static int mode(ItemStack stack) {
+        CompoundTag tag = stack.getOrCreateTag();
+        if (tag.contains(MODE)) return Math.max(REGULAR_MODE, Math.min(TRANSMITTER_MODE, tag.getInt(MODE)));
+        return tag.getBoolean(REMOVAL_MODE) ? REMOVAL_MODE_VALUE : REGULAR_MODE;
+    }
+
+    public static boolean removalMode(ItemStack stack) { return mode(stack) == REMOVAL_MODE_VALUE; }
+
+    public static void setMode(ItemStack stack, int mode) {
+        int normalized = Math.max(REGULAR_MODE, Math.min(TRANSMITTER_MODE, mode));
+        CompoundTag tag = stack.getOrCreateTag();
+        tag.putInt(MODE, normalized);
+        tag.putBoolean(REMOVAL_MODE, normalized == REMOVAL_MODE_VALUE);
+    }
+
+    public static void setRemovalMode(ItemStack stack, boolean removalMode) {
+        setMode(stack, removalMode ? REMOVAL_MODE_VALUE : REGULAR_MODE);
+    }
+
+    private static InteractionResult success(ServerPlayer player, String message) { player.displayClientMessage(Component.literal(message), true); return InteractionResult.CONSUME; }
+    private static InteractionResult fail(ServerPlayer player, String message) { player.displayClientMessage(Component.literal(message), true); return InteractionResult.FAIL; }
 }

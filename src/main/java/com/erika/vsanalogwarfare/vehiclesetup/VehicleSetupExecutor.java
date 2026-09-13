@@ -1,19 +1,20 @@
 package com.erika.vsanalogwarfare.vehiclesetup;
 
+import com.erika.vsanalogwarfare.vehiclesetup.compat.CbctbCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.TrackworkCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.StevesArmyCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.EnderTransmissionCompat;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
-import net.minecraft.world.item.Item;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -21,53 +22,173 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.fml.ModList;
-
-import javax.annotation.Nullable;
 import java.util.Map;
 
-public final class VehicleSetupExecutor {
-    private static final ResourceLocation TWEAKED_CONTROLLER =
-            new ResourceLocation("create_tweaked_controllers", "tweaked_linked_controller");
+import javax.annotation.Nullable;
 
+public final class VehicleSetupExecutor {
+    private static final ResourceLocation CREATE_CONTROLLER = new ResourceLocation("create", "linked_controller");
+    private static final ResourceLocation TWEAKED_CONTROLLER = new ResourceLocation("create_tweaked_controllers", "tweaked_linked_controller");
     private VehicleSetupExecutor() { }
 
     @Nullable
-    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player,
-                             VehicleSetupAction action) {
-        return run(level, anchor, player, action, null);
+    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action) {
+        return run(level, anchor, player, action, null, null);
     }
 
     @Nullable
-    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player,
-                             VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
+    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
+                             @Nullable Map<Long, Object> ships) {
         return run(level, anchor, player, action, ships, null);
     }
 
     @Nullable
-    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player,
-                             VehicleSetupAction action, @Nullable Map<Long, Object> ships,
-                             @Nullable String placementId) {
-        return switch (action.type()) {
-            case PLACE_BLOCK -> place(level, target(anchor, action, ships), action.blockState());
-            case REMOVE_BLOCK -> remove(level, target(anchor, action, ships));
-            case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
-            case CREATE_TWEAKED_CONTROLLER -> controller(level, anchor, player, action, ships);
-            case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level, anchor, action.stiffness());
-            case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
-            case GENERIC_BLOCK_LEFT_CLICK -> leftClick(level, anchor, player, action, ships);
-            case CONFIGURE_ENDER_TRANSMITTER -> EnderTransmissionCompat.configure(
-                    level, target(anchor, action, ships), action, placementId);
-        };
+    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
+                              @Nullable Map<Long, Object> ships, @Nullable String placementId) {
+        return run(level, anchor, player, action, ships, placementId, -1);
     }
 
     @Nullable
-    private static String interact(Level level, BlockPos anchor, @Nullable ServerPlayer player,
-                                   VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
+    public static String run(Level level, BlockPos anchor, @Nullable ServerPlayer player, VehicleSetupAction action,
+                             @Nullable Map<Long, Object> ships, @Nullable String placementId, int actionIndex) {
+        BlockPos debugTarget = debugTarget(level, anchor, action, ships);
+        String before = debugTarget == null ? null : level.getBlockState(debugTarget).toString();
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action begin: placementId={}, index={}, type={}, anchor={}, "
+                        + "originalShipId={}, shipOffset={}, targetOffset={}, target={}, before={}",
+                placementId, actionIndex, action.type(), anchor, action.targetShipId(), action.shipOffset(),
+                action.targetOffset(), debugTarget, before);
+        String result = switch (action.type()) {
+            case PLACE_BLOCK -> place(level, target(level, anchor, action, ships), action.blockState());
+            case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships), action);
+            case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
+            case CREATE_TWEAKED_CONTROLLER -> controller(level, anchor, player, action, ships);
+            case SET_TRACKWORK_STIFFNESS -> TrackworkCompat.setStiffness(level,
+                    stiffnessTarget(level, anchor, action, ships), action.stiffness());
+            case SPAWN_TALLYHO_HULL_MG, SPAWN_TALLYHO_ENTITY ->
+                    "Tallyho recording is not supported in this VS2.4 build";
+            case SPAWN_VEHICLE_CREW -> StevesArmyCompat.spawnCrew(level, target(level, anchor, action, ships),
+                    action.positionOffset(), player, action.crewState());
+            case GENERIC_BLOCK_INTERACTION -> interact(level, anchor, player, action, ships);
+            case GENERIC_BLOCK_LEFT_CLICK -> leftClick(level, anchor, player, action, ships);
+            case CONFIGURE_ENDER_TRANSMITTER -> EnderTransmissionCompat.configure(
+                    level, target(level, anchor, action, ships), action, placementId);
+            case LINK_CBCTB_GOGGLES -> CbctbCompat.linkGoggles(level,
+                    target(level, anchor, action, ships), player);
+        };
+        String after = debugTarget == null ? null : level.getBlockState(debugTarget).toString();
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action end: placementId={}, index={}, type={}, target={}, "
+                        + "result={}, after={}, changed={}",
+                placementId, actionIndex, action.type(), debugTarget, result == null ? "success" : result,
+                after, before == null ? "unknown" : !before.equals(after));
+        return result;
+    }
+
+    @Nullable
+    private static BlockPos debugTarget(Level level, BlockPos anchor, VehicleSetupAction action,
+                                        @Nullable Map<Long, Object> ships) {
+        return switch (action.type()) {
+            case PLACE_BLOCK, REMOVE_BLOCK, SET_TRACKWORK_STIFFNESS, SPAWN_VEHICLE_CREW,
+                    GENERIC_BLOCK_INTERACTION, GENERIC_BLOCK_LEFT_CLICK,
+                    CONFIGURE_ENDER_TRANSMITTER, LINK_CBCTB_GOGGLES -> target(level, anchor, action, ships);
+            default -> null;
+        };
+    }
+
+    public static BlockPos target(Level level, BlockPos anchor, VehicleSetupAction action,
+                                  @Nullable Map<Long, Object> ships) {
+        if (ships != null && action.targetShipId() >= 0L && action.shipOffset() != null) {
+            Object ship = ships.get(action.targetShipId());
+            BlockPos resolved = ship == null ? null : VehicleSetupReflection.positionOnShip(ship, action.shipOffset());
+            if (resolved != null) {
+                Object anchorShip = VehicleSetupReflection.findShip(level, anchor);
+                if (anchorShip != null && VehicleSetupReflection.sameShip(anchorShip, ship)
+                        && action.targetOffset() != null) {
+                    BlockPos anchorResolved = anchor.offset(action.targetOffset());
+                    if (!anchorResolved.equals(resolved)) {
+                        VSAnalogWarfare.LOGGER.warn("[VSAW setup-debug] Same-ship target correction: "
+                                        + "type={}, originalShipId={}, runtimeShipId={}, aabbTarget={}, "
+                                        + "anchorTarget={}, delta={}",
+                                action.type(), action.targetShipId(), VehicleSetupReflection.shipId(ship),
+                                resolved, anchorResolved, anchorResolved.subtract(resolved));
+                    }
+                    return anchorResolved;
+                }
+                VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action target resolved: type={}, anchor={}, "
+                                + "shipId={}, shipOffset={}, targetOffset={}, resolved={}",
+                        action.type(), anchor, action.targetShipId(), action.shipOffset(), action.targetOffset(), resolved);
+                return resolved;
+            }
+            VSAnalogWarfare.LOGGER.warn("[VSAW setup-debug] Action ship target unresolved; using anchor fallback: "
+                            + "type={}, anchor={}, shipId={}, shipOffset={}, targetOffset={}, shipFound={}",
+                    action.type(), anchor, action.targetShipId(), action.shipOffset(), action.targetOffset(), ship != null);
+        }
+        BlockPos fallback = action.targetOffset() == null ? anchor : anchor.offset(action.targetOffset());
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Action anchor target resolved: type={}, anchor={}, "
+                        + "targetOffset={}, resolved={}",
+                action.type(), anchor, action.targetOffset(), fallback);
+        return fallback;
+    }
+
+    private static BlockPos stiffnessTarget(Level level, BlockPos anchor, VehicleSetupAction action,
+                                             @Nullable Map<Long, Object> ships) {
+        BlockPos resolved = target(level, anchor, action, ships);
+        if (TrackworkCompat.isStiffnessTarget(level, resolved)) return resolved;
+        if (action.targetOffset() != null) {
+            BlockPos relative = anchor.offset(action.targetOffset());
+            if (TrackworkCompat.isStiffnessTarget(level, relative)) return relative;
+        }
+        return resolved;
+    }
+
+    @Nullable private static String remove(Level level, BlockPos pos, VehicleSetupAction action) {
+        BlockState recorded = action.blockState() == null ? null
+                : NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), action.blockState());
+        if (recorded != null && recorded.isAir()) recorded = null;
+        BlockState current = level.getBlockState(pos);
+        if (current.isAir()) {
+            if (recorded == null) return null;
+            BlockPos found = findBlockNearby(level, pos, recorded);
+            if (found == null) return "temporary block not found near " + pos;
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
+                    pos, found, BuiltInRegistries.BLOCK.getKey(recorded.getBlock()));
+            pos = found;
+        } else if (recorded != null && current.getBlock() != recorded.getBlock()) {
+            BlockPos found = findBlockNearby(level, pos, recorded);
+            if (found == null) return "temporary block not found near " + pos;
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Removal target corrected: requested={}, found={}, block={}",
+                    pos, found, BuiltInRegistries.BLOCK.getKey(recorded.getBlock()));
+            pos = found;
+        }
+        return level.removeBlock(pos, false) ? null : "could not remove block";
+    }
+
+    @Nullable private static BlockPos findBlockNearby(Level level, BlockPos pos, BlockState expected) {
+        for (int x = -1; x <= 1; x++) {
+            for (int y = -1; y <= 1; y++) {
+                for (int z = -1; z <= 1; z++) {
+                    if (x == 0 && y == 0 && z == 0) continue;
+                    BlockPos candidate = pos.offset(x, y, z);
+                    if (level.getBlockState(candidate).getBlock() == expected.getBlock()) return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
+    @Nullable private static String place(Level level, BlockPos pos, @Nullable CompoundTag savedState) {
+        if (savedState == null) return "recorded block state is missing";
+        BlockState state = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), savedState);
+        if (state.isAir()) return "recorded block state is invalid";
+        return level.getBlockState(pos).equals(state) || level.setBlock(pos, state, 3) ? null : "could not place shaft";
+    }
+
+    @Nullable private static String interact(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                             VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
         if (player == null) return "block interaction requires the schematic placer to be online";
         CompoundTag savedItem = action.interactionItem();
         if (savedItem == null || action.targetOffset() == null) return "recorded block interaction is missing data";
         ItemStack stack = ItemStack.of(savedItem);
-        BlockPos pos = target(anchor, action, ships);
+        BlockPos pos = target(level, anchor, action, ships);
         if (level.getBlockState(pos).isAir()) return "interaction target block is missing";
         Vec3 hitLocation = Vec3.atLowerCornerOf(pos).add(action.positionOffset());
         BlockHitResult hit = new BlockHitResult(hitLocation, action.interactionFace(), pos, false);
@@ -78,7 +199,8 @@ public final class VehicleSetupExecutor {
         player.setShiftKeyDown(action.interactionSneaking());
         VehicleSetupRecordingManager.beginInteractionReplay(player);
         try {
-            PlayerInteractEvent.RightClickBlock interaction = new PlayerInteractEvent.RightClickBlock(player, hand, pos, hit);
+            PlayerInteractEvent.RightClickBlock interaction = new PlayerInteractEvent.RightClickBlock(
+                    player, hand, pos, hit);
             boolean canceled = MinecraftForge.EVENT_BUS.post(interaction);
             InteractionResult result = canceled ? interaction.getCancellationResult() : InteractionResult.PASS;
             if (!result.consumesAction()) result = level.getBlockState(pos).use(level, player, hand, hit);
@@ -93,14 +215,13 @@ public final class VehicleSetupExecutor {
         }
     }
 
-    @Nullable
-    private static String leftClick(Level level, BlockPos anchor, @Nullable ServerPlayer player,
-                                    VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
+    @Nullable private static String leftClick(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                              VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
         if (player == null) return "block left-click requires the schematic placer to be online";
         CompoundTag savedItem = action.interactionItem();
         if (savedItem == null || action.targetOffset() == null) return "recorded block left-click is missing data";
         ItemStack stack = ItemStack.of(savedItem);
-        BlockPos pos = target(anchor, action, ships);
+        BlockPos pos = target(level, anchor, action, ships);
         BlockState state = level.getBlockState(pos);
         if (state.isAir()) return "left-click target block is missing";
         ItemStack original = player.getMainHandItem();
@@ -111,9 +232,14 @@ public final class VehicleSetupExecutor {
         try {
             PlayerInteractEvent.LeftClickBlock interaction = new PlayerInteractEvent.LeftClickBlock(
                     player, pos, action.interactionFace(), PlayerInteractEvent.LeftClickBlock.Action.START);
-            if (MinecraftForge.EVENT_BUS.post(interaction)) return null;
-            if (interaction.getUseBlock() != net.minecraftforge.eventbus.api.Event.Result.DENY) state.attack(level, pos, player);
-            if (interaction.getUseItem() != net.minecraftforge.eventbus.api.Event.Result.DENY) stack.onBlockStartBreak(pos, player);
+            boolean canceled = MinecraftForge.EVENT_BUS.post(interaction);
+            if (canceled) return null;
+            if (interaction.getUseBlock() != net.minecraftforge.eventbus.api.Event.Result.DENY) {
+                state.attack(level, pos, player);
+            }
+            if (interaction.getUseItem() != net.minecraftforge.eventbus.api.Event.Result.DENY) {
+                stack.onBlockStartBreak(pos, player);
+            }
             return level.getBlockState(pos).equals(state) ? null : "left-click changed or removed the target block";
         } catch (Throwable throwable) {
             return "recorded block left-click failed: " + throwable.getClass().getSimpleName();
@@ -124,56 +250,41 @@ public final class VehicleSetupExecutor {
         }
     }
 
-    private static BlockPos target(BlockPos anchor, VehicleSetupAction action,
-                                   @Nullable Map<Long, Object> ships) {
-        if (ships != null && action.targetShipId() >= 0L && action.shipOffset() != null) {
-            Object ship = ships.get(action.targetShipId());
-            BlockPos resolved = ship == null ? null
-                    : VehicleSetupReflection.positionOnShip(ship, action.shipOffset());
-            if (resolved != null) return resolved;
-        }
-        return action.targetOffset() == null ? anchor : anchor.offset(action.targetOffset());
-    }
-
-    @Nullable
-    private static String remove(Level level, BlockPos pos) {
-        return level.getBlockState(pos).isAir() || level.removeBlock(pos, false)
-                ? null : "could not remove block";
-    }
-
-    @Nullable
-    private static String place(Level level, BlockPos pos, @Nullable CompoundTag savedState) {
-        if (savedState == null) return "recorded block state is missing";
-        BlockState state = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), savedState);
-        if (state.isAir()) return "recorded block state is invalid";
-        return level.getBlockState(pos).equals(state) || level.setBlock(pos, state, 3)
-                ? null : "could not place block";
-    }
-
-    @Nullable
-    private static String controller(Level level, BlockPos anchor, @Nullable ServerPlayer player,
-                                     VehicleSetupAction action,
-                                     @Nullable Map<Long, Object> ships) {
-        if (!ModList.get().isLoaded("create_tweaked_controllers")) {
-            return "Create Tweaked Controllers is not installed";
-        }
+    @Nullable private static String controller(Level level, BlockPos anchor, @Nullable ServerPlayer player,
+                                                VehicleSetupAction action, @Nullable Map<Long, Object> ships) {
         if (!ModList.get().isLoaded("drivebywire")) return "Drive By Wire is not installed";
         if (player == null) return "the schematic placer is offline";
         CompoundTag savedController = action.controller();
-        if (savedController == null || action.targetOffset() == null) {
-            return "recorded controller mapping is missing";
-        }
-        Object ship = ships == null ? VehicleSetupReflection.findShip(level, anchor)
-                : ships.get(action.targetShipId());
-        BlockPos hub = ship == null ? null
-                : VehicleSetupReflection.positionOnShip(ship, action.targetOffset());
-        if (hub == null) return "controller hub ship could not be resolved";
-        Item item = BuiltInRegistries.ITEM.get(TWEAKED_CONTROLLER);
-        if (item == Items.AIR) return "tweaked controller item is unavailable";
+        if (savedController == null || action.targetOffset() == null) return "recorded controller mapping is missing";
+        Object ship = ships == null ? null : ships.get(action.targetShipId());
+        BlockPos hub = controllerHubPosition(level, anchor, ship, action.targetOffset());
+        if (!isControllerHub(level, hub)) return "controller hub could not be found at the recorded position";
         ItemStack stack = ItemStack.of(savedController);
-        if (!stack.is(item)) return "recorded controller is incompatible";
+        ResourceLocation controllerId = BuiltInRegistries.ITEM.getKey(stack.getItem());
+        if (!CREATE_CONTROLLER.equals(controllerId) && !TWEAKED_CONTROLLER.equals(controllerId)) {
+            return "recorded controller is incompatible";
+        }
         stack.getOrCreateTag().putLong("Hub", hub.asLong());
         if (!player.getInventory().add(stack)) player.drop(stack, false);
+        VSAnalogWarfare.LOGGER.info("[VSAW] Created DBW controller for hub={} (shipId={}, recordedOffset={})",
+                hub, action.targetShipId(), action.targetOffset());
         return null;
+    }
+
+    private static BlockPos controllerHubPosition(Level level, BlockPos anchor, @Nullable Object ship,
+                                                  BlockPos recordedOffset) {
+        BlockPos anchorCandidate = anchor.offset(recordedOffset);
+        if (isControllerHub(level, anchorCandidate)) return anchorCandidate;
+        if (ship != null) {
+            BlockPos shipCandidate = VehicleSetupReflection.positionOnShip(ship, recordedOffset);
+            if (shipCandidate != null && isControllerHub(level, shipCandidate)) return shipCandidate;
+        }
+        return anchorCandidate;
+    }
+
+    private static boolean isControllerHub(Level level, BlockPos pos) {
+        ResourceLocation id = BuiltInRegistries.BLOCK.getKey(level.getBlockState(pos).getBlock());
+        return id != null && "drivebywire".equals(id.getNamespace())
+                && ("controller_hub".equals(id.getPath()) || "tweaked_controller_hub".equals(id.getPath()));
     }
 }
