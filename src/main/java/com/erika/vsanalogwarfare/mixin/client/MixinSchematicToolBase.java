@@ -13,7 +13,6 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.valkyrienskies.core.api.ships.Ship;
 import org.valkyrienskies.mod.common.VSGameUtilsKt;
 
@@ -26,18 +25,20 @@ import org.valkyrienskies.mod.common.VSGameUtilsKt;
 public abstract class MixinSchematicToolBase {
     /**
      * Create uses HitResult::getLocation to get the schematic placement position, which doesn't
-     * respect ship-space. Redirect it to BlockHitResult::getBlockPos when the target is on a ship.
+     * respect ship-space. WrapOperation (cooperative, unlike @Redirect) so a competing redirect
+     * from another mod degrades to a skipped injection instead of a hard failure.
      */
-    @Redirect(
+    @WrapOperation(
         method = "updateTargetPos()V",
         at = @At(
             value = "INVOKE",
             target = "Lnet/minecraft/world/phys/BlockHitResult;m_82450_()Lnet/minecraft/world/phys/Vec3;",
             ordinal = 0
         ),
-        remap = false
+        remap = false,
+        require = 0
     )
-    public Vec3 redirectGetLocation(BlockHitResult instance) {
+    public Vec3 redirectGetLocation(BlockHitResult instance, Operation<Vec3> original) {
         BlockPos b = instance.getBlockPos();
         Ship ship = VSGameUtilsKt.getShipObjectManagingPos(Minecraft.getInstance().level, b);
         if (ship != null) {
@@ -45,7 +46,7 @@ public abstract class MixinSchematicToolBase {
             // so the vec position within a block should not make a difference
             return Vec3.atLowerCornerOf(b);
         } else {
-            return instance.getLocation();
+            return original.call(instance);
         }
     }
 
