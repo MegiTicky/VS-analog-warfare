@@ -16,6 +16,7 @@ public final class ScopeDebug {
     public static final String BUILD_MARKER = "scope-client-frame-debug-2026-06-13-vs-agnostic";
 
     private static final ThreadLocal<Boolean> IN_VS_MOUNTED_CAMERA_WRAPPER = ThreadLocal.withInitial(() -> Boolean.FALSE);
+    private static final ThreadLocal<Quaternionf> MOUNTED_SHIP_ROTATION = new ThreadLocal<>();
 
     private static String lastHook = "none";
     private static float lastShipYaw = Float.NaN;
@@ -28,7 +29,7 @@ public final class ScopeDebug {
     }
 
     public static void logLoaded() {
-        LOGGER.info("[VSAW_SCOPE] loaded build={}", BUILD_MARKER);
+        LOGGER.debug("[VSAW_SCOPE] loaded build={}", BUILD_MARKER);
     }
 
     public static void cameraHook(String hook, Object shipMountedTo, Camera camera) {
@@ -39,7 +40,7 @@ public final class ScopeDebug {
         long now = System.currentTimeMillis();
         if (now - lastClientLogMs >= 1000L) {
             lastClientLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] client hook={} shipYaw={} scopeYaw={} scopePitch={} roll={} camForwardYaw={} camYRot={} camXRot={} pos={}",
+            LOGGER.debug("[VSAW_SCOPE] client hook={} shipYaw={} scopeYaw={} scopePitch={} roll={} camForwardYaw={} camYRot={} camXRot={} pos={}",
                     lastHook,
                     fmt(lastShipYaw),
                     fmt(ClientScopeState.yaw()),
@@ -63,18 +64,13 @@ public final class ScopeDebug {
                 + " fwdYaw=" + fmt(liveForwardYaw);
     }
 
-    public static boolean shouldSkipVsMountedPoseRotation() {
-        if (!ClientScopeState.active()) {
-            return false;
-        }
-        return IN_VS_MOUNTED_CAMERA_WRAPPER.get();
-    }
+    public static boolean shouldSkipVsMountedPoseRotation() { return false; }
 
     public static void poseRotationSkipped(Quaternionf quaternion) {
         long now = System.currentTimeMillis();
         if (now - lastPoseSkipLogMs >= 1000L) {
             lastPoseSkipLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] skipped VS mounted PoseStack rotation q=({}, {}, {}, {})",
+            LOGGER.debug("[VSAW_SCOPE] skipped VS mounted PoseStack rotation q=({}, {}, {}, {})",
                     fmt(quaternion.x), fmt(quaternion.y), fmt(quaternion.z), fmt(quaternion.w));
         }
     }
@@ -85,13 +81,20 @@ public final class ScopeDebug {
 
     public static void exitVsMountedCameraWrapper() {
         IN_VS_MOUNTED_CAMERA_WRAPPER.set(Boolean.FALSE);
+        MOUNTED_SHIP_ROTATION.remove();
+    }
+
+    public static boolean consumeVsMountedPoseRotationSkip() { return false; }
+
+    public static void mountedShipRotation(Quaternionf rotation) {
+        MOUNTED_SHIP_ROTATION.set(new Quaternionf(rotation).normalize());
     }
 
     public static void logScopeReappliedAfterVs() {
         long now = System.currentTimeMillis();
         if (now - lastReapplyLogMs >= 1000L) {
             lastReapplyLogMs = now;
-            LOGGER.info("[VSAW_SCOPE] re-applied scope pose after VS ship-mounted camera setup");
+            LOGGER.debug("[VSAW_SCOPE] re-applied scope pose after VS ship-mounted camera setup");
         }
     }
 

@@ -94,8 +94,16 @@ public final class VsCompat {
     public static boolean isPlayerMountedToShip() {
         if (!isClientSide) return false;
         if (getShipMountedToMethod == null) return false;
-        return DistExecutor.unsafeCallWhenOn(Dist.CLIENT, 
+        return DistExecutor.unsafeCallWhenOn(Dist.CLIENT,
             () -> () -> VsCompatClient.isPlayerMountedToShip(getShipMountedToMethod));
+    }
+
+    /** Render rotation VS2 applies to a ship-mounted player/camera, or null when unmounted. */
+    public static org.joml.Quaternionf playerMountedShipRotation() {
+        if (!isClientSide) return null;
+        if (getShipMountedToMethod == null) return null;
+        return DistExecutor.unsafeCallWhenOn(Dist.CLIENT,
+            () -> () -> VsCompatClient.playerMountedShipRotation(getShipMountedToMethod));
     }
 
     public static Optional<Long> findShipId(Level level, BlockPos pos) {
@@ -118,6 +126,10 @@ public final class VsCompat {
         if (ship == null) {
             return localPosition;
         }
+        return shipToWorldPosition(ship, localPosition);
+    }
+
+    public static Vec3 shipToWorldPosition(Object ship, Vec3 localPosition) {
         Vector3d transformed = invokeMatrixTransform(ship, localPosition, true);
         return transformed == null ? localPosition : new Vec3(transformed.x, transformed.y, transformed.z);
     }

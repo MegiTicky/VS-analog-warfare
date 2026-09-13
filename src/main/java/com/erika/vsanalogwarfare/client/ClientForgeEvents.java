@@ -7,6 +7,8 @@ import com.erika.vsanalogwarfare.network.MouseAimTargetPacket;
 import com.erika.vsanalogwarfare.network.ModNetwork;
 import com.erika.vsanalogwarfare.network.StopScopePacket;
 import com.erika.vsanalogwarfare.network.ToggleScopeZoomPacket;
+import com.erika.vsanalogwarfare.network.VehicleMountPacket;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlock;
 import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfile;
 import com.erika.vsanalogwarfare.scope.ballistics.ReticleMark;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
@@ -22,11 +24,14 @@ import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.event.RenderHandEvent;
+import net.minecraftforge.client.event.RenderLevelStageEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.event.TickEvent;
@@ -38,22 +43,24 @@ import org.joml.Matrix4f;
 @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class ClientForgeEvents {
     private static final ResourceLocation SCOPE_BASE = new ResourceLocation(VSAnalogWarfare.MOD_ID, "textures/misc/scope_base.png");
-    private static boolean shiftWasDown;
     private static int mouseAimPacketCooldown;
+    private static boolean vehicleHandleAttackHeld;
 
     private ClientForgeEvents() {
     }
-
     @SubscribeEvent
     public static void onClientDisconnect(ClientPlayerNetworkEvent.LoggingOut event) {
+        ClientTransmitterHighlight.clear();
+        ClientScrewdriverHighlight.clear();
+        AnalogScrewdriverOverlay.reset();
         ClientScopeState.set(false, 70.0f, 3, null, null,
                 0.0, 0.0, 0.0, 0.0f, 0.0f,
-                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY);
+                0.0f, 0.0f, 0.0f, 1.0f, BallisticProfile.EMPTY, 0, false, 0.0f, 0.0f);
     }
 
     @SubscribeEvent
     public static void onComputeFov(ViewportEvent.ComputeFov event) {
-        if (ClientScopeState.active()) {
+        if (ClientScopeState.scopeViewActive()) {
             event.setFOV(ClientScopeState.fov());
         }
     }
@@ -64,10 +71,46 @@ public final class ClientForgeEvents {
             return;
         }
         float partialTick = (float) event.getPartialTick();
-        CameraPose pose = ClientScopeState.cameraPose(partialTick);
-        event.setYaw(pose.yaw());
-        event.setPitch(pose.pitch());
-        event.setRoll(ClientScopeState.roll(pose));
+        // While mounted to a ship these angles carry the inverse of the ship's
+        // seat rotation, so the transform VS2 appends at prepareCullFrustum
+        // cancels and the world-frame scope/free-look pose is what renders.
+        // Third person feeds the same compensation for its stabilized look.
+        event.setYaw(ClientScopeState.renderYaw(partialTick));
+        event.setPitch(ClientScopeState.renderPitch(partialTick));
+        event.setRoll(ClientScopeState.renderRoll(partialTick));
+    }
+
+    @SubscribeEvent
+    public static void onClientTickStart(TickEvent.ClientTickEvent event) {
+        if (event.phase != TickEvent.Phase.START) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        AnalogScrewdriverOverlay.tick();
+        if (mc.level != null) {
+            com.erika.vsanalogwarfare.stabilizer.ClientStabilizerState.tick(mc.level.getGameTime());
+        }
+        if (!mc.options.keyAttack.isDown()) {
+            vehicleHandleAttackHeld = false;
+        }
+        if (ClientScopeState.active()) {
+            // The server equipped a hub-linked tweaked controller for this
+            // session; make sure the game's own controller handler is running.
+            TweakedControllerInputCompat.ensureActive();
+        }
+        while (ClientKeyMappings.VEHICLE_MOUNT.consumeClick()) {
+            if (mc.player == null || mc.screen != null) continue;
+            if (mc.player.getVehicle() != null) {
+                ModNetwork.sendToServer(new VehicleMountPacket.Dismount());
+            } else if (mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit
+                    && mc.level != null && mc.level.getBlockState(hit.getBlockPos()).getBlock() instanceof VehicleMountHandleBlock) {
+                ModNetwork.sendToServer(new VehicleMountPacket.Request(hit.getBlockPos(), -1, -1));
+            }
+        }
+        if (ClientScopeState.active() && mc.options.keyShift.isDown()) {
+            ModNetwork.sendToServer(new StopScopePacket());
+            mc.options.keyShift.setDown(false);
+        }
     }
 
     @SubscribeEvent
@@ -77,25 +120,17 @@ public final class ClientForgeEvents {
         }
         Minecraft mc = Minecraft.getInstance();
         if (!ClientScopeState.active()) {
-            shiftWasDown = mc.options.keyShift.isDown();
             mouseAimPacketCooldown = 0;
             while (ClientKeyMappings.SCOPE_ZOOM.consumeClick()) {
-                // Drop queued key presses from outside scope.
             }
             while (ClientKeyMappings.SCOPE_FREE_LOOK.consumeClick()) {
-                // Drop queued key presses from outside scope.
             }
             while (ClientKeyMappings.SCOPE_RANGEFINDER.consumeClick()) {
-                // Drop queued key presses from outside scope.
+            }
+            while (ClientKeyMappings.SCOPE_VIEW_TOGGLE.consumeClick()) {
             }
             return;
         }
-        boolean shiftDown = mc.options.keyShift.isDown();
-        if (shiftDown && !shiftWasDown) {
-            ModNetwork.sendToServer(new StopScopePacket());
-        }
-        shiftWasDown = shiftDown;
-
         while (ClientKeyMappings.SCOPE_ZOOM.consumeClick()) {
             ModNetwork.sendToServer(new ToggleScopeZoomPacket());
         }
@@ -105,11 +140,17 @@ public final class ClientForgeEvents {
         while (ClientKeyMappings.SCOPE_RANGEFINDER.consumeClick()) {
             ClientScopeState.triggerRangefinder();
         }
+        while (ClientKeyMappings.SCOPE_VIEW_TOGGLE.consumeClick()) {
+            ClientScopeState.toggleViewMode();
+        }
         sendMouseAimTargetIfNeeded();
     }
 
     private static void sendMouseAimTargetIfNeeded() {
-        if (!ClientScopeState.freeLookEnabled()) {
+        boolean thirdPerson = ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON;
+        // Third person aims 1:1 from the player's live look direction; scope view
+        // uses the free-look direction with ballistic zero applied.
+        if (!thirdPerson && !ClientScopeState.freeLookEnabled()) {
             mouseAimPacketCooldown = 0;
             return;
         }
@@ -123,7 +164,16 @@ public final class ClientForgeEvents {
         if (scopePos == null || mountPos == null) {
             return;
         }
-        Vec3 direction = ClientScopeState.zeroedFreeLookDirection();
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) {
+            return;
+        }
+        Vec3 direction = thirdPerson
+                // Third person is world-stabilized: the player rotation is the
+                // crosshair direction (world frame), NOT getLookAngle() which
+                // VS2 ship-corrects and would swing with the hull.
+                ? ClientScopeState.directionFromYawPitch(mc.player.getYRot(), mc.player.getXRot())
+                : ClientScopeState.zeroedFreeLookDirection();
         ModNetwork.sendToServer(new MouseAimTargetPacket(scopePos, mountPos, direction.x, direction.y, direction.z));
     }
 
@@ -132,6 +182,33 @@ public final class ClientForgeEvents {
         if (ClientScopeState.active() && event.getOverlay().id().equals(VanillaGuiOverlay.CROSSHAIR.id())) {
             event.setCanceled(true);
         }
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public static void onVehicleHandleAttack(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isAttack() || event.getHand() != InteractionHand.MAIN_HAND) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.screen != null
+                || !(mc.player.getMainHandItem().getItem() instanceof com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem)
+                || !(mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult hit)
+                || !(mc.level.getBlockState(hit.getBlockPos()).getBlock() instanceof VehicleMountHandleBlock)) {
+            vehicleHandleAttackHeld = false;
+            return;
+        }
+
+        event.setCanceled(true);
+        event.setSwingHand(true);
+        if (!vehicleHandleAttackHeld) {
+            ModNetwork.sendToServer(new VehicleMountPacket.Push(hit.getBlockPos(), hit.getDirection()));
+            vehicleHandleAttackHeld = true;
+        }
+    }
+
+    @SubscribeEvent
+    public static void onRenderLevelStage(RenderLevelStageEvent event) {
+        ClientTransmitterHighlight.render(event);
+        ClientScrewdriverHighlight.render(event);
+        ClientInvisibleSeatHighlight.render(event);
     }
 
     @SubscribeEvent
@@ -143,6 +220,14 @@ public final class ClientForgeEvents {
         Minecraft mc = Minecraft.getInstance();
         int screenW = event.getWindow().getGuiScaledWidth();
         int screenH = event.getWindow().getGuiScaledHeight();
+        if (ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON) {
+            // The scope session is still live in third-person view; show a minimal
+            // hint instead of the scope HUD so the mode is not mistaken for an exit.
+            graphics.drawString(mc.font, hudHelpLines()[0], 6, 6, 0xFF80FF80);
+            drawKeybindHelp(graphics, mc, 6, 18);
+            drawFreeLookTargetCircle(graphics, screenW, screenH);
+            return;
+        }
         int[] scopeRect = fitScopeRect(screenW, screenH);
         int scopeX = scopeRect[0];
         int scopeY = scopeRect[1];
@@ -162,6 +247,7 @@ public final class ClientForgeEvents {
         drawFreeLookTargetCircle(graphics, screenW, screenH);
 
         drawRangefinderText(graphics, mc, sightScopeX, sightScopeY, scopeW, scopeH);
+        drawKeybindHelp(graphics, mc, 6, 18);
 
         // Disabled: per-frame debug overlay is expensive (Font rendering + formatting) and was a major hotspot in spark.
         // String debug = ScopeDebug.overlayLine(mc.gameRenderer.getMainCamera());
@@ -175,7 +261,10 @@ public final class ClientForgeEvents {
     }
 
     private static void drawFreeLookTargetCircle(GuiGraphics graphics, int screenW, int screenH) {
-        if (!ClientScopeState.freeLookEnabled()) {
+        // Third-person view always shows the center cross (it marks the aim point);
+        // scope view only shows it while free look is steering the camera.
+        boolean thirdPerson = ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON;
+        if (!thirdPerson && !ClientScopeState.freeLookEnabled()) {
             return;
         }
         int cx = screenW / 2;
@@ -225,6 +314,54 @@ public final class ClientForgeEvents {
                 int maxDisplay = (int) Math.round(com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance());
                 graphics.drawString(mc.font, "RNG: > " + maxDisplay, elementX, elementY, 0xFFFF2222, false);
             }
+        }
+    }
+
+    /**
+     * Instruction lines for the scope HUD, built from the actual keymappings so
+     * they follow rebinds. Strings are cached and rebuilt only when a bind's
+     * translated key changes.
+     */
+    private static String[] hudHelpCache;
+    private static String hudHelpSignature;
+
+    private static String[] hudHelpLines() {
+        String view = keyLabel(ClientKeyMappings.SCOPE_VIEW_TOGGLE);
+        String signature = view
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_FREE_LOOK)
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_ZOOM)
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_RANGEFINDER)
+                + "|" + keyLabel(ClientKeyMappings.SCOPE_ZEROING);
+        if (hudHelpCache == null || !signature.equals(hudHelpSignature)) {
+            hudHelpSignature = signature;
+            hudHelpCache = new String[]{
+                    "[" + view + "] Scope  [Shift] Exit",
+                    "[" + view + "] 3rd Person  [" + keyLabel(ClientKeyMappings.SCOPE_FREE_LOOK) + "] Free Look",
+                    "[" + keyLabel(ClientKeyMappings.SCOPE_ZOOM) + "] Zoom  ["
+                            + keyLabel(ClientKeyMappings.SCOPE_RANGEFINDER) + "] Rangefind",
+                    "[" + keyLabel(ClientKeyMappings.SCOPE_ZEROING) + "]+Scroll Zeroing  [Shift] Exit"
+            };
+        }
+        return hudHelpCache;
+    }
+
+    private static String keyLabel(net.minecraft.client.KeyMapping mapping) {
+        return mapping.getTranslatedKeyMessage().getString().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private static void drawKeybindHelp(GuiGraphics graphics, Minecraft mc, int x, int y) {
+        String[] lines = hudHelpLines();
+        for (int i = 1; i < lines.length; i++) {
+            graphics.drawString(mc.font, lines[i], x, y + (i - 1) * 11, 0xFFE6E6E6, true);
+        }
+    }
+
+    /** The scope view replaces the player's hands; this also hides the fake
+     *  wire controller the session equipped. */
+    @SubscribeEvent
+    public static void onRenderHand(RenderHandEvent event) {
+        if (ClientScopeState.active()) {
+            event.setCanceled(true);
         }
     }
 
@@ -279,40 +416,40 @@ public final class ClientForgeEvents {
         BufferBuilder buffer = tesselator.getBuilder();
         RenderSystem.enableBlend();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        
+
         Matrix4f matrix = graphics.pose().last().pose();
         buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-        
+
         float a = 1.0f;
-        
+
         if (top > 0) {
             buffer.vertex(matrix, 0, 0, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, 0, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         if (bottom < screenH) {
             buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, 0, screenH, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, screenH, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         if (left > 0 && bottom > top) {
             buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, left, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, left, top, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         if (right < screenW && bottom > top) {
             buffer.vertex(matrix, right, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, right, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         tesselator.end();
     }
 
@@ -376,40 +513,40 @@ public final class ClientForgeEvents {
         BufferBuilder buffer = tesselator.getBuilder();
         RenderSystem.enableBlend();
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
-        
+
         Matrix4f matrix = graphics.pose().last().pose();
         buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-        
+
         float a = 1.0f;
-        
+
         if (top > 0) {
             buffer.vertex(matrix, 0, 0, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, 0, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         if (bottom < screenH) {
             buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, 0, screenH, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, screenH, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         if (left > 0 && bottom > top) {
             buffer.vertex(matrix, 0, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, 0, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, left, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, left, top, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         if (right < screenW && bottom > top) {
             buffer.vertex(matrix, right, top, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, right, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, bottom, 0).color(0, 0, 0, a).endVertex();
             buffer.vertex(matrix, screenW, top, 0).color(0, 0, 0, a).endVertex();
         }
-        
+
         tesselator.end();
     }
 
@@ -446,8 +583,19 @@ public final class ClientForgeEvents {
         int currentZeroDistance = ClientScopeState.sightZeroDistance();
         double zeroOffsetPixels = ClientScopeState.getZeroPitch() * pxPerDegree;
 
-        java.util.List<ReticleMark> marks = ClientScopeState.reticleMarks();
+        if (ClientScopeState.highAngleZero()) {
+            // The ladder texture is a low-arc table and only spans ~50 deg around center; in the
+            // artillery branch it no longer describes the firing arc, so show the readout instead.
+            double zeroPitch = ClientScopeState.getZeroPitch();
+            net.minecraft.client.gui.Font font = mc.font;
+            String zeroText = String.format("ZRN: %dm HI  QE %.1f", currentZeroDistance, zeroPitch);
+            int textX = (int) Math.round(cx - 65);
+            int textY = (int) Math.round((y0 + h / 2.0) + 30);
+            graphics.drawString(font, zeroText, textX, textY, 0xFFFFAA00, false);
+            return;
+        }
 
+        java.util.List<ReticleMark> marks = ClientScopeState.reticleMarks();
         ReticleCache.rebuildIfNeeded(h, ClientScopeState.fov(), profile, marks);
 
         com.mojang.blaze3d.pipeline.TextureTarget reticleTarget = ReticleCache.getReticleTarget();
@@ -459,7 +607,9 @@ public final class ClientForgeEvents {
         int textureHeight = ReticleCache.getTextureHeight();
         double textureCy = textureHeight / 2.0;
 
-        double zeroPitch = ClientScopeState.getZeroPitch();
+        // Same smoothed signal the camera counter-rotation uses: reticle and camera move in
+        // lockstep, so a scroll step glides instead of kicking the sight picture.
+        double zeroPitch = ClientScopeState.renderZeroPitch();
         double textureZeroOffset = zeroPitch * (ReticleCache.getCachedPxPerDegree());
 
         double sourceY = textureCy - textureZeroOffset - h / 2.0;
@@ -512,31 +662,71 @@ public final class ClientForgeEvents {
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public static void onMouseScroll(net.minecraftforge.client.event.InputEvent.MouseScrollingEvent event) {
         Minecraft mc = Minecraft.getInstance();
+        if (mc.screen == null && AnalogScrewdriverOverlay.mouseScrolled(event.getScrollDelta())) {
+            event.setCanceled(true);
+            return;
+        }
         if (ClientScopeState.active() && mc.player != null) {
             if (ClientKeyMappings.SCOPE_ZEROING.isDown()) {
                 double scrollDelta = event.getScrollDelta();
                 if (scrollDelta != 0) {
-                    int currentZero = ClientScopeState.sightZeroDistance();
                     int step = ClientConfig.zeroingStep();
-                    int change = scrollDelta > 0 ? step : -step;
-                    int newZero = currentZero + change;
+                    int currentZero = ClientScopeState.sightZeroDistance();
+                    boolean currentHigh = ClientScopeState.highAngleZero();
+                    int apex = ClientScopeState.apexRange();
 
-                    double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
-                    newZero = Math.max(0, Math.min((int) maxDist, newZero));
+                    int newZero;
+                    boolean newHigh;
+                    if (apex > 0) {
+                        // Wheel position over the cannon's elevation travel, in zero-distance
+                        // units: 0..lowCeiling is the low arc, and (when the mount elevates past
+                        // the apex pitch) up to 2*apex-capRange is the high arc walking back down
+                        // in range. Scroll up always elevates, and every segment end is the
+                        // mount's REAL pitch limit. Zero stays at or above bore.
+                        double elevCap = ClientScopeState.elevationCapPitch();
+                        int capRange = ClientScopeState.elevationCapRange();
+                        boolean canCross = capRange >= 0 && elevCap > ClientScopeState.apexPitch() + 0.25;
+                        int lowCeiling = canCross ? apex : (capRange >= 0 ? Math.min(apex, capRange) : apex);
+                        int wheelMax = canCross ? 2 * apex - Math.max(capRange, 0) : lowCeiling;
 
-                    if (newZero != currentZero) {
-                        // Calculate how much the angle drops between the old distance and the new distance
+                        int wheel = currentHigh ? 2 * apex - currentZero : currentZero;
+                        wheel = Math.max(0, Math.min(wheelMax, wheel + (scrollDelta > 0 ? step : -step)));
+                        if (wheel <= lowCeiling) {
+                            newHigh = false;
+                            newZero = wheel;
+                        } else {
+                            newHigh = true;
+                            newZero = 2 * apex - wheel;
+                        }
+                    } else {
+                        // No ballistic profile yet: fall back to the distance-only clamp.
+                        double maxDist = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
+                        newZero = Math.max(0, Math.min((int) maxDist, currentZero + (scrollDelta > 0 ? step : -step)));
+                        newHigh = currentHigh;
+                    }
+
+                    if (newZero != currentZero || newHigh != currentHigh) {
+                        // Calculate how much the angle changes between the old zero and the new zero
                         double oldPitch = ClientScopeState.getZeroPitch();
+                        ClientScopeState.setHighAngleZero(newHigh);
                         ClientScopeState.setSightZeroDistance(newZero);
                         double newPitch = ClientScopeState.getZeroPitch();
 
                         float deltaPitch = (float) (newPitch - oldPitch);
                         BlockPos mountPos = ClientScopeState.mountPos();
+                        BlockPos scopePos = ClientScopeState.scopePos();
 
                         // Tell the server to physically turn the elevation handwheel by that amount!
                         if (mountPos != null && deltaPitch != 0) {
                             com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
                                     new com.erika.vsanalogwarfare.network.AdjustMountPitchPacket(mountPos, deltaPitch)
+                            );
+                        }
+
+                        // Sync zero distance to server for persistence
+                        if (scopePos != null) {
+                            com.erika.vsanalogwarfare.network.ModNetwork.sendToServer(
+                                    new com.erika.vsanalogwarfare.network.SetZeroDistancePacket(scopePos, newZero, newHigh)
                             );
                         }
 

@@ -18,7 +18,10 @@ public abstract class MouseHandlerMixin {
 
     @Inject(method = "m_91523_", at = @At("HEAD"), cancellable = true, remap = false)
     private void vs_analog_warfare$turnFreeLook(CallbackInfo ci) {
-        if (!ClientScopeState.freeLookEnabled()) {
+        // In third-person view the vanilla mouse turn runs instead so the player
+        // rotation (and VS's camera with it) follows the mouse and drives the aim.
+        if (ClientScopeState.viewMode() != ClientScopeState.ViewMode.SCOPE
+                || !ClientScopeState.freeLookEnabled()) {
             return;
         }
         double sensitivity = this.f_91503_.options.sensitivity().get() * 0.6000000238418579D + 0.20000000298023224D;

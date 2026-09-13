@@ -27,82 +27,68 @@ public final class ReticleCache {
     private static BallisticProfile cachedProfile;
     private static final String[] PRE_CACHED_RANGES = new String[201];
 
-    static {
-        for (int i = 0; i < PRE_CACHED_RANGES.length; i++) PRE_CACHED_RANGES[i] = String.valueOf(i * 100);
-    }
-
+    static { for (int i = 0; i < PRE_CACHED_RANGES.length; i++) PRE_CACHED_RANGES[i] = String.valueOf(i * 100); }
     private ReticleCache() { }
     public static void markDirty() { cacheDirty = true; }
-
-    public static void cleanup() {
-        if (reticleTarget != null) {
-            reticleTarget.destroyBuffers();
-            reticleTarget = null;
-        }
-        cacheDirty = true;
-        cachedProfile = null;
-    }
-
-    private static void ensureRenderTarget() {
-        if (reticleTarget == null) reticleTarget = new TextureTarget(TEXTURE_WIDTH, TEXTURE_HEIGHT, true, Minecraft.ON_OSX);
-    }
+    public static void cleanup() { if (reticleTarget != null) { reticleTarget.destroyBuffers(); reticleTarget = null; } cacheDirty = true; cachedProfile = null; }
+    private static void ensureRenderTarget() { if (reticleTarget == null) reticleTarget = new TextureTarget(TEXTURE_WIDTH, TEXTURE_HEIGHT, true, Minecraft.ON_OSX); }
 
     public static void rebuildIfNeeded(int scopeHeight, double fov, BallisticProfile profile, List<ReticleMark> marks) {
-        if (!cacheDirty && cachedScopeHeight == scopeHeight && cachedFov == fov && profile.equals(cachedProfile)) return;
+        if (!cacheDirty && cachedScopeHeight == scopeHeight && cachedFov == fov && cachedProfile != null && cachedProfile.equals(profile)) return;
         ensureRenderTarget();
-        Minecraft mc = Minecraft.getInstance();
-        Font font = mc.font;
+        Minecraft minecraft = Minecraft.getInstance();
         reticleTarget.setClearColor(0.0f, 0.0f, 0.0f, 0.0f);
         reticleTarget.clear(Minecraft.ON_OSX);
         reticleTarget.bindWrite(false);
         RenderSystem.enableBlend();
         RenderSystem.blendFuncSeparate(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA,
                 GlStateManager.SourceFactor.ONE, GlStateManager.DestFactor.ZERO);
-        RenderSystem.setProjectionMatrix(new Matrix4f().ortho(0.0f, TEXTURE_WIDTH, TEXTURE_HEIGHT, 0.0f,
-                1000.0f, 3000.0f), com.mojang.blaze3d.vertex.VertexSorting.DISTANCE_TO_ORIGIN);
+        RenderSystem.setProjectionMatrix(new Matrix4f().ortho(0.0f, TEXTURE_WIDTH, TEXTURE_HEIGHT, 0.0f, 1000.0f, 3000.0f),
+                com.mojang.blaze3d.vertex.VertexSorting.DISTANCE_TO_ORIGIN);
         RenderSystem.getModelViewStack().pushPose();
         RenderSystem.getModelViewStack().setIdentity();
         RenderSystem.getModelViewStack().translate(0, 0, -2000);
         RenderSystem.applyModelViewMatrix();
-        double pxPerDegree = scopeHeight / Math.max(1.0, fov);
-        double cx = TEXTURE_WIDTH / 2.0;
-        double cy = TEXTURE_HEIGHT / 2.0;
-        float alpha = 224.0f / 255.0f;
-        float thickness = Math.max(1, Math.round((scopeHeight / 720.0f) * 2.0f));
+        double pixelsPerDegree = scopeHeight / Math.max(1.0, fov);
+        double centerX = TEXTURE_WIDTH / 2.0;
+        double centerY = TEXTURE_HEIGHT / 2.0;
+        int color = 0xE0000000;
+        float alpha = ((color >>> 24) & 0xFF) / 255.0f;
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         BufferBuilder buffer = Tesselator.getInstance().getBuilder();
         buffer.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
-        int lastLineY = -999;
+        int previousLine = -999;
+        int thickness = Math.max(1, Math.round(scopeHeight / 360.0f));
         for (ReticleMark mark : marks) {
-            int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
-            if (y < 0 || y >= TEXTURE_HEIGHT || (mark.distance() % 500 != 0 && Math.abs(y - lastLineY) < 4)) continue;
-            lastLineY = y;
-            int half = mark.distance() % 500 == 0 ? 6 : 4;
-            float y0 = y - thickness / 2.0f;
-            float y1 = y0 + thickness;
-            buffer.vertex((float) (cx - half), y0, 0.0f).color(0.0f, 0.0f, 0.0f, alpha).endVertex();
-            buffer.vertex((float) (cx - half), y1, 0.0f).color(0.0f, 0.0f, 0.0f, alpha).endVertex();
-            buffer.vertex((float) (cx + half + 1), y1, 0.0f).color(0.0f, 0.0f, 0.0f, alpha).endVertex();
-            buffer.vertex((float) (cx + half + 1), y0, 0.0f).color(0.0f, 0.0f, 0.0f, alpha).endVertex();
+            int y = (int) Math.round(centerY + mark.pitchDegrees() * pixelsPerDegree);
+            if (y < 0 || y >= TEXTURE_HEIGHT || mark.distance() % 500 != 0 && Math.abs(y - previousLine) < 4) continue;
+            previousLine = y;
+            int halfWidth = mark.distance() % 500 == 0 ? 6 : 4;
+            int top = y - thickness / 2;
+            int bottom = top + thickness;
+            buffer.vertex((float) (centerX - halfWidth), top, 0).color(0, 0, 0, alpha).endVertex();
+            buffer.vertex((float) (centerX - halfWidth), bottom, 0).color(0, 0, 0, alpha).endVertex();
+            buffer.vertex((float) (centerX + halfWidth + 1), bottom, 0).color(0, 0, 0, alpha).endVertex();
+            buffer.vertex((float) (centerX + halfWidth + 1), top, 0).color(0, 0, 0, alpha).endVertex();
         }
         Tesselator.getInstance().end();
-        MultiBufferSource.BufferSource source = MultiBufferSource.immediate(Tesselator.getInstance().getBuilder());
-        int lastTextY = -999;
+        MultiBufferSource.BufferSource textBuffers = MultiBufferSource.immediate(Tesselator.getInstance().getBuilder());
+        Font font = minecraft.font;
+        int previousText = -999;
         for (ReticleMark mark : marks) {
             if (mark.distance() % 100 != 0) continue;
-            int y = (int) Math.round(cy + mark.pitchDegrees() * pxPerDegree);
-            if (y < 0 || y >= TEXTURE_HEIGHT || (mark.distance() % 500 != 0 && Math.abs(y - lastTextY) < 9)) continue;
-            lastTextY = y;
-            int index = mark.distance() / 100;
-            String text = index >= 0 && index < PRE_CACHED_RANGES.length ? PRE_CACHED_RANGES[index]
-                    : String.valueOf(mark.distance());
-            font.drawInBatch(text, (float) (cx + (mark.distance() % 500 == 0 ? 6 : 4) + 4), y - 4.0f,
-                    0xD0101010, false, new Matrix4f(), source, Font.DisplayMode.NORMAL, 0, 15728880);
+            int y = (int) Math.round(centerY + mark.pitchDegrees() * pixelsPerDegree);
+            if (y < 0 || y >= TEXTURE_HEIGHT || mark.distance() % 500 != 0 && Math.abs(y - previousText) < 9) continue;
+            previousText = y;
+            int rangeIndex = mark.distance() / 100;
+            String label = rangeIndex >= 0 && rangeIndex < PRE_CACHED_RANGES.length ? PRE_CACHED_RANGES[rangeIndex] : String.valueOf(mark.distance());
+            font.drawInBatch(label, (float) (centerX + (mark.distance() % 500 == 0 ? 10 : 8)), y - 4,
+                    0xD0101010, false, new Matrix4f(), textBuffers, Font.DisplayMode.NORMAL, 0, 15728880);
         }
-        source.endBatch();
+        textBuffers.endBatch();
         RenderSystem.disableBlend();
         reticleTarget.unbindWrite();
-        mc.getMainRenderTarget().bindWrite(true);
+        minecraft.getMainRenderTarget().bindWrite(true);
         RenderSystem.getModelViewStack().popPose();
         RenderSystem.applyModelViewMatrix();
         cachedScopeHeight = scopeHeight;
