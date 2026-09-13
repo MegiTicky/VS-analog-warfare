@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "vs_analog_warfare:block/vehicle_mount_handle" },
+    "facing=east": { "model": "vs_analog_warfare:block/vehicle_mount_handle", "y": 90 },
+    "facing=south": { "model": "vs_analog_warfare:block/vehicle_mount_handle", "y": 180 },
+    "facing=west": { "model": "vs_analog_warfare:block/vehicle_mount_handle", "y": 270 }
+  }
+}
