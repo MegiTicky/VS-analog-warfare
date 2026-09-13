@@ -88,7 +88,7 @@ final class TurretAutotuner {
         if (active()) {
             return "vs_analog_warfare.mouse_aim.calibrate.busy";
         }
-        float cap = (float) Math.min(CommonConfig.turretMaxOutputRpm(), Math.abs(controller.getSpeed()));
+        float cap = (float) CommonConfig.turretMaxOutputRpm() * TurretYawController.inputScale(controller.getSpeed());
         if (cap < 1.0F) {
             return "vs_analog_warfare.mouse_aim.calibrate.unpowered";
         }

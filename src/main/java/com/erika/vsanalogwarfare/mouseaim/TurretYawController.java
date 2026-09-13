@@ -30,14 +30,15 @@ import java.util.Optional;
  * transform.
  *
  * <p><b>Response shape:</b> single-mode. The command is the tuned PID
- * ({@code kp * error + kd * d(error)/dt + ff * sweepRate}, gains never
- * scaled) clamped to a cap of the input shaft speed up to the configured
- * ceiling — a slow crank slows the whole approach, a fast one allows the
- * full validated response, and the command always tapers with the error.
- * The derivative term damps the settle, the feed-forward term keeps tracking
- * a sweeping aim, and the slew limiter keeps the physics bearing from being
- * shocked. The gains come from the block's {@link TurretTuning} — the global
- * config template until a calibration stores per-block values.
+ * ({@code kp * error + kd * d(error)/dt + ff * sweepRate}) scaled linearly
+ * with the input shaft speed — 256 RPM input (Create's maximum) commands the
+ * full configured ceiling, half that input commands half the output — so
+ * every input speed runs the same validated response shape, just
+ * time-scaled, and the command always tapers with the error. The derivative
+ * term damps the settle, the feed-forward term keeps tracking a sweeping
+ * aim, and the slew limiter keeps the physics bearing from being shocked.
+ * The gains come from the block's {@link TurretTuning} — the global config
+ * template until a calibration stores per-block values.
  *
  * <p><b>Sign:</b> a Clockwork physics bearing facing up applies omega along
  * its facing normal, so positive RPM decreases the Minecraft azimuth
@@ -46,6 +47,8 @@ import java.util.Optional;
  * in case a bearing is placed or behaves differently.
  */
 final class TurretYawController {
+    /** Create's maximum shaft speed; the input that commands the full output ceiling. */
+    private static final float FULL_SCALE_INPUT_RPM = 256.0F;
     private static final float DERIVATIVE_SMTH = 0.5F;
     private static final float FEED_FORWARD_SMTH = 0.3F;
     private static final float ZERO_SPEED_EPSILON_RPM = 0.01F;
@@ -83,6 +86,16 @@ final class TurretYawController {
             return null;
         }
         return azimuthDeg(boreWorld);
+    }
+
+    /**
+     * Fraction of the output authority the given shaft speed commands:
+     * linear in the input speed, 1.0 at {@value #FULL_SCALE_INPUT_RPM} RPM.
+     * Shared with the pitch slew and the calibration step test so every
+     * output path scales with the crank identically.
+     */
+    static float inputScale(float inputRpm) {
+        return (float) Math.min(1.0D, Math.abs(inputRpm) / FULL_SCALE_INPUT_RPM);
     }
 
     /**
@@ -126,14 +139,15 @@ final class TurretYawController {
         }
 
         // Single-mode response: the tuned PID always commands the output and
-        // its damping acts over the whole range; the cap is the input shaft
-        // speed (up to the configured ceiling), so a slow crank slows the
-        // whole approach and the command always tapers with the error — no
-        // relay, no speed-induced instability.
-        float cap = (float) Math.min(CommonConfig.turretMaxOutputRpm(), Math.abs(controller.getSpeed()));
+        // its damping acts over the whole range; the command, its cap, and
+        // its slew rate all scale linearly with the input shaft speed (full
+        // authority at 256 RPM input), so every input speed runs the same
+        // validated response shape, just time-scaled.
+        float scale = inputScale(controller.getSpeed());
+        float cap = (float) CommonConfig.turretMaxOutputRpm() * scale;
         float rpmSign = CommonConfig.turretYawInvert() ? 1.0F : -1.0F;
-        float raw = (float) Mth.clamp(rpmSign * core, -cap, cap);
-        float slew = (float) tuning.slewPerTick();
+        float raw = (float) Mth.clamp(rpmSign * core * scale, -cap, cap);
+        float slew = (float) tuning.slewPerTick() * scale;
         lastOutputRpm = (float) Mth.clamp(raw, lastOutputRpm - slew, lastOutputRpm + slew);
 
         debugTick(controller, err, setpointYaw, measuredYaw, raw, lastOutputRpm, cap);
