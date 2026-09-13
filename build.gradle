@@ -15,7 +15,7 @@ base {
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 def vs24ReferenceModsDir = file(findProperty('vs24_reference_mods_dir') ?: 'C:/Modding/Reference mod VS2.4')
-def vs24ValkyrienSkiesJar = new File(vs24ReferenceModsDir, 'valkyrienskies-120-2.4.9.jar')
+def vs24ValkyrienSkiesJar = new File(vs24ReferenceModsDir, 'valkyrienskies-120-2.4.9/valkyrienskies-120-2.4.9.jar')
 
 minecraft {
     mappings channel: mapping_channel, version: mapping_version
@@ -70,6 +70,8 @@ repositories {
 dependencies {
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
     compileOnly files(vs24ValkyrienSkiesJar)
+    // VS core api interfaces (ClientShip, LoadedShip, ...) jarjar'd inside the VS mod jar.
+    compileOnly files('gradle/vs24-api/api-1.1.0+f6a942e0e1.jar')
     compileOnly 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
     compileOnly fg.deobf("com.simibubi.create:create-${minecraft_version}:${create_version}:slim")
     compileOnly fg.deobf("net.createmod.ponder:Ponder-Forge-${minecraft_version}:${ponder_version}")
@@ -80,6 +82,9 @@ dependencies {
     runtimeOnly("io.github.llamalad7:mixinextras-forge:0.4.1")
 
     compileOnly "maven.modrinth:DistantHorizonsApi:5.1.0"
+
+    // Provided at runtime by VS2's bundled joml; compile-only for AABBdc in CbcCompat.
+    compileOnly 'org.joml:joml-primitives:1.10.0'
 
     // Optional local runtime reference for testing Ender Transmission mixins.
     // It is never bundled and does not become a mandatory mod dependency.
@@ -104,6 +109,8 @@ tasks.named('processResources', ProcessResources).configure {
 
 tasks.named('jar', Jar).configure {
     exclude 'org/valkyrienskies/**'
+    // Compile-only stubs; the real classes come from CBC at runtime.
+    exclude 'rbasamoyai/**'
 
     manifest {
         attributes([
