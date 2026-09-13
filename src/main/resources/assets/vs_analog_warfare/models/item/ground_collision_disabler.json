@@ -1,5 +1,5 @@
 {
-  "parent": "vs_analog_warfare:block/vehicle_setup",
+  "parent": "vs_analog_warfare:block/ground_collision_disabler",
   "display": {
     "thirdperson_righthand": { "rotation": [75, 45, 0], "translation": [0, 2.5, 0], "scale": [0.375, 0.375, 0.375] },
     "thirdperson_lefthand": { "rotation": [75, 45, 0], "translation": [0, 2.5, 0], "scale": [0.375, 0.375, 0.375] },
