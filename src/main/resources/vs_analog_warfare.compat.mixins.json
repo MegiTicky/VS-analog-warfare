@@ -6,6 +6,7 @@
   "plugin": "com.erika.vsanalogwarfare.mixin.VsawMixinConfigPlugin",
   "mixins": [
     "compat.DbwWireLinkNetworksMixin",
+    "compat.DbwControllerHubMixin",
     "compat.DbwTweakedControllerHubMixin",
     "compat.TrackworkTrackToolkitMixin",
     "compat.EnderTransmitterPacketMixin",

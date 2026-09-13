@@ -4,13 +4,13 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTabs;
 import net.minecraft.world.item.Item;
+import com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
-import com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem;
 
 public final class ModItems {
     public static final DeferredRegister<Item> ITEMS =
@@ -24,6 +24,21 @@ public final class ModItems {
 
     public static final RegistryObject<Item> VEHICLE_SETUP = ITEMS.register("vehicle_setup",
             () -> new BlockItem(ModBlocks.VEHICLE_SETUP.get(), new Item.Properties()));
+
+    public static final RegistryObject<Item> GROUND_COLLISION_DISABLER = ITEMS.register("ground_collision_disabler",
+            () -> new BlockItem(ModBlocks.GROUND_COLLISION_DISABLER.get(), new Item.Properties()));
+
+    public static final RegistryObject<Item> VEHICLE_MOUNT_HANDLE = ITEMS.register("vehicle_mount_handle",
+            () -> new BlockItem(ModBlocks.VEHICLE_MOUNT_HANDLE.get(), new Item.Properties()));
+
+    public static final RegistryObject<Item> DECORATION_BEARING = ITEMS.register("decoration_bearing",
+            () -> new BlockItem(ModBlocks.DECORATION_BEARING.get(), new Item.Properties()));
+
+    public static final RegistryObject<Item> STABILIZER = ITEMS.register("stabilizer",
+            () -> new BlockItem(ModBlocks.STABILIZER.get(), new Item.Properties()));
+
+    public static final RegistryObject<Item> INVISIBLE_SEAT = ITEMS.register("invisible_seat",
+            () -> new BlockItem(ModBlocks.INVISIBLE_SEAT.get(), new Item.Properties()));
 
     public static final RegistryObject<Item> ANALOG_SCREWDRIVER = ITEMS.register("analog_screwdriver",
             () -> new AnalogScrewdriverItem(new Item.Properties().stacksTo(1)));
@@ -39,6 +54,11 @@ public final class ModItems {
                 event.accept(SCOPE_BLOCK);
                 event.accept(MOUSE_AIM_BLOCK);
                 event.accept(VEHICLE_SETUP);
+                event.accept(GROUND_COLLISION_DISABLER);
+                event.accept(VEHICLE_MOUNT_HANDLE);
+                event.accept(DECORATION_BEARING);
+                event.accept(STABILIZER);
+                event.accept(INVISIBLE_SEAT);
                 event.accept(ANALOG_SCREWDRIVER);
             }
         }

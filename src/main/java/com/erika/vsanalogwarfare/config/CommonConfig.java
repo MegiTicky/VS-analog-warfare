@@ -9,14 +9,40 @@ public final class CommonConfig {
     public static final ForgeConfigSpec.IntValue MOUSE_AIM_TARGET_TIMEOUT_TICKS;
     public static final ForgeConfigSpec.DoubleValue MOUSE_AIM_RATE_MULTIPLIER;
     public static final ForgeConfigSpec.DoubleValue MAX_RANGEFINDER_DISTANCE;
+    public static final ForgeConfigSpec.BooleanValue SMOOTH_SCOPE_AIM;
+    public static final ForgeConfigSpec.DoubleValue SCOPE_AIM_FILTER_ALPHA;
+    public static final ForgeConfigSpec.DoubleValue SCOPE_AIM_FILTER_BETA;
+    public static final ForgeConfigSpec.BooleanValue SCOPE_AIM_LATTICE;
+    public static final ForgeConfigSpec.BooleanValue SCOPE_ELEVATION_LOCK;
+    public static final ForgeConfigSpec.BooleanValue DISABLE_CONTRAPTION_ENTITY_COLLISION;
+
+    public static final ForgeConfigSpec.BooleanValue STABILIZER_ENABLED;
+    public static final ForgeConfigSpec.DoubleValue STABILIZER_MAX_DEG_PER_TICK;
+    public static final ForgeConfigSpec.DoubleValue STABILIZER_DEAD_ZONE_DEG;
+    public static final ForgeConfigSpec.DoubleValue STABILIZER_LINK_RANGE;
+    public static final ForgeConfigSpec.BooleanValue STABILIZER_DEBUG;
+    public static final ForgeConfigSpec.BooleanValue STABILIZER_RENDER_LOCK;
+
+    public static final ForgeConfigSpec.DoubleValue TURRET_MAX_OUTPUT_RPM;
+    public static final ForgeConfigSpec.DoubleValue TURRET_KP;
+    public static final ForgeConfigSpec.DoubleValue TURRET_KD;
+    public static final ForgeConfigSpec.DoubleValue TURRET_FEED_FORWARD;
+    public static final ForgeConfigSpec.DoubleValue TURRET_DEADBAND_DEG;
+    public static final ForgeConfigSpec.DoubleValue TURRET_OUTPUT_SLEW_PER_TICK;
+    public static final ForgeConfigSpec.DoubleValue TURRET_CALIBRATION_REFERENCE_LAG;
+    public static final ForgeConfigSpec.DoubleValue TURRET_STRESS_CAPACITY;
+    public static final ForgeConfigSpec.BooleanValue TURRET_YAW_INVERT;
+    public static final ForgeConfigSpec.BooleanValue TURRET_DEBUG;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
 
         builder.push("mouseAim");
         MOUSE_AIM_MIN_SPEED = builder
-                .comment("Minimum absolute Create RPM required for a mouse aim block to control an adjacent cannon mount.")
-                .defineInRange("mouseAimMinSpeed", 16.0D, 0.0D, 4096.0D);
+                .comment("Minimum absolute Create RPM required for a mouse aim block to control an adjacent cannon mount. "
+                        + "Below this the block is inert; the turret rotation output scales linearly with the input "
+                        + "speed up to the maximum.")
+                .defineInRange("mouseAimMinSpeed", 1.0D, 0.5D, 4096.0D);
         MOUSE_AIM_PACKET_INTERVAL_TICKS = builder
                 .comment("Client-to-server mouse aim target update interval while scoped free look is active.")
                 .defineInRange("mouseAimPacketIntervalTicks", 2, 1, 20);
@@ -32,6 +58,113 @@ public final class CommonConfig {
         MAX_RANGEFINDER_DISTANCE = builder
                 .comment("Maximum distance in blocks for the rangefinder to scan. Applies to terrain and ships.")
                 .defineInRange("maxRangefinderDistance", 2000.0D, 10.0D, 10000.0D);
+        SMOOTH_SCOPE_AIM = builder
+                .comment("Build the scope camera frame from CBC's velocity-extrapolated render offsets "
+                        + "(the same value the drawn barrel uses) instead of the one-tick-behind contraption "
+                        + "entity lerp, removing 20 TPS shutter in the zoomed scope.")
+                .define("smoothScopeAim", true);
+        SCOPE_AIM_FILTER_ALPHA = builder
+                .comment("Scope aim filter position gain: fraction of each tick's measurement error "
+                        + "applied to the rendered angle instantly. Lower = smoother/silkier but the "
+                        + "view trails the gun more; higher = snappier stops. 1.0 = no position smoothing.")
+                .defineInRange("scopeAimFilterAlpha", 0.45D, 0.0D, 1.0D);
+        SCOPE_AIM_FILTER_BETA = builder
+                .comment("Scope aim filter velocity gain: fraction of each tick's measurement error "
+                        + "fed into the extrapolation velocity. Lower = gentler velocity changes but "
+                        + "more coasting after the gun stops; higher = stops dead. 1.0 with alpha 1.0 "
+                        + "reproduces the unfiltered extrapolation.")
+                .defineInRange("scopeAimFilterBeta", 0.35D, 0.0D, 1.0D);
+        SCOPE_AIM_LATTICE = builder
+                .comment("Drive the scope camera from the vanilla-style interpolation lattice "
+                        + "(contraption entity lerp) instead of the extrapolating filter. Perfectly "
+                        + "smooth by construction - no vibration ever - but the view trails the true "
+                        + "bore by up to one tick. Default off.")
+                .define("scopeAimLattice", false);
+        SCOPE_ELEVATION_LOCK = builder
+                .comment("While a gyro stabilizer is linked, the scope camera's world-space pitch is "
+                        + "pinned to the held elevation (zero vertical vibration, zero lag while "
+                        + "holding). While the gun is being aimed, the scope's world pitch instead "
+                        + "follows the cannon on a short low-pass rail adjusted for ship roll and yaw. "
+                        + "Non-stabilized cannons are unaffected.")
+                .define("scopeElevationLock", true);
+        builder.pop();
+
+        builder.push("contraption");
+        DISABLE_CONTRAPTION_ENTITY_COLLISION = builder
+                .comment("When true, Create contraptions do not physically collide with entities.")
+                .define("disableEntityCollision", false);
+        builder.pop();
+
+        builder.push("stabilizer");
+        STABILIZER_ENABLED = builder
+                .comment("Master switch for the gyro stabilizer block.")
+                .define("enabled", true);
+        STABILIZER_MAX_DEG_PER_TICK = builder
+                .comment("Maximum compensating pitch speed the stabilizer may command, in degrees per game tick. "
+                        + "Also the slew rate for large corrections.")
+                .defineInRange("maxCompensationDegPerTick", 4.0D, 0.0D, 45.0D);
+        STABILIZER_DEAD_ZONE_DEG = builder
+                .comment("World-elevation errors smaller than this (degrees) are not corrected, preventing dither.")
+                .defineInRange("deadZoneDeg", 0.02D, 0.0D, 5.0D);
+        STABILIZER_LINK_RANGE = builder
+                .comment("Maximum block distance between a stabilizer and its cannon mount.")
+                .defineInRange("linkRange", 24.0D, 2.0D, 256.0D);
+        STABILIZER_DEBUG = builder
+                .comment("Log stabilizer servo state once per second per linked mount to the server log.")
+                .define("debug", false);
+        STABILIZER_RENDER_LOCK = builder
+                .comment("Re-solve the rendered gun pitch per frame against the ship's interpolated "
+                        + "render transform while holding, removing 20 TPS stepping in the zoomed scope. "
+                        + "Visual only; capped at 2 degrees from the logical pitch.")
+                .define("renderLock", true);
+        builder.pop();
+
+        builder.push("turretAim");
+        TURRET_MAX_OUTPUT_RPM = builder
+                .comment("Ceiling of the turret rotation output, in Create RPM. The input shaft speed maps "
+                        + "linearly onto this: 256 RPM input (Create's maximum) commands the full ceiling, "
+                        + "half that input commands half the output. The controller gain scales with the "
+                        + "same ratio, so every input speed runs the same validated response shape, just "
+                        + "time-scaled.")
+                .defineInRange("maxOutputRpm", 16.0D, 1.0D, 256.0D);
+        TURRET_KP = builder
+                .comment("Turret-mode yaw servo proportional gain: RPM commanded per degree of "
+                        + "aim error, before the input-speed cap.")
+                .defineInRange("kp", 0.4D, 0.0D, 10.0D);
+        TURRET_KD = builder
+                .comment("Turret-mode yaw servo derivative gain: damping RPM per degree-per-tick of "
+                        + "error change, before the input-speed cap.")
+                .defineInRange("kd", 1.2D, 0.0D, 10.0D);
+        TURRET_FEED_FORWARD = builder
+                .comment("Turret-mode feed-forward gain: RPM per degree-per-tick of aim sweep, "
+                        + "before the input-speed cap.")
+                .defineInRange("feedForward", 0.05D, 0.0D, 10.0D);
+        TURRET_DEADBAND_DEG = builder
+                .comment("Aim errors smaller than this (degrees) command no rotation, preventing dither.")
+                .defineInRange("deadbandDeg", 0.05D, 0.0D, 5.0D);
+        TURRET_OUTPUT_SLEW_PER_TICK = builder
+                .comment("Maximum change of the commanded output per tick, in RPM. Also the ramp-down "
+                        + "rate when aiming stops. Higher values respond faster to input changes; "
+                        + "very high values can shock the physics bearing.")
+                .defineInRange("outputSlewRpmPerTick", 10.0D, 0.0D, 64.0D);
+        TURRET_CALIBRATION_REFERENCE_LAG = builder
+                .comment("Spin-up lag in game ticks of the turret the kp/kd template above was "
+                        + "hand-tuned on (the Calibrate button measures and reports it as "
+                        + "'lag N.N ticks'). Calibration scores a turret at 100% while its "
+                        + "measured lag is within 1.25x of this, and de-rates kp down to a "
+                        + "floor of 50% for slower turrets (multi-ship drag). Set this to the "
+                        + "lag your reference turret measures so it calibrates at 100%.")
+                .defineInRange("calibrationReferenceLagTicks", 75.0D, 5.0D, 600.0D);
+        TURRET_STRESS_CAPACITY = builder
+                .comment("Stress capacity provided by the turret rotation output network.")
+                .defineInRange("stressCapacity", 4096.0D, 0.0D, 65536.0D);
+        TURRET_YAW_INVERT = builder
+                .comment("Flip the sign of the turret rotation output (for bearings whose spin "
+                        + "direction differs from the default assumption).")
+                .define("invert", false);
+        TURRET_DEBUG = builder
+                .comment("Log turret yaw servo state once per second per aiming block to the server log.")
+                .define("debug", false);
         builder.pop();
 
         SPEC = builder.build();
@@ -47,4 +180,28 @@ public final class CommonConfig {
 
     // Add the new getter
     public static double maxRangefinderDistance() { return MAX_RANGEFINDER_DISTANCE.get(); }
+    public static boolean smoothScopeAim() { return SMOOTH_SCOPE_AIM.get(); }
+    public static float scopeAimFilterAlpha() { return SCOPE_AIM_FILTER_ALPHA.get().floatValue(); }
+    public static float scopeAimFilterBeta() { return SCOPE_AIM_FILTER_BETA.get().floatValue(); }
+    public static boolean scopeAimLattice() { return SCOPE_AIM_LATTICE.get(); }
+    public static boolean scopeElevationLock() { return SCOPE_ELEVATION_LOCK.get(); }
+    public static boolean disableContraptionEntityCollision() { return DISABLE_CONTRAPTION_ENTITY_COLLISION.get(); }
+
+    public static boolean stabilizerEnabled() { return STABILIZER_ENABLED.get(); }
+    public static double stabilizerMaxDegPerTick() { return STABILIZER_MAX_DEG_PER_TICK.get(); }
+    public static double stabilizerDeadZoneDeg() { return STABILIZER_DEAD_ZONE_DEG.get(); }
+    public static double stabilizerLinkRange() { return STABILIZER_LINK_RANGE.get(); }
+    public static boolean stabilizerDebug() { return STABILIZER_DEBUG.get(); }
+    public static boolean stabilizerRenderLock() { return STABILIZER_RENDER_LOCK.get(); }
+
+    public static double turretMaxOutputRpm() { return TURRET_MAX_OUTPUT_RPM.get(); }
+    public static double turretKp() { return TURRET_KP.get(); }
+    public static double turretKd() { return TURRET_KD.get(); }
+    public static double turretFeedForward() { return TURRET_FEED_FORWARD.get(); }
+    public static double turretDeadbandDeg() { return TURRET_DEADBAND_DEG.get(); }
+    public static double turretOutputSlewPerTick() { return TURRET_OUTPUT_SLEW_PER_TICK.get(); }
+    public static double turretCalibrationReferenceLagTicks() { return TURRET_CALIBRATION_REFERENCE_LAG.get(); }
+    public static double turretStressCapacity() { return TURRET_STRESS_CAPACITY.get(); }
+    public static boolean turretYawInvert() { return TURRET_YAW_INVERT.get(); }
+    public static boolean turretDebug() { return TURRET_DEBUG.get(); }
 }

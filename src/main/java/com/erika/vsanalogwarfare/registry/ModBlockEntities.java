@@ -3,7 +3,11 @@ package com.erika.vsanalogwarfare.registry;
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.mouseaim.MouseAimBlockEntity;
 import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
+import com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlockEntity;
+import com.erika.vsanalogwarfare.vehiclesetup.GroundCollisionDisablerBlockEntity;
+import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
+import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -22,8 +26,25 @@ public final class ModBlockEntities {
                     () -> BlockEntityType.Builder.of(MouseAimBlockEntity::new, ModBlocks.MOUSE_AIM_BLOCK.get()).build(null));
 
     public static final RegistryObject<BlockEntityType<VehicleSetupBlockEntity>> VEHICLE_SETUP =
-            BLOCK_ENTITIES.register("vehicle_setup", () -> BlockEntityType.Builder.of(
-                    VehicleSetupBlockEntity::new, ModBlocks.VEHICLE_SETUP.get()).build(null));
+            BLOCK_ENTITIES.register("vehicle_setup",
+                    () -> BlockEntityType.Builder.of(VehicleSetupBlockEntity::new, ModBlocks.VEHICLE_SETUP.get()).build(null));
+
+    public static final RegistryObject<BlockEntityType<GroundCollisionDisablerBlockEntity>> GROUND_COLLISION_DISABLER =
+            BLOCK_ENTITIES.register("ground_collision_disabler",
+                    () -> BlockEntityType.Builder.of(GroundCollisionDisablerBlockEntity::new,
+                            ModBlocks.GROUND_COLLISION_DISABLER.get()).build(null));
+
+    public static final RegistryObject<BlockEntityType<VehicleMountHandleBlockEntity>> VEHICLE_MOUNT_HANDLE =
+            BLOCK_ENTITIES.register("vehicle_mount_handle", () -> BlockEntityType.Builder.of(
+                    VehicleMountHandleBlockEntity::new, ModBlocks.VEHICLE_MOUNT_HANDLE.get()).build(null));
+
+    public static final RegistryObject<BlockEntityType<DecorationBearingBlockEntity>> DECORATION_BEARING =
+            BLOCK_ENTITIES.register("decoration_bearing", () -> BlockEntityType.Builder.of(
+                    DecorationBearingBlockEntity::new, ModBlocks.DECORATION_BEARING.get()).build(null));
+
+    public static final RegistryObject<BlockEntityType<StabilizerBlockEntity>> STABILIZER =
+            BLOCK_ENTITIES.register("stabilizer", () -> BlockEntityType.Builder.of(
+                    StabilizerBlockEntity::new, ModBlocks.STABILIZER.get()).build(null));
 
     private ModBlockEntities() {
     }

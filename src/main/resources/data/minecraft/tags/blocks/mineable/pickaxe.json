@@ -2,6 +2,7 @@
     "replace":  false,
     "values":  [
                    "vs_analog_warfare:scope_block",
-                   "vs_analog_warfare:vehicle_setup"
+                   "vs_analog_warfare:vehicle_setup",
+                   "vs_analog_warfare:stabilizer"
                ]
 }

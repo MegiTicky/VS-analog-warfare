@@ -1,0 +1,6 @@
+{
+  "vsanalogwarfare.decoration_bearing.rotation_mode.label": "回転モード",
+  "vsanalogwarfare.decoration_bearing.rotation_mode.yaw_only": "ヨウのみ",
+  "vsanalogwarfare.decoration_bearing.rotation_mode.pitch_only": "ピッチのみ",
+  "vsanalogwarfare.decoration_bearing.rotation_mode.yaw_and_pitch": "ヨウ + ピッチ"
+}

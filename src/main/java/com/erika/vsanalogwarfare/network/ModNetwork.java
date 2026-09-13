@@ -1,12 +1,13 @@
 package com.erika.vsanalogwarfare.network;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
-import com.erika.vsanalogwarfare.client.ClientScopeState;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.network.NetworkDirection;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.network.NetworkRegistry;
@@ -17,7 +18,7 @@ import java.lang.reflect.Method;
 import java.util.function.Supplier;
 
 public final class ModNetwork {
-    private static final String PROTOCOL = "5";
+    private static final String PROTOCOL = "11";
     public static SimpleChannel CHANNEL;
 
     private ModNetwork() {
@@ -72,6 +73,71 @@ public final class ModNetwork {
                 .decoder(RangefinderResultPacket::decode)
                 .consumerMainThread(RangefinderResultPacket::handle)
                 .add();
+
+        CHANNEL.messageBuilder(SetZeroDistancePacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(SetZeroDistancePacket::encode)
+                .decoder(SetZeroDistancePacket::decode)
+                .consumerMainThread(SetZeroDistancePacket::handle)
+                .add();
+        CHANNEL.messageBuilder(SetScrewdriverModePacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(SetScrewdriverModePacket::encode)
+                .decoder(SetScrewdriverModePacket::decode)
+                .consumerMainThread(SetScrewdriverModePacket::handle)
+                .add();
+        CHANNEL.messageBuilder(ScrewdriverHudPacket.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(ScrewdriverHudPacket::encode)
+                .decoder(ScrewdriverHudPacket::decode)
+                .consumerMainThread(ScrewdriverHudPacket::handle)
+                .add();
+        CHANNEL.messageBuilder(VehicleSetupEditorPacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleSetupEditorPacket::encode)
+                .decoder(VehicleSetupEditorPacket::decode)
+                .consumerMainThread(VehicleSetupEditorPacket::handle)
+                .add();
+        CHANNEL.messageBuilder(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::encode)
+                .decoder(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::decode)
+                .consumerMainThread(VehicleSetupEditorPacket.VehicleSetupEditorSnapshotPacket::handle)
+                .add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Request.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Request::encode).decoder(VehicleMountPacket.Request::decode)
+                .consumerMainThread(VehicleMountPacket.Request::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Push.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Push::encode).decoder(VehicleMountPacket.Push::decode)
+                .consumerMainThread(VehicleMountPacket.Push::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Link.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Link::encode).decoder(VehicleMountPacket.Link::decode)
+                .consumerMainThread(VehicleMountPacket.Link::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.OpenRoleName.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(VehicleMountPacket.OpenRoleName::encode).decoder(VehicleMountPacket.OpenRoleName::decode)
+                .consumerMainThread(VehicleMountPacket.OpenRoleName::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.Dismount.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(VehicleMountPacket.Dismount::encode).decoder(VehicleMountPacket.Dismount::decode)
+                .consumerMainThread(VehicleMountPacket.Dismount::handle).add();
+        CHANNEL.messageBuilder(VehicleMountPacket.OpenSelection.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                 .encoder(VehicleMountPacket.OpenSelection::encode).decoder(VehicleMountPacket.OpenSelection::decode)
+                 .consumerMainThread(VehicleMountPacket.OpenSelection::handle).add();
+        CHANNEL.messageBuilder(ScopeLinkPacket.Open.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(ScopeLinkPacket.Open::encode).decoder(ScopeLinkPacket.Open::decode)
+                .consumerMainThread(ScopeLinkPacket.Open::handle).add();
+        CHANNEL.messageBuilder(ScopeLinkPacket.Arm.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ScopeLinkPacket.Arm::encode).decoder(ScopeLinkPacket.Arm::decode)
+                .consumerMainThread(ScopeLinkPacket.Arm::handle).add();
+        CHANNEL.messageBuilder(ScopeLinkPacket.Delete.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ScopeLinkPacket.Delete::encode).decoder(ScopeLinkPacket.Delete::decode)
+                .consumerMainThread(ScopeLinkPacket.Delete::handle).add();
+        CHANNEL.messageBuilder(StabilizerStatePacket.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(StabilizerStatePacket::encode).decoder(StabilizerStatePacket::decode)
+                .consumerMainThread(StabilizerStatePacket::handle).add();
+        CHANNEL.messageBuilder(MouseAimConfigPacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(MouseAimConfigPacket::encode).decoder(MouseAimConfigPacket::decode)
+                .consumerMainThread(MouseAimConfigPacket::handle).add();
+        CHANNEL.messageBuilder(MouseAimConfigPacket.Snapshot.class, ++id, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(MouseAimConfigPacket.Snapshot::encode).decoder(MouseAimConfigPacket.Snapshot::decode)
+                .consumerMainThread(MouseAimConfigPacket.Snapshot::handle).add();
+        CHANNEL.messageBuilder(MouseAimTuningPacket.class, ++id, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(MouseAimTuningPacket::encode).decoder(MouseAimTuningPacket::decode)
+                .consumerMainThread(MouseAimTuningPacket::handle).add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object packet) {
@@ -139,31 +205,8 @@ public final class ModNetwork {
         }
 
         // --- Reflection Helpers for VS2 Compatibility ---
-        private static Method getAllShipsMethod;
-        
-        private static Method findMethodByName(Class<?> clazz, String name, int paramCount) {
-            for (Method m : clazz.getDeclaredMethods()) {
-                if (m.getName().equals(name) && m.getParameterCount() == paramCount) {
-                    m.setAccessible(true);
-                    return m;
-                }
-            }
-            return null;
-        }
-
         private static Iterable<?> getAllShips(Level level) {
-            try {
-                Class<?> vsGameUtilsClass = Class.forName("org.valkyrienskies.mod.common.VSGameUtilsKt");
-                if (getAllShipsMethod == null) {
-                    getAllShipsMethod = findMethodByName(vsGameUtilsClass, "getAllShips", 1);
-                }
-                if (getAllShipsMethod == null) {
-                    return null;
-                }
-                return (Iterable<?>) getAllShipsMethod.invoke(null, level);
-            } catch (Exception e) {
-                return null;
-            }
+            return com.erika.vsanalogwarfare.vehiclesetup.compat.VsGameUtilsBridge.allShips(level);
         }
 
         private static Object getShipAABB(Object ship) {
@@ -196,17 +239,8 @@ public final class ModNetwork {
 
         public static void handle(RangefinderResultPacket packet, Supplier<NetworkEvent.Context> ctx) {
             NetworkEvent.Context context = ctx.get();
-            context.enqueueWork(() -> {
-                double currentDist = ClientScopeState.rangefinderDistance();
-
-                if (packet.shipDistance > 0) {
-                    if (currentDist < 0 || packet.shipDistance < currentDist) {
-                        ClientScopeState.setRangefinderDistance(packet.shipDistance);
-                    }
-                }
-
-                ClientScopeState.decrementRangefinderTasks();
-            });
+            context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT,
+                    () -> () -> ClientNetworkHandlers.handleRangefinderResult(packet)));
             context.setPacketHandled(true);
         }
     }

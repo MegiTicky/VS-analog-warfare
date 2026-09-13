@@ -5,11 +5,19 @@
   "compatibilityLevel": "JAVA_17",
   "plugin": "com.erika.vsanalogwarfare.mixin.VsawMixinConfigPlugin",
   "refmap": "vs_analog_warfare.mixins.refmap.json",
+  "mixins": [
+    "AbstractContraptionEntityMixin",
+    "CannonMountBlockEntityMixin",
+    "MountedDualCannonContraptionMixin"
+  ],
   "client": [
     "client.CameraMixin",
     "client.GameRendererMixin",
     "client.MouseHandlerMixin",
-    "client.PoseStackMixin"
+    "client.PoseStackMixin",
+    "client.MixinSchematicToolBase",
+    "client.MixinSchematicTransformation",
+    "client.MixinDeployTool"
   ],
   "injectors": {
     "defaultRequire": 1
