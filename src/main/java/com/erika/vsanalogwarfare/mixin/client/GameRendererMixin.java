@@ -41,7 +41,8 @@ public abstract class GameRendererMixin {
             value = "INVOKE",
             target = "Lnet/minecraft/client/renderer/LevelRenderer;m_253210_(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/world/phys/Vec3;Lorg/joml/Matrix4f;)V"
         ),
-        remap = false
+        remap = false,
+        require = 0
     )
     private void vs_analog_warfare$wrapPrepareCullFrustum(
             LevelRenderer instance,

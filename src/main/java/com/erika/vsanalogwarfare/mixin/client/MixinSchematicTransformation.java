@@ -1,6 +1,8 @@
 package com.erika.vsanalogwarfare.mixin.client;
 
 import com.jozufozu.flywheel.util.transform.TransformStack;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.simibubi.create.content.schematics.client.SchematicTransformation;
 import com.simibubi.create.foundation.utility.AnimationTickHolder;
@@ -11,7 +13,6 @@ import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.valkyrienskies.core.api.ships.Ship;
 import org.valkyrienskies.mod.common.VSClientGameUtils;
 import org.valkyrienskies.mod.common.VSGameUtilsKt;
@@ -31,15 +32,21 @@ public abstract class MixinSchematicTransformation {
     @Shadow
     private Vec3 prevChasingPos;
 
-    @Redirect(
+    /**
+     * WrapOperation instead of @Redirect so a competing redirect (e.g. a VS2 build that ships its
+     * own schematic mixins) degrades to a skipped injection instead of a hard failure.
+     */
+    @WrapOperation(
         method = "applyTransformations(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/world/phys/Vec3;)V",
         at = @At(
             value = "INVOKE",
             target = "Lcom/jozufozu/flywheel/util/transform/TransformStack;translate(Lnet/minecraft/world/phys/Vec3;)Ljava/lang/Object;",
             ordinal = 0
-        )
+        ),
+        remap = false,
+        require = 0
     )
-    private Object redirectTranslate(TransformStack instance, Vec3 orig) {
+    private Object redirectTranslate(TransformStack instance, Vec3 orig, Operation<Object> original) {
         PoseStack ms = (PoseStack) instance;
         Ship ship = VSGameUtilsKt.getShipObjectManagingPos(Minecraft.getInstance().level,
                 target.getX(), target.getY(), target.getZ());
@@ -52,7 +59,7 @@ public abstract class MixinSchematicTransformation {
                     camera.x, camera.y, camera.z);
             return instance;
         } else {
-            return instance.translate(orig);
+            return original.call(instance, orig);
         }
     }
 }

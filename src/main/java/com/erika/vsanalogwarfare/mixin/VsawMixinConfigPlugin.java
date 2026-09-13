@@ -1,10 +1,12 @@
 package com.erika.vsanalogwarfare.mixin;
 
 import com.llamalad7.mixinextras.MixinExtrasBootstrap;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.zip.ZipFile;
 import net.minecraftforge.fml.loading.LoadingModList;
 import net.minecraftforge.fml.loading.moddiscovery.ModFileInfo;
 import org.objectweb.asm.tree.ClassNode;
@@ -24,6 +26,22 @@ public class VsawMixinConfigPlugin implements IMixinConfigPlugin {
     );
     private static final Set<String> WARNED = ConcurrentHashMap.newKeySet();
 
+    /**
+     * Some VS2 2.3 fork builds (tt22x2 and later, plus upstream) ship their own ship-schematic
+     * mixins under mod_compat.create.client. They target the same call sites we do, and their
+     * @Redirects consume those call sites first — our duplicates then fail injection and, with
+     * defaultRequire=1, abort Create's class transform. On those builds VS2 provides the identical
+     * feature, so ours must not apply.
+     */
+    private static final String VS2_COMPAT_CLIENT_PREFIX =
+            "org/valkyrienskies/mod/mixin/mod_compat/create/client/";
+    private static final Set<String> VS2_SCHEMATIC_MIXIN_SUFFIXES = Set.of(
+            ".mixin.client.MixinDeployTool",
+            ".mixin.client.MixinSchematicToolBase",
+            ".mixin.client.MixinSchematicTransformation"
+    );
+    private static Boolean vs2ShipsSchematicMixins;
+
     @Override
     public void onLoad(String mixinPackage) {
         MixinExtrasBootstrap.init();
@@ -36,12 +54,44 @@ public class VsawMixinConfigPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (isSchematicMixin(mixinClassName) && vs2ShipsSchematicMixins()) {
+            LOGGER.info("[VSAW] Skipping {} - the installed Valkyrien Skies build ships its own "
+                    + "ship-schematic mixins; the VS2 implementation will be used.", mixinClassName);
+            return false;
+        }
         String modId = requiredMod(mixinClassName);
         if (modId == null) return true;
         ModFileInfo file = LoadingModList.get().getModFileById(modId);
         if (file == null) return false;
         warnUntestedVersion(modId);
         return true;
+    }
+
+    private static boolean isSchematicMixin(String mixinClassName) {
+        for (String suffix : VS2_SCHEMATIC_MIXIN_SUFFIXES) {
+            if (mixinClassName.endsWith(suffix)) return true;
+        }
+        return false;
+    }
+
+    private static boolean vs2ShipsSchematicMixins() {
+        Boolean cached = vs2ShipsSchematicMixins;
+        if (cached != null) return cached;
+        boolean found = false;
+        ModFileInfo vs2 = LoadingModList.get().getModFileById("valkyrienskies");
+        if (vs2 != null && vs2.getFile() != null) {
+            Path path = vs2.getFile().getFilePath();
+            try (ZipFile zip = new ZipFile(path.toFile())) {
+                found = zip.getEntry(VS2_COMPAT_CLIENT_PREFIX + "MixinSchematicTransformation.class") != null
+                        || zip.getEntry(VS2_COMPAT_CLIENT_PREFIX + "MixinSchematicToolBase.class") != null
+                        || zip.getEntry(VS2_COMPAT_CLIENT_PREFIX + "MixinDeployTool.class") != null;
+            } catch (Exception e) {
+                LOGGER.warn("[VSAW] Could not inspect the Valkyrien Skies jar ({}); assuming it does "
+                        + "not ship ship-schematic mixins.", e.toString());
+            }
+        }
+        vs2ShipsSchematicMixins = found;
+        return found;
     }
 
     private static String requiredMod(String mixinClassName) {
