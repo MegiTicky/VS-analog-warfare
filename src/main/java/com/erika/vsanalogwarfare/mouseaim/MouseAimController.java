@@ -58,12 +58,7 @@ public final class MouseAimController {
             return;
         }
 
-        Vec3 localTarget;
-        if (VsCompat.isPlayerMountedToShip()) {
-            localTarget = targetWorldDirection;
-        } else {
-            localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection);
-        }
+        Vec3 localTarget = toMountLocal(level, mountPos, targetWorldDirection);
         AimAngles desired = AimAngles.fromDirection(localTarget);
 
         float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(desired.yaw());
@@ -78,6 +73,61 @@ public final class MouseAimController {
         writeYawPitch(mount, nextYaw, nextPitch);
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
+    }
+
+    /**
+     * Turret mode: slew only the mount's pitch and hold its yaw untouched —
+     * yaw authority belongs to the physics-bearing-driven turret structure.
+     */
+    public static void tickTurretPitch(MouseAimBlockEntity controller, BlockPos mountPos, Vec3 targetWorldDirection, double maxDegreesPerTick) {
+        Level level = controller.getLevel();
+        if (level == null || maxDegreesPerTick <= 0.0) {
+            return;
+        }
+        BlockEntity mount = level.getBlockEntity(mountPos);
+        if (!CbcCompat.isCannonMount(mount)) {
+            controller.clearTarget();
+            return;
+        }
+
+        Vec3 localTarget = toMountLocal(level, mountPos, targetWorldDirection);
+        AimAngles desired = AimAngles.fromDirection(localTarget);
+
+        float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(desired.yaw());
+        float currentPitch = readFloat(mount, "getPitchOffset", 1.0f).orElse(desired.pitch());
+        float pitchStep = clampAngleStep(desired.pitch() - currentPitch, maxDegreesPerTick);
+
+        float nextPitch = clampPitchToMount(mount, currentPitch + pitchStep);
+
+        writeYawPitch(mount, currentYaw, nextPitch);
+        callNoArg(mount, "applyRotation");
+        callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
+    }
+
+    private static Vec3 toMountLocal(Level level, BlockPos mountPos, Vec3 targetWorldDirection) {
+        // The packet direction is always world-frame (the client seeds its
+        // free-look angles from the world-frame sight direction), so it must
+        // be expressed in the mount ship's frame no matter where the player
+        // sits — feeding it through unchanged made the aim rotate along with
+        // the ship/turret the player is mounted on.
+        return VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection);
+    }
+
+    /** Set a linked cannon to the requested world-space bore direction. */
+    public static void setAimDirection(Level level, BlockPos mountPos, Vec3 targetWorldDirection) {
+        if (level == null || mountPos == null || targetWorldDirection == null
+                || targetWorldDirection.lengthSqr() < 1.0e-8) return;
+        BlockEntity mount = level.getBlockEntity(mountPos);
+        if (!CbcCompat.isCannonMount(mount)) return;
+        Vec3 localTarget = VsCompat.worldToShipDirection(level, mountPos, targetWorldDirection.normalize());
+        AimAngles desired = AimAngles.fromDirection(localTarget);
+        float pitch = clampPitchToMount(mount, desired.pitch());
+        writeYawPitch(mount, desired.yaw(), pitch);
+        callNoArg(mount, "applyRotation");
+        callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
     }
 
     private static float clampPitchToMount(Object mount, float pitch) {
@@ -223,5 +273,6 @@ public final class MouseAimController {
         writeYawPitch(mount, currentYaw, nextPitch);
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
+        com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
     }
 }
