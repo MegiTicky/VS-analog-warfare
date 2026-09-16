@@ -18,6 +18,16 @@ public final class MouseAimController {
             Direction.NORTH, Direction.SOUTH, Direction.EAST, Direction.WEST, Direction.UP, Direction.DOWN
     };
 
+    /**
+     * Sanity cap on per-tick hull-motion compensation, in degrees: no real
+     * hull rotates this fast, while a ship-lookup glitch (the world→ship
+     * transform silently falls back to identity, and that query blinks during
+     * violent motion) reads as a huge instantaneous frame rotation. A larger
+     * "rotation" skips the compensation for the tick instead of snapping the
+     * gun.
+     */
+    private static final float HULL_COMP_MAX_DEG_PER_TICK = 10.0f;
+
     private MouseAimController() {
     }
 
@@ -58,17 +68,15 @@ public final class MouseAimController {
             return;
         }
 
-        Vec3 localTarget = toMountLocal(level, mountPos, targetWorldDirection);
-        AimAngles desired = AimAngles.fromDirection(localTarget);
+        AimAngles desired = AimAngles.fromDirection(toMountLocal(level, mountPos, targetWorldDirection));
 
         float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(desired.yaw());
         float currentPitch = readFloat(mount, "getPitchOffset", 1.0f).orElse(desired.pitch());
-        float yawStep = clampAngleStep(shortestAngleDiff(currentYaw, desired.yaw()), maxDegreesPerTick);
-        float pitchStep = clampAngleStep(desired.pitch() - currentPitch, maxDegreesPerTick);
+        float[] steps = aimSteps(controller, level, mountPos, targetWorldDirection, desired,
+                currentYaw, currentPitch, maxDegreesPerTick);
 
-        float nextYaw = wrapDegrees(currentYaw + yawStep);
-        float nextPitch = currentPitch + pitchStep;
-        nextPitch = clampPitchToMount(mount, nextPitch);
+        float nextYaw = wrapDegrees(currentYaw + steps[0]);
+        float nextPitch = clampPitchToMount(mount, currentPitch + steps[1]);
 
         writeYawPitch(mount, nextYaw, nextPitch);
         callNoArg(mount, "applyRotation");
@@ -91,19 +99,56 @@ public final class MouseAimController {
             return;
         }
 
-        Vec3 localTarget = toMountLocal(level, mountPos, targetWorldDirection);
-        AimAngles desired = AimAngles.fromDirection(localTarget);
+        AimAngles desired = AimAngles.fromDirection(toMountLocal(level, mountPos, targetWorldDirection));
 
         float currentYaw = readFloat(mount, "getYawOffset", 1.0f).orElse(desired.yaw());
         float currentPitch = readFloat(mount, "getPitchOffset", 1.0f).orElse(desired.pitch());
-        float pitchStep = clampAngleStep(desired.pitch() - currentPitch, maxDegreesPerTick);
+        float[] steps = aimSteps(controller, level, mountPos, targetWorldDirection, desired,
+                currentYaw, currentPitch, maxDegreesPerTick);
 
-        float nextPitch = clampPitchToMount(mount, currentPitch + pitchStep);
+        float nextPitch = clampPitchToMount(mount, currentPitch + steps[1]);
 
         writeYawPitch(mount, currentYaw, nextPitch);
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
         com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
+    }
+
+    /**
+     * Split the tick's aim correction into hull-motion compensation and
+     * player-aimed slew. The mount-local angle of a fixed world direction
+     * changes each tick either because the mount's frame rotated (ship
+     * pitch/roll) or because the target direction itself moved (mouse input).
+     * The frame share is the stabilization mouse aim must provide while it
+     * owns the axis — the gyro block stays suppressed by
+     * {@code notifyExternalInput} — so it is applied at full speed; the mouse
+     * share keeps the input-scaled slew limit so shaft speed still scales aim
+     * speed.
+     *
+     * <p>The previous tick's target is re-mapped through the current frame to
+     * isolate the frame rotation. Returns {@code {yawStep, pitchStep}}.
+     */
+    private static float[] aimSteps(MouseAimBlockEntity controller, Level level, BlockPos mountPos,
+                                    Vec3 targetWorldDirection, AimAngles desired,
+                                    float currentYaw, float currentPitch, double maxDegreesPerTick) {
+        float hullYaw = 0.0f;
+        float hullPitch = 0.0f;
+        Vec3 prevTarget = controller.prevAimTarget();
+        if (prevTarget != null && mountPos.equals(controller.prevAimMountPos())) {
+            AimAngles prevNow = AimAngles.fromDirection(toMountLocal(level, mountPos, prevTarget));
+            float rawYaw = wrapDegrees(prevNow.yaw() - controller.prevDesiredYaw());
+            float rawPitch = prevNow.pitch() - controller.prevDesiredPitch();
+            if (Math.abs(rawYaw) <= HULL_COMP_MAX_DEG_PER_TICK && Math.abs(rawPitch) <= HULL_COMP_MAX_DEG_PER_TICK) {
+                hullYaw = rawYaw;
+                hullPitch = rawPitch;
+            }
+        }
+        controller.storePrevAim(targetWorldDirection, mountPos, desired.yaw(), desired.pitch());
+        // Wrap the mouse share so a large aim error still takes the short way
+        // around once the hull share is subtracted out of the total.
+        return new float[]{
+                hullYaw + clampAngleStep(wrapDegrees(shortestAngleDiff(currentYaw, desired.yaw()) - hullYaw), maxDegreesPerTick),
+                hullPitch + clampAngleStep(desired.pitch() - currentPitch - hullPitch, maxDegreesPerTick)};
     }
 
     private static Vec3 toMountLocal(Level level, BlockPos mountPos, Vec3 targetWorldDirection) {

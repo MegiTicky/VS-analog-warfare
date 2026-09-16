@@ -29,6 +29,20 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     private Vec3 targetDirection;
     private long lastTargetGameTime = Long.MIN_VALUE;
 
+    /**
+     * Previous aim state for the hull-motion decomposition in
+     * {@link MouseAimController#aimSteps}: last tick's world target and the
+     * mount-local angles it mapped to under last tick's frame. Transient —
+     * after a reload the chase simply slews normally for a tick or two while
+     * the state rebuilds.
+     */
+    @Nullable
+    private Vec3 prevAimTarget;
+    @Nullable
+    private BlockPos prevAimMountPos;
+    private float prevDesiredYaw;
+    private float prevDesiredPitch;
+
     private final TurretYawController turretYaw = new TurretYawController();
     /** Latest commanded output, in Create RPM; read by the output interface. */
     private volatile float turretOutputRpm;
@@ -295,7 +309,34 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
         this.targetDirection = null;
         this.lastTargetGameTime = Long.MIN_VALUE;
         this.turretYaw.reset();
+        this.prevAimTarget = null;
+        this.prevAimMountPos = null;
         setChanged();
+    }
+
+    @Nullable
+    Vec3 prevAimTarget() {
+        return prevAimTarget;
+    }
+
+    @Nullable
+    BlockPos prevAimMountPos() {
+        return prevAimMountPos;
+    }
+
+    float prevDesiredYaw() {
+        return prevDesiredYaw;
+    }
+
+    float prevDesiredPitch() {
+        return prevDesiredPitch;
+    }
+
+    void storePrevAim(Vec3 target, BlockPos mountPos, float desiredYaw, float desiredPitch) {
+        this.prevAimTarget = target;
+        this.prevAimMountPos = mountPos;
+        this.prevDesiredYaw = desiredYaw;
+        this.prevDesiredPitch = desiredPitch;
     }
 
     @Nullable
