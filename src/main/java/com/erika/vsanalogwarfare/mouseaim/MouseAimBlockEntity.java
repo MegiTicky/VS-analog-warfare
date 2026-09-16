@@ -99,13 +99,15 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     }
 
     /**
-     * Fixed turret pitch slew rate in degrees per tick, derived from the
-     * output ceiling through the same conversion and multiplier as the
-     * cannon-mode chase rate, so elevation speed matches the yaw authority.
+     * Turret pitch slew rate in degrees per tick, derived from the output
+     * ceiling through the same conversion and multiplier as the cannon-mode
+     * chase rate, scaled linearly with the input shaft speed (full rate at
+     * 256 RPM input) so elevation speed matches the yaw authority.
      */
     public double getTurretPitchSlewDegPerTick() {
         return Math.abs(convertToAngular((float) CommonConfig.turretMaxOutputRpm()))
-                * CommonConfig.mouseAimRateMultiplier();
+                * CommonConfig.mouseAimRateMultiplier()
+                * TurretYawController.inputScale(getSpeed());
     }
 
     public void setMode(MouseAimMode mode) {
@@ -250,7 +252,7 @@ public class MouseAimBlockEntity extends KineticBlockEntity implements HasMultip
     }
 
     public boolean isMouseAimActive() {
-        return Math.abs(getSpeed()) >= CommonConfig.mouseAimMinSpeed() && !isOverStressed();
+        return !isOverStressed();
     }
 
     /**
