@@ -253,14 +253,7 @@ public class ScopeBlockEntity extends BlockEntity {
 
     @Nullable
     private static ScopeCannonLink rebaseLink(ScopeCannonLink link, Map<Long, Object> placedShips) {
-        if (link.shipId() < 0L || link.shipOffset() == null) return null;
-        Object ship = placedShips.get(link.shipId());
-        if (ship == null) return null;
-        long newShipId = VsCompat.getShipId(ship);
-        if (newShipId == link.shipId()) return null;
-        BlockPos resolved = com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection.positionOnShip(ship, link.shipOffset());
-        if (resolved == null) return null;
-        return link.rebased(newShipId, resolved.immutable());
+        return ScopeCannonLink.rebasedAfterPaste(link, placedShips);
     }
 
     private void synchronizeSecondaryCannons() {

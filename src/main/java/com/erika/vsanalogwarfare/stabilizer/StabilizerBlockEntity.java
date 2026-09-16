@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.stabilizer;
 
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.network.ModNetwork;
 import com.erika.vsanalogwarfare.network.StabilizerStatePacket;
 import com.erika.vsanalogwarfare.scope.ScopeCannonLink;
@@ -15,6 +16,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
+import java.util.Map;
 
 /**
  * Gyro stabilizer block. Links to one CBC cannon mount and registers the pair
@@ -156,6 +158,25 @@ public class StabilizerBlockEntity extends BlockEntity {
         this.failedValidations = 0;
         this.anchoredTargetElevDeg = Double.NaN;
         this.anchoredTargetGameTime = -1L;
+        setChanged();
+        sendStatePacket();
+    }
+
+    /**
+     * Schematic NBT carries the ship ids of the world it was saved in, which never match the
+     * freshly allocated ids of the pasted ships. Called by the VMod paste scan so the mount
+     * link is rebased onto the pasted ship before validation times it out and unlinks.
+     */
+    public void initializeAfterSchematicPlacement(Map<Long, Object> placedShips) {
+        captureVsAnchor();
+        ScopeCannonLink rebased = ScopeCannonLink.rebasedAfterPaste(this.mountLink, placedShips);
+        if (rebased == null) {
+            return;
+        }
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Stabilizer at {} rebased mount link onto pasted ship {}",
+                this.worldPosition, rebased.shipId());
+        this.mountLink = rebased;
+        this.failedValidations = 0;
         setChanged();
         sendStatePacket();
     }

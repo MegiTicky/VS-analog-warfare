@@ -8,6 +8,7 @@ import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupExecutor;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
 import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
+import com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -178,7 +179,8 @@ public final class VmodVehicleSetupCompat {
                 pos.set(x, y, z);
                 if (!level.getBlockState(pos).is(ModBlocks.VEHICLE_SETUP.get())
                         && !level.getBlockState(pos).is(ModBlocks.VEHICLE_MOUNT_HANDLE.get())
-                        && !level.getBlockState(pos).is(ModBlocks.SCOPE_BLOCK.get())) continue;
+                        && !level.getBlockState(pos).is(ModBlocks.SCOPE_BLOCK.get())
+                        && !level.getBlockState(pos).is(ModBlocks.STABILIZER.get())) continue;
                 BlockEntity entity = level.getBlockEntity(pos);
                 if (entity instanceof VehicleSetupBlockEntity) {
                     BlockPos setupPos = pos.immutable();
@@ -198,6 +200,9 @@ public final class VmodVehicleSetupCompat {
                 }
                 if (entity instanceof ScopeBlockEntity scope) {
                     scope.initializeAfterSchematicPlacement(ships);
+                }
+                if (entity instanceof StabilizerBlockEntity stabilizer) {
+                    stabilizer.initializeAfterSchematicPlacement(ships);
                 }
             }
         } catch (ReflectiveOperationException ignored) { }

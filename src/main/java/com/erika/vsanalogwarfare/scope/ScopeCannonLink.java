@@ -45,6 +45,24 @@ public record ScopeCannonLink(long shipId, @Nullable BlockPos shipOffset, BlockP
         return new ScopeCannonLink(newShipId, shipOffset, newFallbackPos);
     }
 
+    /**
+     * Schematic NBT carries the ship ids of the world it was saved in, which never match the
+     * freshly allocated ids of the pasted ships. Maps this link onto its pasted ship via the
+     * placement's ship map; null when the link has no ship-relative anchor, the mount was not
+     * part of the paste, or the pasted ship cannot be resolved.
+     */
+    @Nullable
+    public static ScopeCannonLink rebasedAfterPaste(ScopeCannonLink link, Map<Long, Object> placedShips) {
+        if (link == null || placedShips == null || link.shipId() < 0L || link.shipOffset() == null) return null;
+        Object ship = placedShips.get(link.shipId());
+        if (ship == null) return null;
+        long newShipId = VsCompat.getShipId(ship);
+        if (newShipId == link.shipId()) return null;
+        BlockPos resolved = VehicleSetupReflection.positionOnShip(ship, link.shipOffset());
+        if (resolved == null) return null;
+        return link.rebased(newShipId, resolved.immutable());
+    }
+
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putLong("FallbackPos", fallbackPos.asLong());
