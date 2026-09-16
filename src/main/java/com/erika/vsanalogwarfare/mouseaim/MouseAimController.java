@@ -1,7 +1,9 @@
 package com.erika.vsanalogwarfare.mouseaim;
 
+import com.erika.vsanalogwarfare.config.CommonConfig;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
 import com.erika.vsanalogwarfare.scope.compat.VsCompat;
+import com.erika.vsanalogwarfare.stabilizer.StabilizerController;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
@@ -76,7 +78,9 @@ public final class MouseAimController {
                 currentYaw, currentPitch, maxDegreesPerTick);
 
         float nextYaw = wrapDegrees(currentYaw + steps[0]);
-        float nextPitch = clampPitchToMount(mount, currentPitch + steps[1]);
+        float nextPitch = hardSetPitch(level, mountPos)
+                ? clampPitchToMount(mount, desired.pitch())
+                : clampPitchToMount(mount, currentPitch + steps[1]);
 
         writeYawPitch(mount, nextYaw, nextPitch);
         callNoArg(mount, "applyRotation");
@@ -106,12 +110,28 @@ public final class MouseAimController {
         float[] steps = aimSteps(controller, level, mountPos, targetWorldDirection, desired,
                 currentYaw, currentPitch, maxDegreesPerTick);
 
-        float nextPitch = clampPitchToMount(mount, currentPitch + steps[1]);
+        float nextPitch = hardSetPitch(level, mountPos)
+                ? clampPitchToMount(mount, desired.pitch())
+                : clampPitchToMount(mount, currentPitch + steps[1]);
 
         writeYawPitch(mount, currentYaw, nextPitch);
         callNoArg(mount, "applyRotation");
         callNoArg(mount, "sendData");
         com.erika.vsanalogwarfare.stabilizer.StabilizerController.notifyExternalInput(level, mountPos);
+    }
+
+    /**
+     * A linked, enabled gyro stabilizer upgrades mouse aim to an absolute
+     * elevation hold: the mount pitch is written directly from the aim
+     * direction each tick instead of chasing, so the bore elevation pins to
+     * the free-look direction with no chase lag. The gyro's own servo stays
+     * suppressed while aiming ({@code notifyExternalInput}), so the two
+     * never write the same axis in the same tick.
+     */
+    private static boolean hardSetPitch(Level level, BlockPos mountPos) {
+        return !level.isClientSide
+                && CommonConfig.stabilizerEnabled()
+                && StabilizerController.linkedStabilizer(mountPos) != null;
     }
 
     /**
