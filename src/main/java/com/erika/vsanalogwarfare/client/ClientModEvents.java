@@ -4,12 +4,15 @@ import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.ponder.VehicleSetupPonder;
 import com.erika.vsanalogwarfare.registry.ModEntities;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
+import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingContraptionEntity;
 import com.erika.vsanalogwarfare.seat.InvisibleSeatEntity;
 import com.simibubi.create.content.contraptions.bearing.BearingRenderer;
 import com.simibubi.create.content.contraptions.bearing.BearingVisual;
 import com.simibubi.create.content.contraptions.render.ContraptionEntityRenderer;
+import com.simibubi.create.content.contraptions.render.ContraptionVisual;
 import dev.engine_room.flywheel.api.visualization.VisualizerRegistry;
 import dev.engine_room.flywheel.lib.visualization.SimpleBlockEntityVisualizer;
+import dev.engine_room.flywheel.lib.visualization.SimpleEntityVisualizer;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
@@ -65,6 +68,14 @@ public final class ClientModEvents {
                             .factory(TurretOutputShaftVisual::new)
                             .neverSkipVanillaRender()
                             .apply());
+            // Create 6 draws the contraption structure through the Flywheel
+            // visual, not the vanilla renderer (ContraptionEntityRenderer skips
+            // blocks when visualization is supported); without this the DBC
+            // assembles invisible. entity -> false mirrors Create/CBC: the
+            // vanilla renderer keeps drawing block entities and actors.
+            VisualizerRegistry.setVisualizer(ModEntities.DECORATION_BEARING_CONTRAPTION.get(),
+                    new SimpleEntityVisualizer<DecorationBearingContraptionEntity>(
+                            ContraptionVisual::new, entity -> false));
         });
     }
 }
