@@ -22,7 +22,6 @@ public final class VsCompat {
     
     private static Class<?> vsGameUtilsClass;
     private static Method getShipMountedToMethod;
-    private static Method getLoadedShipsMethod;
     
     private static boolean initialized = false;
     private static boolean isClientSide = false;
@@ -300,21 +299,23 @@ public final class VsCompat {
             try {
                 Object shipWorld = VsGameUtilsBridge.shipObjectWorld(level);
                 if (shipWorld != null) {
-                    if (getLoadedShipsMethod == null) {
-                        getLoadedShipsMethod = shipWorld.getClass().getMethod("getLoadedShips");
-                    }
-                    Object loadedShips = getLoadedShipsMethod.invoke(shipWorld);
-                    if (loadedShips instanceof Iterable<?> iterable) {
+                    // Resolve per runtime class: the ship world switches between
+                    // the dummy and real implementations (e.g. as ships load on
+                    // the client), and a Method cached from one class throws on
+                    // the other.
+                    Method loadedShips = shipWorld.getClass().getMethod("getLoadedShips");
+                    Object loadedShipsValue = loadedShips.invoke(shipWorld);
+                    if (loadedShipsValue instanceof Iterable<?> iterable) {
                         for (Object ship : iterable) {
                             ships.add(ship);
                         }
                     }
                 }
-            } catch (ReflectiveOperationException | LinkageError e) {
+            } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
                 LOGGER.debug("[VSAW_SCOPE] getAllShips fallback: exception {}", e.getClass().getSimpleName());
             }
         }
-        
+
         return ships;
     }
 
