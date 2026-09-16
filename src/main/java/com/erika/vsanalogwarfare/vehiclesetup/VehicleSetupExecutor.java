@@ -166,13 +166,21 @@ public final class VehicleSetupExecutor {
         return level.removeBlock(pos, false) ? null : "could not remove block";
     }
 
+    /**
+     * Searches outward from the requested position for the recorded block type. Runtime ship
+     * AABBs can drift by more than one block from their record-time position, so the window is
+     * two blocks (nearest Chebyshev ring first).
+     */
     @Nullable private static BlockPos findBlockNearby(Level level, BlockPos pos, BlockState expected) {
-        for (int x = -1; x <= 1; x++) {
-            for (int y = -1; y <= 1; y++) {
-                for (int z = -1; z <= 1; z++) {
-                    if (x == 0 && y == 0 && z == 0) continue;
-                    BlockPos candidate = pos.offset(x, y, z);
-                    if (level.getBlockState(candidate).getBlock() == expected.getBlock()) return candidate;
+        for (int ring = 0; ring <= 2; ring++) {
+            for (int x = -ring; x <= ring; x++) {
+                for (int y = -ring; y <= ring; y++) {
+                    for (int z = -ring; z <= ring; z++) {
+                        if (Math.max(Math.abs(x), Math.max(Math.abs(y), Math.abs(z))) != ring) continue;
+                        if (x == 0 && y == 0 && z == 0) continue;
+                        BlockPos candidate = pos.offset(x, y, z);
+                        if (level.getBlockState(candidate).getBlock() == expected.getBlock()) return candidate;
+                    }
                 }
             }
         }

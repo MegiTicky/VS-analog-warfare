@@ -262,6 +262,13 @@ public final class VehicleSetupAction {
                 interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState);
     }
 
+    public VehicleSetupAction withShipIds(long targetShipId, long secondaryShipId) {
+        return new VehicleSetupAction(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId,
+                blockState, controller, stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant,
+                positionOffsetX, positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace,
+                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState);
+    }
+
     public CompoundTag save() {
         CompoundTag tag = new CompoundTag();
         tag.putInt("FormatVersion", FORMAT_VERSION);

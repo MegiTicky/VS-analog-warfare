@@ -13,6 +13,10 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
 
 public class VehicleSetupBlockEntity extends BlockEntity {
     private final List<VehicleSetupAction> actions = new ArrayList<>();
@@ -119,6 +123,44 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     public void run(ServerPlayer player) {
         if (level == null || level.isClientSide) return;
         VehicleSetupRecordingManager.runScheduled(player, this);
+    }
+
+    /**
+     * Schematic NBT carries the ship ids of the world the setup was recorded in, which never
+     * match the freshly allocated ids of the pasted ships — and after a save→paste→save cycle
+     * the schematic stores the pasted ship's id while the recorded actions still reference the
+     * original one, so paste-time resolution misses every ship-anchored action. Rewrite each
+     * recorded ship id onto the pasted ship (the same rewrite the scope block applies to its
+     * links) so both the immediate post-paste run and every future save/paste generation resolve.
+     */
+    public void rebaseAfterSchematicPlacement(Map<Long, Object> placedShips) {
+        if (placedShips == null || placedShips.isEmpty() || level == null || level.isClientSide) return;
+        boolean changed = rebaseActionList(placedShips, actions);
+        boolean removalsChanged = rebaseActionList(placedShips, markedRemovals);
+        if (changed || removalsChanged) markAndSync();
+    }
+
+    private boolean rebaseActionList(Map<Long, Object> placedShips, List<VehicleSetupAction> list) {
+        boolean changed = false;
+        for (int index = 0; index < list.size(); index++) {
+            VehicleSetupAction action = list.get(index);
+            long targetShipId = rebasedShipId(action.targetShipId(), placedShips);
+            long secondaryShipId = rebasedShipId(action.secondaryShipId(), placedShips);
+            if (targetShipId == action.targetShipId() && secondaryShipId == action.secondaryShipId()) continue;
+            list.set(index, action.withShipIds(targetShipId, secondaryShipId));
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static long rebasedShipId(long shipId, Map<Long, Object> placedShips) {
+        if (shipId < 0L) return shipId;
+        Object ship = placedShips.get(shipId);
+        if (ship == null) return shipId;
+        long newShipId = VehicleSetupReflection.shipId(ship);
+        if (newShipId < 0L || newShipId == shipId) return shipId;
+        VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Rebased recorded ship id {} onto pasted ship {}", shipId, newShipId);
+        return newShipId;
     }
 
     @Override protected void saveAdditional(CompoundTag tag) {

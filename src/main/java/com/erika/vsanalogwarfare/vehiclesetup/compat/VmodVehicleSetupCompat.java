@@ -28,6 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class VmodVehicleSetupCompat {
     private static final ConcurrentHashMap<Integer, UUID> PLACERS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, Map<Long, Object>> PLACED_SHIP_MAPPINGS = new ConcurrentHashMap<>();
+    /** Runtime ship id -> mapping, so a pasted setup still resolves after the ship moves away from its paste-time block position. */
+    private static final ConcurrentHashMap<Long, Map<Long, Object>> SHIP_KEYED_MAPPINGS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, String> PLACEMENT_IDS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, PendingRun> PENDING_RUNS = new ConcurrentHashMap<>();
     private VmodVehicleSetupCompat() { }
@@ -54,6 +56,11 @@ public final class VmodVehicleSetupCompat {
             Object ship = pairValue(pair, "getFirst"); Object id = pairValue(pair, "getSecond");
             if (ship != null && id instanceof Number number) {
                 ships.put(number.longValue(), ship);
+                // Also index the ship under its fresh runtime id: recorded actions are rebased
+                // onto that id at paste, and the schematic saved from an already-pasted ship
+                // stores it instead of the original one.
+                long runtimeShipId = VehicleSetupReflection.shipId(ship);
+                if (runtimeShipId >= 0L) ships.put(runtimeShipId, ship);
                 logShip("Mapped pasted ship", number.longValue(), ship);
             }
         }
@@ -65,7 +72,7 @@ public final class VmodVehicleSetupCompat {
 
     public static void runSetupOrLocal(ServerLevel level, BlockPos setupPos, ServerPlayer player,
                                        VehicleSetupBlockEntity setup) {
-        Map<Long, Object> ships = PLACED_SHIP_MAPPINGS.get(setupPos);
+        Map<Long, Object> ships = placedShipsFor(level, setupPos);
         if (ships == null) {
             setup.run(player);
             return;
@@ -86,6 +93,25 @@ public final class VmodVehicleSetupCompat {
         VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Setup started: gameTime={}, placementId={}, setup={}, "
                         + "actions={}, removals={}, mappedShips={}",
                 level.getGameTime(), run.placementId, setupPos, actions.size(), removals.size(), ships.size());
+    }
+
+    /**
+     * The paste-time block position of a setup block goes stale as soon as the pasted ship
+     * settles or moves, so fall back to resolving the ship from the block's current position
+     * and looking the placement mapping up by its runtime ship id.
+     */
+    @Nullable private static Map<Long, Object> placedShipsFor(ServerLevel level, BlockPos setupPos) {
+        Map<Long, Object> ships = PLACED_SHIP_MAPPINGS.get(setupPos);
+        if (ships != null) return ships;
+        Object ship = VehicleSetupReflection.findShip(level, setupPos);
+        if (ship == null) return null;
+        long shipId = VehicleSetupReflection.shipId(ship);
+        Map<Long, Object> shipKeyed = shipId < 0L ? null : SHIP_KEYED_MAPPINGS.get(shipId);
+        if (shipKeyed != null) {
+            VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Setup at {} resolved via runtime ship id {} "
+                    + "(paste-time position lookup missed)", setupPos, shipId);
+        }
+        return shipKeyed;
     }
 
     @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID)
@@ -122,6 +148,9 @@ public final class VmodVehicleSetupCompat {
                         StevesArmyCompat.notifySetupCompleted(run.player, run.level, entry.getKey());
                         PENDING_RUNS.remove(entry.getKey(), run);
                         PLACED_SHIP_MAPPINGS.remove(entry.getKey(), run.ships);
+                        if (!PLACED_SHIP_MAPPINGS.containsValue(run.ships)) {
+                            SHIP_KEYED_MAPPINGS.values().removeIf(ships -> ships == run.ships);
+                        }
                         if (run.placementId != null) PLACEMENT_IDS.remove(entry.getKey(), run.placementId);
                         else PLACEMENT_IDS.remove(entry.getKey());
                         break;
@@ -155,9 +184,12 @@ public final class VmodVehicleSetupCompat {
                     BlockPos setupPos = pos.immutable();
                     PLACED_SHIP_MAPPINGS.put(setupPos, ships);
                     PLACEMENT_IDS.put(setupPos, placementId);
+                    long runtimeShipId = VehicleSetupReflection.shipId(ship);
+                    if (runtimeShipId >= 0L) SHIP_KEYED_MAPPINGS.put(runtimeShipId, ships);
                     VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Setup discovered: gameTime={}, setup={}, "
                                     + "runtimeShipId={}, placementId={}",
                             level.getGameTime(), setupPos, id, placementId);
+                    ((VehicleSetupBlockEntity) entity).rebaseAfterSchematicPlacement(ships);
                     runEnderTransmitterActions(level, setupPos, (VehicleSetupBlockEntity) entity, ships, placementId);
                 }
                 if (entity instanceof VehicleMountHandleBlockEntity handle) {
