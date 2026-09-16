@@ -208,6 +208,9 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             matrixStack.mulPose(Axis.XP.rotationDegrees(interpPitch));
         }
         matrixStack.translate(-pivotLocal.x - 0.5, -pivotLocal.y - 0.5, -pivotLocal.z - 0.5);
+        // Visual height correction (ported from vs2.3 86b9a62b): the rendered
+        // decoration sits one block too low against its logical position.
+        matrixStack.translate(0, 1f, 0);
     }
 
     // -----------------------------------------------------------------------
