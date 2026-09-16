@@ -14,6 +14,9 @@ import net.minecraft.world.level.block.state.BlockState;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+
+import javax.annotation.Nullable;
 
 import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.vehiclesetup.compat.VehicleSetupReflection;
@@ -23,6 +26,11 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     private final List<VehicleSetupAction> markedRemovals = new ArrayList<>();
     private int removalDelayTicks;
     private int revision;
+    /**
+     * Generated once per VMod schematic placement; the Ender transmitter isolation rename is
+     * derived from it only when the setup is run, so it must survive restarts with the block.
+     */
+    @Nullable private String enderPlacementId;
 
     public VehicleSetupBlockEntity(BlockPos pos, BlockState state) { super(ModBlockEntities.VEHICLE_SETUP.get(), pos, state); }
     public void addAction(VehicleSetupAction action) { actions.add(action); markAndSync(); }
@@ -37,6 +45,12 @@ public class VehicleSetupBlockEntity extends BlockEntity {
     public void clearMarkedRemovals() { if (!markedRemovals.isEmpty()) { markedRemovals.clear(); markAndSync(); } }
     public int removalDelayTicks() { return removalDelayTicks; }
     public boolean setRemovalDelayTicks(int delay) { if (delay < 0 || delay > 20 * 60 * 60) return false; removalDelayTicks = delay; markAndSync(); return true; }
+    @Nullable public String enderPlacementId() { return enderPlacementId; }
+    public void setEnderPlacementId(@Nullable String placementId) {
+        if (Objects.equals(placementId, enderPlacementId)) return;
+        enderPlacementId = placementId;
+        markAndSync();
+    }
     public int actionCount() { return actions.size(); }
     public int revision() { return revision; }
     public boolean deleteAction(int index) {
@@ -172,6 +186,7 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         tag.put("VehicleSetupMarkedRemovals", removals);
         tag.putInt("VehicleSetupRemovalDelay", removalDelayTicks);
         tag.putInt("VehicleSetupRevision", revision);
+        if (enderPlacementId != null) tag.putString("VehicleSetupEnderPlacementId", enderPlacementId);
     }
 
     @Override public void load(CompoundTag tag) {
@@ -179,6 +194,8 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         actions.clear();
         markedRemovals.clear(); removalDelayTicks = tag.getInt("VehicleSetupRemovalDelay");
         revision = tag.getInt("VehicleSetupRevision");
+        enderPlacementId = tag.contains("VehicleSetupEnderPlacementId", Tag.TAG_STRING)
+                ? tag.getString("VehicleSetupEnderPlacementId") : null;
         if (tag.contains("VehicleSetupActions", Tag.TAG_LIST)) {
             ListTag tags = tag.getList("VehicleSetupActions", Tag.TAG_COMPOUND);
             for (int index = 0; index < tags.size(); index++) {

@@ -25,13 +25,15 @@ public final class EnderTransmissionCompat {
     public static final String REMAPPED_TAG = "VSAWEnderRemapped";
     public static final int PASSWORD_LIMIT = 32;
 
-    private static final String ENERGY_TRANSMITTER_ID = MOD_ID + ":energy_transmitter";
+    private static final String ENERGY_TRANSMITTER_PATH = "energy_transmitter";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private EnderTransmissionCompat() { }
 
     public static boolean isEnergyTransmitter(BlockState state) {
-        return ENERGY_TRANSMITTER_ID.equals(BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString());
+        // Allocation-free form: ship AABB scans call this for every non-mod block position.
+        var key = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        return MOD_ID.equals(key.getNamespace()) && ENERGY_TRANSMITTER_PATH.equals(key.getPath());
     }
 
     public static boolean isEnergyTransmitter(BlockEntity blockEntity) {

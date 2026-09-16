@@ -9,6 +9,7 @@ import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupExecutor;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
 import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
 import com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity;
+import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -87,8 +88,12 @@ public final class VmodVehicleSetupCompat {
             player.displayClientMessage(Component.literal("Vehicle setup has no saved actions."), true);
             return;
         }
+        // The in-memory id is lost on restart; the block entity's persisted copy keeps the
+        // click-run able to isolate after one.
+        String placementId = PLACEMENT_IDS.get(setupPos);
+        if (placementId == null) placementId = setup.enderPlacementId();
         PendingRun run = new PendingRun(level, player, actions, removals, setup.removalDelayTicks(), ships,
-                PLACEMENT_IDS.get(setupPos), actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
+                placementId, actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
         if (actions.isEmpty()) run.removing = true;
         PENDING_RUNS.put(setupPos, run);
         VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Setup started: gameTime={}, placementId={}, setup={}, "
@@ -180,9 +185,10 @@ public final class VmodVehicleSetupCompat {
                 if (!level.getBlockState(pos).is(ModBlocks.VEHICLE_SETUP.get())
                         && !level.getBlockState(pos).is(ModBlocks.VEHICLE_MOUNT_HANDLE.get())
                         && !level.getBlockState(pos).is(ModBlocks.SCOPE_BLOCK.get())
-                        && !level.getBlockState(pos).is(ModBlocks.STABILIZER.get())) continue;
+                        && !level.getBlockState(pos).is(ModBlocks.STABILIZER.get())
+                        && !EnderTransmissionCompat.isEnergyTransmitter(level.getBlockState(pos))) continue;
                 BlockEntity entity = level.getBlockEntity(pos);
-                if (entity instanceof VehicleSetupBlockEntity) {
+                if (entity instanceof VehicleSetupBlockEntity setup) {
                     BlockPos setupPos = pos.immutable();
                     PLACED_SHIP_MAPPINGS.put(setupPos, ships);
                     PLACEMENT_IDS.put(setupPos, placementId);
@@ -191,8 +197,18 @@ public final class VmodVehicleSetupCompat {
                     VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Setup discovered: gameTime={}, setup={}, "
                                     + "runtimeShipId={}, placementId={}",
                             level.getGameTime(), setupPos, id, placementId);
-                    ((VehicleSetupBlockEntity) entity).rebaseAfterSchematicPlacement(ships);
-                    runEnderTransmitterActions(level, setupPos, (VehicleSetupBlockEntity) entity, ships, placementId);
+                    setup.rebaseAfterSchematicPlacement(ships);
+                    // The transmitter isolation rename is applied only when the player runs
+                    // the setup; the id just waits here for that click.
+                    setup.setEnderPlacementId(placementId);
+                }
+                if (entity instanceof KineticBlockEntity transmitter && EnderTransmissionCompat.isEnergyTransmitter(entity)
+                        && transmitter.getPersistentData().getBoolean(EnderTransmissionCompat.REMAPPED_TAG)) {
+                    // A schematic saved from an already-renamed ship keeps the old copy's
+                    // remapped flag in its NBT; clear it so the click-run re-isolates this
+                    // placement instead of silently skipping and sharing the old frequency.
+                    transmitter.getPersistentData().remove(EnderTransmissionCompat.REMAPPED_TAG);
+                    transmitter.setChanged();
                 }
                 if (entity instanceof VehicleMountHandleBlockEntity handle) {
                     handle.setPlacedShips(ships);
@@ -225,23 +241,6 @@ public final class VmodVehicleSetupCompat {
         } catch (ReflectiveOperationException ignored) {
             VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] {}: originalShipId={}, runtimeShipId=unknown, aabb=unavailable",
                     label, originalShipId);
-        }
-    }
-
-    private static void runEnderTransmitterActions(ServerLevel level, BlockPos setupPos,
-                                                   VehicleSetupBlockEntity setup, Map<Long, Object> ships,
-                                                   String placementId) {
-        for (VehicleSetupAction action : setup.actions()) {
-            if (action.type() != VehicleSetupActionType.CONFIGURE_ENDER_TRANSMITTER) continue;
-            Object ship = ships.get(action.targetShipId());
-            BlockPos target = ship == null || action.shipOffset() == null ? null
-                    : VehicleSetupExecutor.target(level, setupPos, action, ships);
-            if (target == null) {
-                VSAnalogWarfare.LOGGER.warn("[VSAW] Ender transmitter at {} could not resolve after paste", setupPos);
-                continue;
-            }
-            String error = EnderTransmissionCompat.configure(level, target, action, placementId);
-            if (error != null) VSAnalogWarfare.LOGGER.warn("[VSAW] Ender transmitter at {}: {}", target, error);
         }
     }
 

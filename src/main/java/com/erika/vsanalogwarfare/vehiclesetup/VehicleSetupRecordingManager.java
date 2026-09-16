@@ -30,6 +30,8 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+
+import javax.annotation.Nullable;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.Event;
@@ -528,7 +530,7 @@ public final class VehicleSetupRecordingManager {
                 java.util.List<VehicleSetupAction> phaseActions = run.removing ? run.removals : run.actions;
                 VehicleSetupAction action = phaseActions.get(run.index++);
                 String error = VehicleSetupExecutor.run(run.level, entry.getKey(), run.player, action,
-                        null, null, run.index - 1);
+                        null, run.enderPlacementId, run.index - 1);
                 if (error == null) { if (run.removing) run.removalSucceeded++; else run.succeeded++; }
                 else if (run.firstError == null) run.firstError = error;
                 if (run.index >= phaseActions.size()) {
@@ -679,6 +681,7 @@ public final class VehicleSetupRecordingManager {
             return;
         }
         PendingRun run = new PendingRun(player, player.level(), actions, removals, setup.removalDelayTicks(),
+                setup.enderPlacementId(),
                 actions.isEmpty() ? setup.removalDelayTicks() : actions.get(0).delayBeforeTicks());
         if (actions.isEmpty()) run.removing = true;
         PENDING_RUNS.put(setup.getBlockPos(), run);
@@ -720,6 +723,7 @@ public final class VehicleSetupRecordingManager {
         private final java.util.List<VehicleSetupAction> actions;
         private final java.util.List<VehicleSetupAction> removals;
         private final int removalDelay;
+        @Nullable private final String enderPlacementId;
         private boolean removing;
         private int index;
         private int remainingTicks;
@@ -728,12 +732,14 @@ public final class VehicleSetupRecordingManager {
         private String firstError;
 
         private PendingRun(ServerPlayer player, Level level, java.util.List<VehicleSetupAction> actions,
-                           java.util.List<VehicleSetupAction> removals, int removalDelay, int remainingTicks) {
+                           java.util.List<VehicleSetupAction> removals, int removalDelay,
+                           @Nullable String enderPlacementId, int remainingTicks) {
             this.player = player;
             this.level = level;
             this.actions = actions;
             this.removals = removals;
             this.removalDelay = removalDelay;
+            this.enderPlacementId = enderPlacementId;
             this.remainingTicks = remainingTicks;
         }
     }
