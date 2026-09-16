@@ -10,23 +10,23 @@ VS2.4 build" instead of crashing.
 
 ## Scope and camera
 
-- [ ] Scope link to a cannon mount: aim follows the barrel, no 180° flip
+- [x] Scope link to a cannon mount: aim follows the barrel, no 180° flip
       regardless of the vehicle's assembly heading (absolute-yaw convention).
-- [ ] Smooth scope aim: no stutter, no flicker when the crosshair enters or
+- [x] Smooth scope aim: no stutter, no flicker when the crosshair enters or
       leaves a target (blink-proof lock).
-- [ ] Stabilizer block on a moving/rotating ship: lock holds elevation in
+- [x] Stabilizer block on a moving/rotating ship: lock holds elevation in
       world terms, horizon levels (roll stabilization), no snap when lock
       engages or disengages, no instability near the 87° vertical pole.
-- [ ] Third-person view toggle (Z): orbit works, +2 lift pivot, and the
+- [x] Third-person view toggle (Z): orbit works, +2 lift pivot, and the
       camera does **not** clip through the player's own ship (other ships
       and terrain still block).
-- [ ] Freelook (X), zoom (C), rangefinder (V) — check keybinds actually
+- [x] Freelook (X), zoom (C), rangefinder (V) — check keybinds actually
       match after the keybind rework; if the instance has stale defaults,
       reset Controls in options.
-- [ ] High-angle zeroing wheel: elevation segments work, no depression
+- [x] High-angle zeroing wheel: elevation segments work, no depression
       segment, traverse near vertical keeps the camera up-hint on the hull
       (never bore-projected).
-- [ ] HUD instruction lines reflect the actual bound keys.
+- [x] HUD instruction lines reflect the actual bound keys.
 
 ## Mouse-aim turret mode
 
