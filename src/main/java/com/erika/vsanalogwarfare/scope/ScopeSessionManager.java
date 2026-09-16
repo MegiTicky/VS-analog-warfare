@@ -30,18 +30,6 @@ public final class ScopeSessionManager {
         scope.captureVsAnchor();
         var mountPos = scope.resolveMountPos();
         if (!com.erika.vsanalogwarfare.scope.compat.CbcCompat.isCannonMount(player.level().getBlockEntity(mountPos))) {
-            // TEMP DIAGNOSTIC (remove once the link bug is fixed)
-            var link = scope.getPrimaryLink();
-            int shipCount = 0;
-            StringBuilder shipIds = new StringBuilder();
-            for (Object ship : com.erika.vsanalogwarfare.scope.compat.VsCompat.getAllShips(player.level())) {
-                shipCount++;
-                if (shipIds.length() < 200) shipIds.append(com.erika.vsanalogwarfare.scope.compat.VsCompat.getShipId(ship)).append(' ');
-            }
-            com.mojang.logging.LogUtils.getLogger().info(
-                "[VSAW_SCOPE_DBG] start failed: scopePos={} mountPos={} playerLevel={} scopeLevel={} beAtMount={} link={} ships={} ids=[{}]",
-                scope.getBlockPos(), mountPos, player.level().dimension(), scope.getLevel() == null ? "null" : scope.getLevel().dimension(),
-                player.level().getBlockEntity(mountPos), link, shipCount, shipIds);
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("This scope has no linked primary cannon."), true);
             return false;
         }

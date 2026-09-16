@@ -31,6 +31,14 @@ public record ScopeCannonLink(long shipId, @Nullable BlockPos shipOffset, BlockP
                     }
                 }
             }
+            if (ship == null) {
+                // The ship enumeration can come up empty on some VS builds;
+                // the chunk managing the recorded fallback position is still
+                // the right ship in the normal same-vehicle case. resolveMountPos
+                // re-validates the mount, so a wrong match degrades to no link,
+                // never a wrong one.
+                ship = VsCompat.findShip(level, fallbackPos);
+            }
             if (ship != null) {
                 BlockPos resolved = VehicleSetupReflection.positionOnShip(ship, shipOffset);
                 if (resolved != null) return resolved;
