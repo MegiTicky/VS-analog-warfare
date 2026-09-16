@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -59,6 +60,8 @@ public final class VehicleSetupRecordingManager {
     private static final Map<BlockPos, PendingRun> PENDING_RUNS = new HashMap<>();
     private static final Map<UUID, BlockPos> ACTIVE_REMOVAL_RECORDINGS = new HashMap<>();
     private static final Map<UUID, BlockPos> ACTIVE_TRANSMITTER_RECORDINGS = new HashMap<>();
+    /** Block entity data captures for freshly placed blocks; a list so same-tick placements never clobber each other. */
+    private static final List<PendingBeCapture> PENDING_BE_CAPTURES = new ArrayList<>();
 
     private VehicleSetupRecordingManager() { }
 
@@ -522,6 +525,29 @@ public final class VehicleSetupRecordingManager {
             }
             recordCrewSpawn(player, setup, crew);
         }
+        if (!PENDING_BE_CAPTURES.isEmpty()) {
+            List<PendingBeCapture> captures = new ArrayList<>(PENDING_BE_CAPTURES);
+            PENDING_BE_CAPTURES.clear();
+            for (PendingBeCapture capture : captures) {
+                Level level = capture.level();
+                if (level.getGameTime() < capture.captureTick()) {
+                    PENDING_BE_CAPTURES.add(capture);
+                    continue;
+                }
+                if (capture.setup().isRemoved()) continue;
+                if (!level.getBlockState(capture.pos()).equals(capture.state())) {
+                    if (capture.attempt() < 4) PENDING_BE_CAPTURES.add(capture.withNextAttempt());
+                    continue;
+                }
+                BlockEntity blockEntity = level.getBlockEntity(capture.pos());
+                if (blockEntity == null) continue;
+                CompoundTag data = blockEntity.saveWithoutMetadata();
+                if (capture.setup().replaceAction(capture.action(), capture.action().withBlockEntityData(data))) {
+                    VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Captured block entity data at {} ({} keys).",
+                            capture.pos(), data.size());
+                }
+            }
+        }
         for (java.util.Iterator<Map.Entry<BlockPos, PendingRun>> iterator = PENDING_RUNS.entrySet().iterator(); iterator.hasNext();) {
             Map.Entry<BlockPos, PendingRun> entry = iterator.next();
             PendingRun run = entry.getValue();
@@ -560,8 +586,14 @@ public final class VehicleSetupRecordingManager {
         if (setup == null || state.is(ModBlocks.VEHICLE_SETUP.get())) return;
         BlockPos anchorOffset = pos.subtract(setup.getBlockPos());
         VehicleSetupShipPosition ship = VehicleSetupShipPosition.at(player.level(), pos);
-        recordAction(player, setup, VehicleSetupAction.placeBlock(ship == null ? -1L : ship.shipId(),
-                ship == null ? null : ship.offset(), anchorOffset, state));
+        VehicleSetupAction action = recordAction(player, setup, VehicleSetupAction.placeBlock(
+                ship == null ? -1L : ship.shipId(), ship == null ? null : ship.offset(), anchorOffset, state));
+        // The placement event fires before setBlock, so the block entity (holding the placed
+        // item's NBT) does not exist yet — capture its data in the tick loop once it does.
+        if (state.hasBlockEntity()) {
+            PENDING_BE_CAPTURES.add(new PendingBeCapture(setup, player.level(), pos, state, action,
+                    player.level().getGameTime() + 1L, 0));
+        }
     }
 
     private static void recordRemove(ServerPlayer player, BlockPos pos) {
@@ -687,8 +719,11 @@ public final class VehicleSetupRecordingManager {
         PENDING_RUNS.put(setup.getBlockPos(), run);
     }
 
-    private static void recordAction(ServerPlayer player, VehicleSetupBlockEntity setup, VehicleSetupAction action) {
-        setup.addAction(timedAction(player, action));
+    private static VehicleSetupAction recordAction(ServerPlayer player, VehicleSetupBlockEntity setup,
+                                                   VehicleSetupAction action) {
+        VehicleSetupAction timed = timedAction(player, action);
+        setup.addAction(timed);
+        return timed;
     }
 
     private static VehicleSetupAction timedAction(ServerPlayer player, VehicleSetupAction action) {
@@ -714,6 +749,13 @@ public final class VehicleSetupRecordingManager {
                                         java.util.Set<UUID> existingCrewIds) {
         private PendingCrewPlacement withNextAttempt() {
             return new PendingCrewPlacement(anchor, captureTick + 1L, attempt + 1, position, existingCrewIds);
+        }
+    }
+
+    private record PendingBeCapture(VehicleSetupBlockEntity setup, Level level, BlockPos pos, BlockState state,
+                                    VehicleSetupAction action, long captureTick, int attempt) {
+        private PendingBeCapture withNextAttempt() {
+            return new PendingBeCapture(setup, level, pos, state, action, captureTick + 1L, attempt + 1);
         }
     }
 

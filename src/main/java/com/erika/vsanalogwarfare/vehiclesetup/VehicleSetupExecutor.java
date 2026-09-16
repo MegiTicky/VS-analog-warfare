@@ -17,6 +17,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -59,7 +60,7 @@ public final class VehicleSetupExecutor {
                 placementId, actionIndex, action.type(), anchor, action.targetShipId(), action.shipOffset(),
                 action.targetOffset(), debugTarget, before);
         String result = switch (action.type()) {
-            case PLACE_BLOCK -> place(level, target(level, anchor, action, ships), action.blockState());
+            case PLACE_BLOCK -> place(level, target(level, anchor, action, ships), action);
             case REMOVE_BLOCK -> remove(level, target(level, anchor, action, ships), action);
             case LINK_DBW_BACKUPS -> "DBW cross-ship links require VMod placement";
             case CREATE_TWEAKED_CONTROLLER -> controller(level, anchor, player, action, ships);
@@ -187,11 +188,39 @@ public final class VehicleSetupExecutor {
         return null;
     }
 
-    @Nullable private static String place(Level level, BlockPos pos, @Nullable CompoundTag savedState) {
+    @Nullable private static String place(Level level, BlockPos pos, VehicleSetupAction action) {
+        CompoundTag savedState = action.blockState();
         if (savedState == null) return "recorded block state is missing";
         BlockState state = NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), savedState);
         if (state.isAir()) return "recorded block state is invalid";
-        return level.getBlockState(pos).equals(state) || level.setBlock(pos, state, 3) ? null : "could not place shaft";
+        if (!level.getBlockState(pos).equals(state) && !level.setBlock(pos, state, 3)) return "could not place shaft";
+        applyBlockEntityData(level, pos, state, action);
+        return null;
+    }
+
+    /**
+     * Re-applies the block entity data captured at record time (the placed item's NBT as vanilla
+     * merged it). Loading overwrites the saved fields, reproducing the original placement; a type
+     * mismatch means the position now holds a different block entity, so the data is skipped.
+     */
+    private static void applyBlockEntityData(Level level, BlockPos pos, BlockState state, VehicleSetupAction action) {
+        CompoundTag savedData = action.blockEntityData();
+        if (savedData == null || !state.hasBlockEntity()) return;
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+        if (blockEntity == null) return;
+        CompoundTag data = savedData.copy();
+        if (data.contains("id")) {
+            ResourceLocation savedType = ResourceLocation.tryParse(data.getString("id"));
+            ResourceLocation actualType = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntity.getType());
+            if (savedType == null || !savedType.equals(actualType)) {
+                VSAnalogWarfare.LOGGER.debug("[VSAW setup-debug] Skipping block entity data at {}: recorded type {} "
+                        + "!= actual {}.", pos, savedType, actualType);
+                return;
+            }
+        }
+        data.remove("id");
+        blockEntity.load(data);
+        blockEntity.setChanged();
     }
 
     @Nullable private static String interact(Level level, BlockPos anchor, @Nullable ServerPlayer player,

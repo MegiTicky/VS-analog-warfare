@@ -13,7 +13,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import javax.annotation.Nullable;
 
 public final class VehicleSetupAction {
-    public static final int FORMAT_VERSION = 10;
+    public static final int FORMAT_VERSION = 11;
 
     private final VehicleSetupActionType type;
     @Nullable private final BlockPos targetOffset;
@@ -41,6 +41,8 @@ public final class VehicleSetupAction {
     private final int delayBeforeTicks;
     /** Recorded crew loadout/cosmetics for SPAWN_VEHICLE_CREW; null on older saves. */
     @Nullable private final CompoundTag crewState;
+    /** Captured block entity data for PLACE_BLOCK (the placed item's applied NBT); null when the block has no BE. */
+    @Nullable private final CompoundTag blockEntityData;
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
                                @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
@@ -81,9 +83,26 @@ public final class VehicleSetupAction {
                                  @Nullable CompoundTag tallyhoState, int tallyhoVariant,
                                  double positionOffsetX, double positionOffsetY, double positionOffsetZ,
                                    @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
-                                   boolean interactionSneaking, int transmitterChannel,
+                                 boolean interactionSneaking, int transmitterChannel,
                                 @Nullable String transmitterPassword, int delayBeforeTicks,
                                 @Nullable CompoundTag crewState) {
+        this(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId, blockState, controller,
+                stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant, positionOffsetX,
+                positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace,
+                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState, null);
+    }
+
+    private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
+                               @Nullable BlockPos secondaryOffset, @Nullable BlockPos shipOffset,
+                               long targetShipId, long secondaryShipId,
+                                 @Nullable CompoundTag blockState, @Nullable CompoundTag controller, float stiffness,
+                                 float yaw, int muzzleOffset, @Nullable String tallyhoEntity,
+                                 @Nullable CompoundTag tallyhoState, int tallyhoVariant,
+                                 double positionOffsetX, double positionOffsetY, double positionOffsetZ,
+                                   @Nullable CompoundTag interactionItem, int interactionHand, int interactionFace,
+                                 boolean interactionSneaking, int transmitterChannel,
+                                @Nullable String transmitterPassword, int delayBeforeTicks,
+                                @Nullable CompoundTag crewState, @Nullable CompoundTag blockEntityData) {
         this.type = type;
         this.targetOffset = targetOffset;
         this.secondaryOffset = secondaryOffset;
@@ -109,6 +128,7 @@ public final class VehicleSetupAction {
         this.transmitterPassword = transmitterPassword;
         this.delayBeforeTicks = Math.max(0, delayBeforeTicks);
         this.crewState = crewState == null ? null : crewState.copy();
+        this.blockEntityData = blockEntityData == null ? null : blockEntityData.copy();
     }
 
     private VehicleSetupAction(VehicleSetupActionType type, @Nullable BlockPos targetOffset,
@@ -254,19 +274,30 @@ public final class VehicleSetupAction {
     @Nullable public String transmitterPassword() { return transmitterPassword; }
     public int delayBeforeTicks() { return delayBeforeTicks; }
     @Nullable public CompoundTag crewState() { return crewState == null ? null : crewState.copy(); }
+    @Nullable public CompoundTag blockEntityData() { return blockEntityData == null ? null : blockEntityData.copy(); }
 
     public VehicleSetupAction withDelayBeforeTicks(int delayBeforeTicks) {
         return new VehicleSetupAction(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId,
                 blockState, controller, stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant,
                 positionOffsetX, positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace,
-                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState);
+                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState,
+                blockEntityData);
     }
 
     public VehicleSetupAction withShipIds(long targetShipId, long secondaryShipId) {
         return new VehicleSetupAction(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId,
                 blockState, controller, stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant,
                 positionOffsetX, positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace,
-                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState);
+                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState,
+                blockEntityData);
+    }
+
+    public VehicleSetupAction withBlockEntityData(@Nullable CompoundTag blockEntityData) {
+        return new VehicleSetupAction(type, targetOffset, secondaryOffset, shipOffset, targetShipId, secondaryShipId,
+                blockState, controller, stiffness, yaw, muzzleOffset, tallyhoEntity, tallyhoState, tallyhoVariant,
+                positionOffsetX, positionOffsetY, positionOffsetZ, interactionItem, interactionHand, interactionFace,
+                interactionSneaking, transmitterChannel, transmitterPassword, delayBeforeTicks, crewState,
+                blockEntityData);
     }
 
     public CompoundTag save() {
@@ -279,6 +310,7 @@ public final class VehicleSetupAction {
         if (targetShipId >= 0L) tag.putLong("TargetShipId", targetShipId);
         if (secondaryShipId >= 0L) tag.putLong("SecondaryShipId", secondaryShipId);
         if (blockState != null) tag.put("BlockState", blockState.copy());
+        if (blockEntityData != null) tag.put("BlockEntityData", blockEntityData.copy());
         if (controller != null) tag.put("Controller", controller.copy());
         tag.putFloat("Stiffness", stiffness);
         tag.putFloat("Yaw", yaw);
@@ -329,7 +361,8 @@ public final class VehicleSetupAction {
                       tag.getInt("TransmitterChannel"),
                       tag.contains("TransmitterPassword") ? tag.getString("TransmitterPassword") : null,
                       tag.getInt("DelayBeforeTicks"),
-                      tag.contains("CrewState") ? tag.getCompound("CrewState").copy() : null);
+                      tag.contains("CrewState") ? tag.getCompound("CrewState").copy() : null,
+                      tag.contains("BlockEntityData") ? tag.getCompound("BlockEntityData").copy() : null);
         } catch (IllegalArgumentException ignored) {
             return null;
         }

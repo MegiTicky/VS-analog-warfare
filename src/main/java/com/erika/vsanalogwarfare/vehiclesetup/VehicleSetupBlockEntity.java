@@ -71,6 +71,14 @@ public class VehicleSetupBlockEntity extends BlockEntity {
         markAndSync();
         return true;
     }
+    /** Identity match (VehicleSetupAction has no equals), so it never swaps a different but equal-looking action. */
+    public boolean replaceAction(VehicleSetupAction oldAction, VehicleSetupAction newAction) {
+        int index = actions.indexOf(oldAction);
+        if (index < 0) return false;
+        actions.set(index, newAction);
+        markAndSync();
+        return true;
+    }
     public void useStandardTiming() {
         for (int index = 0; index < actions.size(); index++) {
             actions.set(index, actions.get(index).withDelayBeforeTicks(index == 0 ? 0 : 1));
