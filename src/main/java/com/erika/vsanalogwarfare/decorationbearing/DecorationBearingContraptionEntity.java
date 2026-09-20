@@ -97,6 +97,12 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     private boolean pivotCaptured = false;
     /** Consecutive server ticks without a resolvable CBC pose (diagnostics). */
     private int unresolvedTicks = 0;
+    /** Ticks between controller-position snap attempts while the bearing is missing. */
+    private int snapCooldown = 0;
+    /** Snap attempts this entity may still make (paste load gives blocks a while to appear). */
+    private int snapAttemptsRemaining = 20;
+    /** Once attached, the controller position is never re-snapped onto a different bearing. */
+    private boolean hasAttachedToController = false;
 
     public DecorationBearingContraptionEntity(EntityType<?> type, Level level) {
         super(type, level);
@@ -407,12 +413,21 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             tickActors();
         }
 
-        // Re-attach to controller if needed
+        // Re-attach to controller if needed. VMod spawns schematic-pasted
+        // entities BEFORE blocks load, so a read-time snap can see an empty
+        // world; retry here, cooldown-gated, until the bearing exists.
         if (controllerPos != null && level() != null && !level().isClientSide) {
-            var be = level().getBlockEntity(controllerPos);
-            if (be instanceof DecorationBearingBlockEntity bearing) {
+            if (!hasAttachedToController
+                    && !(level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity)
+                    && snapAttemptsRemaining > 0 && --snapCooldown <= 0) {
+                snapCooldown = 40;
+                snapAttemptsRemaining--;
+                snapControllerPosToBearing();
+            }
+            if (level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity bearing) {
                 if (!bearing.isAttachedTo(this)) {
                     bearing.attach(this);
+                    hasAttachedToController = true;
                 }
             }
         }
@@ -651,13 +666,59 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         pivotCaptured = false; // re-capture from the live CBC on the next pose tick
         linkedCbcEntityId = -1; // entity ids do not survive schematic paste
         controllerPos = derivedController;
+        // The derived position is anchor arithmetic over VMod's truncated
+        // remap — if it missed the real bearing, snap to it (works here only
+        // when the chunks are loaded; the tick re-attach retries otherwise).
+        if (!(level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity)) {
+            snapControllerPosToBearing();
+        }
 
-        LOGGER.info("[VSAW_DBC] repaired stale schematic NBT (positionMismatch={}, controllerDrift={}): "
-                        + "renderOrigin {} -> {}, controllerPos {} -> {} (anchor={}, facing={})",
-                positionMismatch, controllerDrift,
-                oldRenderOrigin, renderOriginLocal, oldController, controllerPos,
-                contraption != null ? contraption.anchor : null,
-                contraption instanceof BearingContraption bearing ? bearing.getFacing() : null);
+        if (controllerDrift) {
+            LOGGER.info("[VSAW_DBC] repaired stale schematic NBT (positionMismatch={}, controllerDrift={}): "
+                            + "renderOrigin {} -> {}, controllerPos {} -> {} (anchor={}, facing={})",
+                    positionMismatch, controllerDrift,
+                    oldRenderOrigin, renderOriginLocal, oldController, controllerPos,
+                    contraption != null ? contraption.anchor : null,
+                    contraption instanceof BearingContraption bearing ? bearing.getFacing() : null);
+        } else {
+            // Position mismatch alone re-fires on every chunk reload (Pos is a
+            // double, renderOriginLocal floats) — not worth INFO noise.
+            LOGGER.debug("[VSAW_DBC] repaired stale schematic NBT (position mismatch only): "
+                            + "renderOrigin {} -> {}, controllerPos {} (anchor={}, facing={})",
+                    oldRenderOrigin, renderOriginLocal, controllerPos,
+                    contraption != null ? contraption.anchor : null,
+                    contraption instanceof BearingContraption bearing ? bearing.getFacing() : null);
+        }
+    }
+
+    /**
+     * VMod remaps a pasted entity's {@code Contraption.Anchor} with
+     * double-to-int truncation, so the derived controller position can miss
+     * the real bearing block by a block or two at fractional paste offsets.
+     * Snap to an unclaimed {@link DecorationBearingBlockEntity} within a
+     * 2-block Chebyshev radius; keeps the current position when the bearing
+     * there is valid (claimed bearings are never stolen).
+     */
+    private boolean snapControllerPosToBearing() {
+        if (controllerPos == null || level() == null || level().isClientSide) return false;
+        if (level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity bearing
+                && !bearing.isClaimed()) {
+            return false; // already correct
+        }
+        for (BlockPos candidate : BlockPos.betweenClosed(
+                controllerPos.offset(-2, -2, -2), controllerPos.offset(2, 2, 2))) {
+            if (level().getBlockEntity(candidate) instanceof DecorationBearingBlockEntity bearing
+                    && !bearing.isClaimed()) {
+                BlockPos snapped = candidate.immutable();
+                LOGGER.info("[VSAW_DBC] snapped schematic-drifted controller position {} -> {}",
+                        controllerPos, snapped);
+                controllerPos = snapped;
+                return true;
+            }
+        }
+        LOGGER.info("[VSAW_DBC] controller snap at {} found no unclaimed decoration bearing within 2 blocks",
+                controllerPos);
+        return false;
     }
 
     /**

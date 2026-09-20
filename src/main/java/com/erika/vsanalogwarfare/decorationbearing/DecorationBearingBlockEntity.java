@@ -212,6 +212,11 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         return running;
     }
 
+    /** True when another decoration entity already owns this bearing. */
+    public boolean isClaimed() {
+        return movedContraption != null;
+    }
+
     public void assemble() {
         if (level == null || level.isClientSide || running) {
             return;
@@ -223,6 +228,9 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         if (resolveMount() == null) {
             return;
         }
+        // Clear a stale exception so callers can distinguish THIS attempt's
+        // failure (AssemblyException) from "nothing to assemble".
+        lastException = null;
         Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
         BearingContraption contraption = new BearingContraption(false, facing);
         boolean assembled;

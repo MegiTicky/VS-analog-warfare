@@ -75,6 +75,10 @@ public class DecorationBearingBlock extends BearingBlock implements EntityBlock 
                                     ? failure.component.getString() : failure.getMessage();
                             player.displayClientMessage(Component.literal(
                                     "Decoration bearing assembly failed: " + detail), true);
+                        } else {
+                            player.displayClientMessage(Component.literal(
+                                    "Nothing to assemble — the decoration ring blocks are not placed next to this bearing."),
+                                    true);
                         }
                     }
                 }
