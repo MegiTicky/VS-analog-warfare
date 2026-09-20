@@ -2,6 +2,7 @@ package com.erika.vsanalogwarfare.decorationbearing;
 
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.erika.vsanalogwarfare.vehiclesetup.AnalogScrewdriverItem;
+import com.simibubi.create.content.contraptions.AssemblyException;
 import com.simibubi.create.content.contraptions.bearing.BearingBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -65,6 +66,17 @@ public class DecorationBearingBlock extends BearingBlock implements EntityBlock 
                             true);
                 } else {
                     bearing.assemble();
+                    if (!bearing.isRunning()) {
+                        // Assembly failures were previously silent (debug log
+                        // only) — a right-click that does nothing visible.
+                        AssemblyException failure = bearing.getLastAssemblyException();
+                        if (failure != null) {
+                            String detail = failure.component != null
+                                    ? failure.component.getString() : failure.getMessage();
+                            player.displayClientMessage(Component.literal(
+                                    "Decoration bearing assembly failed: " + detail), true);
+                        }
+                    }
                 }
             }
             return InteractionResult.CONSUME;

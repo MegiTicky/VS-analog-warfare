@@ -153,8 +153,13 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         if (level == null || level.isClientSide) return;
         ScopeCannonLink rebased = ScopeCannonLink.rebasedAfterPaste(this.linkedMount, placedShips);
         if (rebased == null) return;
+        // Verify the rebased target really is a cannon mount before adopting:
+        // the shipOffset math assumes the pasted hull geometry is unchanged,
+        // and a drifted offset must not silently re-point the link at a wrong
+        // block — leave it stale so the verify-gated heal ladder handles it.
+        if (!CbcCompat.isCannonMount(level.getBlockEntity(rebased.fallbackPos()))) return;
         this.linkedMount = rebased;
-        LOGGER.debug("[VSAW_DBC] bearing at {} rebased onto pasted shipId={}, mount={}",
+        LOGGER.info("[VSAW_DBC] bearing at {} rebased onto pasted shipId={}, mount={}",
                 worldPosition, rebased.shipId(), rebased.fallbackPos());
         setChanged();
     }
@@ -174,7 +179,7 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
                 pos -> CbcCompat.isCannonMount(level.getBlockEntity(pos)));
         if (healed == null) return false;
         linkedMount = healed;
-        LOGGER.debug("[VSAW_DBC] bearing at {} healed stale mount link onto shipId={}, mount={}",
+        LOGGER.info("[VSAW_DBC] bearing at {} healed stale mount link onto shipId={}, mount={}",
                 worldPosition, healed.shipId(), healed.fallbackPos());
         setChanged();
         return resolveMount() != null;
@@ -224,13 +229,13 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         try {
             assembled = contraption.assemble(level, worldPosition);
         } catch (AssemblyException e) {
-            LOGGER.debug("[VSAW_DBC] assemble: AssemblyException at {}", worldPosition, e);
+            LOGGER.info("[VSAW_DBC] assemble: AssemblyException at {}", worldPosition, e);
             lastException = e;
             sendData();
             return;
         }
         if (!assembled) {
-            LOGGER.debug("[VSAW_DBC] assemble: contraption.assemble() returned false at {}", worldPosition);
+            LOGGER.info("[VSAW_DBC] assemble: contraption.assemble() returned false at {}", worldPosition);
             return;
         }
         lastException = null;

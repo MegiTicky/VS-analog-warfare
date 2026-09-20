@@ -610,17 +610,30 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * entity back to the old assembly position and attach it to the old
      * bearing.
      * <p>
-     * Detection: on a normal chunk reload {@code position()} equals
-     * {@code renderOriginLocal} exactly (we {@code setPos(renderOriginLocal)}
-     * every pose tick and before save). A mismatch therefore means the
-     * entity was re-created at a remapped {@code Pos} — i.e. schematic
-     * paste — while the stored render origin was not remapped.
+     * Detection, two independent signals:
+     * <ol>
+     * <li>On a normal chunk reload {@code position()} equals
+     * {@code renderOriginLocal} (we {@code setPos(renderOriginLocal)} every
+     * pose tick and before save); a mismatch means the entity was re-created
+     * at a remapped {@code Pos}.</li>
+     * <li>VMod rewrites {@code Contraption.Anchor} but never our
+     * {@code ControllerAbsolute}, and at save time the controller always
+     * equals {@code anchor.relative(facing.getOpposite())}. After a paste the
+     * anchor moves and the stored controller cannot follow, so any
+     * divergence is a paste — deterministically, even when signal 1 happens
+     * to agree (a paste offset of zero would, and there the stored
+     * controller is correct anyway, so both readings stay consistent).</li>
+     * </ol>
      */
     private void repairStaleNbt() {
         if (renderOriginLocal == Vec3.ZERO) {
             return; // legacy entity: tick falls back to position()-relative math
         }
-        if (renderOriginLocal.distanceToSqr(position()) <= 1.0e-4) {
+        BlockPos derivedController = deriveControllerPosFromContraption();
+        boolean positionMismatch = renderOriginLocal.distanceToSqr(position()) > 1.0e-4;
+        boolean controllerDrift = controllerPos != null && derivedController != null
+                && !controllerPos.equals(derivedController);
+        if (!positionMismatch && !controllerDrift) {
             return; // consistent — normal save/load
         }
         Vec3 oldRenderOrigin = renderOriginLocal;
@@ -637,9 +650,11 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         }
         pivotCaptured = false; // re-capture from the live CBC on the next pose tick
         linkedCbcEntityId = -1; // entity ids do not survive schematic paste
-        controllerPos = deriveControllerPosFromContraption();
+        controllerPos = derivedController;
 
-        LOGGER.debug("[VSAW_DBC] repaired stale schematic NBT: renderOrigin {} -> {}, controllerPos {} -> {} (anchor={}, facing={})",
+        LOGGER.info("[VSAW_DBC] repaired stale schematic NBT (positionMismatch={}, controllerDrift={}): "
+                        + "renderOrigin {} -> {}, controllerPos {} -> {} (anchor={}, facing={})",
+                positionMismatch, controllerDrift,
                 oldRenderOrigin, renderOriginLocal, oldController, controllerPos,
                 contraption != null ? contraption.anchor : null,
                 contraption instanceof BearingContraption bearing ? bearing.getFacing() : null);
