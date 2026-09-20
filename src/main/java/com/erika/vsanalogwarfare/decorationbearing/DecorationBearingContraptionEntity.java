@@ -698,6 +698,12 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * Snap to an unclaimed {@link DecorationBearingBlockEntity} within a
      * 2-block Chebyshev radius; keeps the current position when the bearing
      * there is valid (claimed bearings are never stolen).
+     * <p>
+     * The snap also shifts {@code renderOriginLocal} by the same delta:
+     * repairStaleNbt derived it from the same truncated anchor, so it carries
+     * the identical drift — and {@code pivotLocal} re-captures against the
+     * corrected origin on the next pose tick (repair always clears
+     * {@code pivotCaptured}), which restores the true rotation center too.
      */
     private boolean snapControllerPosToBearing() {
         if (controllerPos == null || level() == null || level().isClientSide) return false;
@@ -705,13 +711,20 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                 && !bearing.isClaimed()) {
             return false; // already correct
         }
+        BlockPos before = controllerPos;
         for (BlockPos candidate : BlockPos.betweenClosed(
                 controllerPos.offset(-2, -2, -2), controllerPos.offset(2, 2, 2))) {
             if (level().getBlockEntity(candidate) instanceof DecorationBearingBlockEntity bearing
                     && !bearing.isClaimed()) {
                 BlockPos snapped = candidate.immutable();
-                LOGGER.info("[VSAW_DBC] snapped schematic-drifted controller position {} -> {}",
-                        controllerPos, snapped);
+                if (renderOriginLocal != Vec3.ZERO) {
+                    renderOriginLocal = renderOriginLocal.add(
+                            snapped.getX() - before.getX(),
+                            snapped.getY() - before.getY(),
+                            snapped.getZ() - before.getZ());
+                }
+                LOGGER.info("[VSAW_DBC] snapped schematic-drifted controller position {} -> {} (renderOrigin now {})",
+                        before, snapped, renderOriginLocal);
                 controllerPos = snapped;
                 return true;
             }
