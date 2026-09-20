@@ -55,6 +55,10 @@ public class DecorationBearingBlock extends BearingBlock implements EntityBlock 
             } else if (bearing.isRunning()) {
                 bearing.disassemble();
             } else {
+                // The saved link may carry a dead ship id (disassembly/
+                // reassembly, legacy pastes); try the shared heal before
+                // telling the player to relink by hand.
+                if (bearing.getLinkedMountPos() == null) bearing.healStaleMountLinkIfNeeded();
                 if (bearing.getLinkedMountPos() == null) {
                     player.displayClientMessage(Component.literal(
                             "Decoration bearing is not linked to a cannon mount. Use the Analog Screwdriver first."),

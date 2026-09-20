@@ -8,7 +8,6 @@ import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupBlockEntity;
 import com.erika.vsanalogwarfare.vehiclesetup.VehicleSetupExecutor;
 import com.erika.vsanalogwarfare.vehiclemount.VehicleMountHandleBlockEntity;
 import com.erika.vsanalogwarfare.scope.ScopeBlockEntity;
-import com.erika.vsanalogwarfare.stabilizer.StabilizerBlockEntity;
 import com.simibubi.create.content.kinetics.base.KineticBlockEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -186,6 +185,7 @@ public final class VmodVehicleSetupCompat {
                         && !level.getBlockState(pos).is(ModBlocks.VEHICLE_MOUNT_HANDLE.get())
                         && !level.getBlockState(pos).is(ModBlocks.SCOPE_BLOCK.get())
                         && !level.getBlockState(pos).is(ModBlocks.STABILIZER.get())
+                        && !level.getBlockState(pos).is(ModBlocks.DECORATION_BEARING.get())
                         && !EnderTransmissionCompat.isEnergyTransmitter(level.getBlockState(pos))) continue;
                 BlockEntity entity = level.getBlockEntity(pos);
                 if (entity instanceof VehicleSetupBlockEntity setup) {
@@ -217,8 +217,8 @@ public final class VmodVehicleSetupCompat {
                 if (entity instanceof ScopeBlockEntity scope) {
                     scope.initializeAfterSchematicPlacement(ships);
                 }
-                if (entity instanceof StabilizerBlockEntity stabilizer) {
-                    stabilizer.initializeAfterSchematicPlacement(ships);
+                if (entity instanceof VmodPasteRebasable rebasable) {
+                    rebasable.rebaseAfterVmodPaste(ships);
                 }
             }
         } catch (ReflectiveOperationException ignored) { }

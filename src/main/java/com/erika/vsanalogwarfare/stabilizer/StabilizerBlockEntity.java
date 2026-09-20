@@ -6,6 +6,7 @@ import com.erika.vsanalogwarfare.network.StabilizerStatePacket;
 import com.erika.vsanalogwarfare.scope.ScopeCannonLink;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
 import com.erika.vsanalogwarfare.scope.compat.VsCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.VmodPasteRebasable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -24,7 +25,7 @@ import java.util.Map;
  * mount's own tick. Link is stored ship-relative so it survives schematic
  * placement, like scope links.
  */
-public class StabilizerBlockEntity extends BlockEntity {
+public class StabilizerBlockEntity extends BlockEntity implements VmodPasteRebasable {
 
     /** Failed validations tolerated before unlinking (the ship AABB query blinks under violent motion). */
     private static final int MAX_FAILED_VALIDATIONS = 3;
@@ -167,7 +168,8 @@ public class StabilizerBlockEntity extends BlockEntity {
      * freshly allocated ids of the pasted ships. Called by the VMod paste scan so the mount
      * link is rebased onto the pasted ship before validation times it out and unlinks.
      */
-    public void initializeAfterSchematicPlacement(Map<Long, Object> placedShips) {
+    @Override
+    public void rebaseAfterVmodPaste(Map<Long, Object> placedShips) {
         captureVsAnchor();
         ScopeCannonLink rebased = ScopeCannonLink.rebasedAfterPaste(this.mountLink, placedShips);
         if (rebased == null) {

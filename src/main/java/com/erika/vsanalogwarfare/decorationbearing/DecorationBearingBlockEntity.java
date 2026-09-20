@@ -2,7 +2,9 @@ package com.erika.vsanalogwarfare.decorationbearing;
 
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.erika.vsanalogwarfare.scope.ScopeCannonLink;
+import com.erika.vsanalogwarfare.scope.ShipLinkSupport;
 import com.erika.vsanalogwarfare.scope.compat.CbcCompat;
+import com.erika.vsanalogwarfare.vehiclesetup.compat.VmodPasteRebasable;
 import com.simibubi.create.content.contraptions.AbstractContraptionEntity;
 import com.simibubi.create.content.contraptions.AssemblyException;
 import com.simibubi.create.content.contraptions.ControlledContraptionEntity;
@@ -26,9 +28,10 @@ import org.slf4j.Logger;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import java.util.Map;
 
 public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
-        implements IBearingBlockEntity, IDisplayAssemblyExceptions {
+        implements IBearingBlockEntity, IDisplayAssemblyExceptions, VmodPasteRebasable {
     private static final Logger LOGGER = LogUtils.getLogger();
     private ScopeCannonLink linkedMount;
     private DecorationBearingContraptionEntity movedContraption;
@@ -140,6 +143,44 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     private int mountRepairFailures;
 
     /**
+     * VMod paste: schematic NBT carries the ship ids of the world the bearing
+     * was linked in, which never match the freshly allocated ids of the pasted
+     * ships. Rebase the stored link onto the pasted ship so the decoration
+     * comes up linked without a manual screwdriver relink.
+     */
+    @Override
+    public void rebaseAfterVmodPaste(Map<Long, Object> placedShips) {
+        if (level == null || level.isClientSide) return;
+        ScopeCannonLink rebased = ScopeCannonLink.rebasedAfterPaste(this.linkedMount, placedShips);
+        if (rebased == null) return;
+        this.linkedMount = rebased;
+        LOGGER.debug("[VSAW_DBC] bearing at {} rebased onto pasted shipId={}, mount={}",
+                worldPosition, rebased.shipId(), rebased.fallbackPos());
+        setChanged();
+    }
+
+    /**
+     * Recovery for a saved link whose ship id is dead without a paste — a ship
+     * disassembly retires its id and reassembly allocates a fresh one, so the
+     * stored id never resolves again. Runs the shared verify-gated ladder and
+     * adopts the result; the target check (isCannonMount) guarantees the link
+     * is never re-pointed at a wrong block. Returns true when the link now
+     * resolves.
+     */
+    public boolean healStaleMountLinkIfNeeded() {
+        if (level == null || level.isClientSide || linkedMount == null) return false;
+        if (resolveMount() != null) return false;
+        ScopeCannonLink healed = ShipLinkSupport.healStaleShipId(level, worldPosition, linkedMount,
+                pos -> CbcCompat.isCannonMount(level.getBlockEntity(pos)));
+        if (healed == null) return false;
+        linkedMount = healed;
+        LOGGER.debug("[VSAW_DBC] bearing at {} healed stale mount link onto shipId={}, mount={}",
+                worldPosition, healed.shipId(), healed.fallbackPos());
+        setChanged();
+        return resolveMount() != null;
+    }
+
+    /**
      * Attempt to recover a stale mount link by scanning for the nearest CBC
      * cannon mount. Cooldown-gated because the scan is a block search.
      * Returns true if the link now resolves.
@@ -167,7 +208,14 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     }
 
     public void assemble() {
-        if (level == null || level.isClientSide || running || resolveMount() == null) {
+        if (level == null || level.isClientSide || running) {
+            return;
+        }
+        // A saved link can carry a dead ship id (disassembly retires it,
+        // reassembly allocates a fresh one; legacy pastes predate the paste
+        // rebase). Heal before giving up on the link.
+        if (resolveMount() == null) healStaleMountLinkIfNeeded();
+        if (resolveMount() == null) {
             return;
         }
         Direction facing = getBlockState().getValue(BlockStateProperties.FACING);
