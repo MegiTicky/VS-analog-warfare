@@ -78,7 +78,7 @@ public final class MouseAimController {
                 currentYaw, currentPitch, maxDegreesPerTick);
 
         float nextYaw = wrapDegrees(currentYaw + steps[0]);
-        float nextPitch = hardSetPitch(level, mountPos)
+        float nextPitch = gyroStabilized(level, mountPos)
                 ? clampPitchToMount(mount, desired.pitch())
                 : clampPitchToMount(mount, currentPitch + steps[1]);
 
@@ -110,7 +110,7 @@ public final class MouseAimController {
         float[] steps = aimSteps(controller, level, mountPos, targetWorldDirection, desired,
                 currentYaw, currentPitch, maxDegreesPerTick);
 
-        float nextPitch = hardSetPitch(level, mountPos)
+        float nextPitch = gyroStabilized(level, mountPos)
                 ? clampPitchToMount(mount, desired.pitch())
                 : clampPitchToMount(mount, currentPitch + steps[1]);
 
@@ -121,14 +121,17 @@ public final class MouseAimController {
     }
 
     /**
-     * A linked, enabled gyro stabilizer upgrades mouse aim to an absolute
-     * elevation hold: the mount pitch is written directly from the aim
-     * direction each tick instead of chasing, so the bore elevation pins to
-     * the free-look direction with no chase lag. The gyro's own servo stays
-     * suppressed while aiming ({@code notifyExternalInput}), so the two
-     * never write the same axis in the same tick.
+     * A linked, enabled gyro stabilizer upgrades mouse aim in two ways: the
+     * mount pitch is written directly from the aim direction each tick
+     * instead of chasing (absolute elevation hold, no chase lag), and the
+     * hull-motion share in {@link #aimSteps} is applied at full speed. On a
+     * mount without a stabilizer neither applies — the plain chase rides the
+     * hull beyond what its drive rate can follow, which is what makes the
+     * gyro block worth its cost. The gyro's own servo stays suppressed while
+     * aiming ({@code notifyExternalInput}), so the two never write the same
+     * axis in the same tick.
      */
-    private static boolean hardSetPitch(Level level, BlockPos mountPos) {
+    private static boolean gyroStabilized(Level level, BlockPos mountPos) {
         return !level.isClientSide
                 && CommonConfig.stabilizerEnabled()
                 && StabilizerController.linkedStabilizer(mountPos) != null;
@@ -139,28 +142,33 @@ public final class MouseAimController {
      * player-aimed slew. The mount-local angle of a fixed world direction
      * changes each tick either because the mount's frame rotated (ship
      * pitch/roll) or because the target direction itself moved (mouse input).
-     * The frame share is the stabilization mouse aim must provide while it
-     * owns the axis — the gyro block stays suppressed by
-     * {@code notifyExternalInput} — so it is applied at full speed; the mouse
-     * share keeps the input-scaled slew limit so shaft speed still scales aim
-     * speed.
+     * For a gyro-stabilized mount the frame share is applied at full speed
+     * (the gyro owns stabilization; {@code notifyExternalInput} keeps its
+     * servo out of the way) while the mouse share keeps the input-scaled
+     * slew limit so shaft speed still scales aim speed. A mount without a
+     * stabilizer gets no frame share: the plain slew-limited chase follows
+     * hull motion only as far as its drive rate allows, so the bore rides
+     * the hull — that stabilization gap is what the gyro block adds.
      *
-     * <p>The previous tick's target is re-mapped through the current frame to
-     * isolate the frame rotation. Returns {@code {yawStep, pitchStep}}.
+     * <p>The stabilized path re-maps the previous tick's target through the
+     * current frame to isolate the frame rotation. Returns
+     * {@code {yawStep, pitchStep}}.
      */
     private static float[] aimSteps(MouseAimBlockEntity controller, Level level, BlockPos mountPos,
                                     Vec3 targetWorldDirection, AimAngles desired,
                                     float currentYaw, float currentPitch, double maxDegreesPerTick) {
         float hullYaw = 0.0f;
         float hullPitch = 0.0f;
-        Vec3 prevTarget = controller.prevAimTarget();
-        if (prevTarget != null && mountPos.equals(controller.prevAimMountPos())) {
-            AimAngles prevNow = AimAngles.fromDirection(toMountLocal(level, mountPos, prevTarget));
-            float rawYaw = wrapDegrees(prevNow.yaw() - controller.prevDesiredYaw());
-            float rawPitch = prevNow.pitch() - controller.prevDesiredPitch();
-            if (Math.abs(rawYaw) <= HULL_COMP_MAX_DEG_PER_TICK && Math.abs(rawPitch) <= HULL_COMP_MAX_DEG_PER_TICK) {
-                hullYaw = rawYaw;
-                hullPitch = rawPitch;
+        if (gyroStabilized(level, mountPos)) {
+            Vec3 prevTarget = controller.prevAimTarget();
+            if (prevTarget != null && mountPos.equals(controller.prevAimMountPos())) {
+                AimAngles prevNow = AimAngles.fromDirection(toMountLocal(level, mountPos, prevTarget));
+                float rawYaw = wrapDegrees(prevNow.yaw() - controller.prevDesiredYaw());
+                float rawPitch = prevNow.pitch() - controller.prevDesiredPitch();
+                if (Math.abs(rawYaw) <= HULL_COMP_MAX_DEG_PER_TICK && Math.abs(rawPitch) <= HULL_COMP_MAX_DEG_PER_TICK) {
+                    hullYaw = rawYaw;
+                    hullPitch = rawPitch;
+                }
             }
         }
         controller.storePrevAim(targetWorldDirection, mountPos, desired.yaw(), desired.pitch());
