@@ -84,7 +84,17 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
                 return;
             }
             mount = bearing.resolveMount();
+            if (mount == null && bearing.mountRepairFailures >= 3) {
+                // Last resort before teardown: the verify-gated ship-id heal
+                // ladder. Every discarded contraption entity risks stranding
+                // its client-side render world, so a teardown is worth one
+                // more verified attempt.
+                bearing.healStaleMountLinkIfNeeded();
+                mount = bearing.resolveMount();
+            }
             if (mount == null) {
+                LOGGER.info("[VSAW_DBC] bearing at {} disassembling — mount link unresolved after repair windows",
+                        bearing.worldPosition);
                 bearing.disassemble();
                 return;
             }
@@ -130,7 +140,10 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
         if (level == null || level.isClientSide) return;
         if (!CbcCompat.isCannonMount(level.getBlockEntity(newMount))) return;
         linkedMount = ScopeCannonLink.fromTarget(level, newMount);
-        LOGGER.debug("[VSAW_DBC] bearing at {} re-linked to mount at {} (shipId={}, offset={})",
+        // INFO on purpose: a nearest-mount relink is a last-resort heuristic
+        // and can re-point at the WRONG cannon on a ship with several mounts
+        // — when something looks wrong after a paste, this line is the tell.
+        LOGGER.info("[VSAW_DBC] bearing at {} re-linked to mount at {} (shipId={}, offset={})",
                 worldPosition, newMount, linkedMount.shipId(), linkedMount.shipOffset());
         mountRepairCooldown = 100;
         mountRepairFailures = 0;
@@ -366,6 +379,15 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     }
 
     public void attach(DecorationBearingContraptionEntity decoration) {
+        // Never steal a live claim: a pasted cluster of decorations used to
+        // cascade cross-claims here, which gave every ring its neighbor's
+        // rotation mode and pivot. (Re-claiming our own decoration after a
+        // chunk reload is fine — read() clears movedContraption.)
+        if (movedContraption != null && movedContraption != decoration && movedContraption.isAlive()) {
+            LOGGER.info("[VSAW_DBC] bearing at {} refused attach from entity {} — claimed by alive entity {}",
+                    worldPosition, decoration.getId(), movedContraption.getId());
+            return;
+        }
         movedContraption = decoration;
         running = true;
         setChanged();

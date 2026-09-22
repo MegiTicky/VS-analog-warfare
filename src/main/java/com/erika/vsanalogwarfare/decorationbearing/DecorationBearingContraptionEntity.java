@@ -78,6 +78,16 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     /** Live CBC entity position, synced for the client-side pivot debug render. */
     private static final EntityDataAccessor<Vector3f> SYNCED_CBC_POS =
             SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.VECTOR3);
+    /**
+     * Controller bearing position, synced so server-side paste repairs and
+     * snaps that happen AFTER the spawn packet still reach the client (the
+     * plain field only travels in the spawn NBT).
+     */
+    private static final EntityDataAccessor<BlockPos> SYNCED_CONTROLLER_POS =
+            SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.BLOCK_POS);
+    /** Rotation pivot (render frame), synced for the same reason as the controller. */
+    private static final EntityDataAccessor<Vector3f> SYNCED_PIVOT =
+            SynchedEntityData.defineId(DecorationBearingContraptionEntity.class, EntityDataSerializers.VECTOR3);
 
     private BlockPos controllerPos;
     private int linkedCbcEntityId = -1;
@@ -125,6 +135,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         this.entityData.define(SYNCED_YAW, 0.0f);
         this.entityData.define(SYNCED_PITCH, 0.0f);
         this.entityData.define(SYNCED_CBC_POS, new Vector3f());
+        this.entityData.define(SYNCED_CONTROLLER_POS, BlockPos.ZERO);
+        this.entityData.define(SYNCED_PIVOT, new Vector3f());
     }
 
     /**
@@ -150,6 +162,46 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         return new Vec3(v.x, v.y, v.z);
     }
 
+    /**
+     * Server: mirror the controller position and pivot into synced entity
+     * data. The plain fields only travel in the spawn NBT, which VMod builds
+     * before blocks exist — every later repair, snap or pivot re-capture
+     * must go through here or the client keeps the stale source-world
+     * values for the entity's whole life. Synced data is equality-checked,
+     * so pushing on every load is packet-free.
+     */
+    private void pushControllerAndPivotToSyncedData() {
+        this.entityData.set(SYNCED_CONTROLLER_POS, controllerPos != null ? controllerPos : BlockPos.ZERO);
+        this.entityData.set(SYNCED_PIVOT, new Vector3f(
+                (float) pivotLocal.x, (float) pivotLocal.y, (float) pivotLocal.z));
+    }
+
+    /**
+     * Client-safe controller position: prefers the synced value once the
+     * server has pushed a real one, falling back to the spawn-NBT field for
+     * entities saved before syncing existed. Sentinel ZERO = not pushed.
+     */
+    private BlockPos effectiveControllerPos() {
+        BlockPos synced = this.entityData.get(SYNCED_CONTROLLER_POS);
+        if (synced != null && !synced.equals(BlockPos.ZERO)) {
+            return synced;
+        }
+        return controllerPos;
+    }
+
+    /**
+     * Client-safe rotation pivot: prefers the synced value (see
+     * {@link #pushControllerAndPivotToSyncedData()}), falling back to the
+     * spawn-NBT field. A zero vector means "not pushed yet".
+     */
+    private Vec3 effectivePivotLocal() {
+        Vector3f v = this.entityData.get(SYNCED_PIVOT);
+        if (v != null && (v.x != 0.0f || v.y != 0.0f || v.z != 0.0f)) {
+            return new Vec3(v.x, v.y, v.z);
+        }
+        return pivotLocal;
+    }
+
     // -----------------------------------------------------------------------
     // Canonical transform: one source of truth for all transform consumers
     // -----------------------------------------------------------------------
@@ -168,7 +220,8 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     }
 
     private Vec3 rotateAroundPivot(Vec3 vector, float partialTicks, boolean reverse) {
-        Vec3 centered = vector.subtract(pivotLocal);
+        Vec3 pivot = effectivePivotLocal();
+        Vec3 centered = vector.subtract(pivot);
         Direction.Axis pitchAxis = getInitialOrientation().getAxis() == Direction.Axis.X
                 ? Direction.Axis.Z : Direction.Axis.X;
         Vec3 rotated;
@@ -181,7 +234,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             rotated = VecHelper.rotate(centered, getInterpolatedPitch(partialTicks), pitchAxis);
             rotated = VecHelper.rotate(rotated, getInterpolatedYaw(partialTicks) + getInitialYaw(), Direction.Axis.Y);
         }
-        return rotated.add(pivotLocal);
+        return rotated.add(pivot);
     }
 
     @Override
@@ -206,14 +259,15 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         // argument matches toGlobalVector's convention:
         //   R * (v - (0.5, 0.5, 0.5) - pivotLocal)
         matrixStack.translate(-.5f, 0, -.5f);
-        matrixStack.translate(pivotLocal.x + 0.5, pivotLocal.y + 0.5, pivotLocal.z + 0.5);
+        Vec3 pivot = effectivePivotLocal();
+        matrixStack.translate(pivot.x + 0.5, pivot.y + 0.5, pivot.z + 0.5);
         matrixStack.mulPose(Axis.YP.rotationDegrees(interpYaw + initialYaw));
         if (getInitialOrientation().getAxis() == Direction.Axis.X) {
             matrixStack.mulPose(Axis.ZP.rotationDegrees(interpPitch));
         } else {
             matrixStack.mulPose(Axis.XP.rotationDegrees(interpPitch));
         }
-        matrixStack.translate(-pivotLocal.x - 0.5, -pivotLocal.y - 0.5, -pivotLocal.z - 0.5);
+        matrixStack.translate(-pivot.x - 0.5, -pivot.y - 0.5, -pivot.z - 0.5);
     }
 
     // -----------------------------------------------------------------------
@@ -377,6 +431,9 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                                 ? cbcPosLocal.subtract(renderOriginLocal)
                                 : cbcPosLocal.subtract(position());
                         pivotCaptured = true;
+                        // The client renders around the pivot it was spawned
+                        // with; a post-spawn re-capture must reach it.
+                        pushControllerAndPivotToSyncedData();
                         LOGGER.debug("[VSAW_DBC] tick: pivot re-captured from live CBC entityPos={} pivotLocal={}",
                                 pose.entityPos(), pivotLocal);
                     }
@@ -416,6 +473,10 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         // Re-attach to controller if needed. VMod spawns schematic-pasted
         // entities BEFORE blocks load, so a read-time snap can see an empty
         // world; retry here, cooldown-gated, until the bearing exists.
+        // Claim safety: never attach to a bearing another decoration already
+        // owns — pasting a cluster of decorations used to cascade
+        // cross-claims, which presented every ring with its neighbor's
+        // rotation mode and pivot.
         if (controllerPos != null && level() != null && !level().isClientSide) {
             if (!hasAttachedToController
                     && !(level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity)
@@ -424,11 +485,11 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                 snapAttemptsRemaining--;
                 snapControllerPosToBearing();
             }
-            if (level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity bearing) {
-                if (!bearing.isAttachedTo(this)) {
-                    bearing.attach(this);
-                    hasAttachedToController = true;
-                }
+            if (level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity bearing
+                    && !bearing.isAttachedTo(this)
+                    && !bearing.isClaimed()) {
+                bearing.attach(this);
+                hasAttachedToController = true;
             }
         }
     }
@@ -455,21 +516,23 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     }
 
     private DecorationRotationMode resolveRotationMode() {
-        if (controllerPos != null && level() != null
-                && level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity bearing) {
+        BlockPos pos = effectiveControllerPos();
+        if (pos != null && level() != null
+                && level().getBlockEntity(pos) instanceof DecorationBearingBlockEntity bearing) {
             return bearing.getRotationMode();
         }
         return DecorationRotationMode.YAW_AND_PITCH;
     }
 
     @Nullable
-    private Object resolveLinkedCbcEntity() {        if (controllerPos == null || level() == null) {
+    private Object resolveLinkedCbcEntity() {        BlockPos controller = effectiveControllerPos();
+        if (controller == null || level() == null) {
             return null;
         }
-        var be = level().getBlockEntity(controllerPos);
+        var be = level().getBlockEntity(controller);
         if (!(be instanceof DecorationBearingBlockEntity bearing)) {
             LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: controller BE at {} is {}",
-                    controllerPos, be != null ? be.getClass().getSimpleName() : "null");
+                    controller, be != null ? be.getClass().getSimpleName() : "null");
             return null;
         }
         Object byId = CbcCompat.resolveLiveCbcEntityById(level(), linkedCbcEntityId);
@@ -492,7 +555,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
             }
         }
         LOGGER.debug("[VSAW_DBC] resolveLinkedCbcEntity: no live CBC entity (bearing at {}, mount={})",
-                controllerPos, mount);
+                controller, mount);
         return null;
     }
 
@@ -612,6 +675,10 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         }
         if (!clientPacket && level() != null && !level().isClientSide) {
             repairStaleNbt();
+            // Prime the synced frame even when repair found nothing to fix:
+            // the spawn packet serializes entity data, so the client spawns
+            // with real values instead of sentinels.
+            pushControllerAndPivotToSyncedData();
         }
     }
 
@@ -654,24 +721,34 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         Vec3 oldRenderOrigin = renderOriginLocal;
         BlockPos oldController = controllerPos;
 
-        // The remapped contraption anchor is the authoritative render-origin
-        // frame: VMod remaps Pos and Contraption.Anchor with slightly
-        // different rounding (toInt truncation on negative coords), so prefer
-        // atBottomCenterOf(anchor) over position().
-        if (contraption != null) {
-            renderOriginLocal = Vec3.atBottomCenterOf(contraption.anchor);
-        } else {
-            renderOriginLocal = position();
-        }
+        // VMod remaps the entity Pos as EXACT fractional doubles and only
+        // the Contraption.Anchor with d2i truncation, so position() is the
+        // true pasted render origin while the truncated anchor misses by up
+        // to a block — the old anchor-derived origin was exactly that
+        // drift, and controller derivation landed on neighbor bearings.
+        renderOriginLocal = position();
         pivotCaptured = false; // re-capture from the live CBC on the next pose tick
         linkedCbcEntityId = -1; // entity ids do not survive schematic paste
-        controllerPos = derivedController;
-        // The derived position is anchor arithmetic over VMod's truncated
-        // remap — if it missed the real bearing, snap to it (works here only
-        // when the chunks are loaded; the tick re-attach retries otherwise).
+        controllerPos = deriveControllerPosFromContraption();
+        // Motion NBT is copied verbatim from the source world; a velocity
+        // captured mid-battle would make the client entity integrate and
+        // drift off the pasted ship.
+        setDeltaMovement(Vec3.ZERO);
+        // SavedYaw/SavedPitch are the source world's pose at save time.
+        // Reset to the neutral identity orientation, exactly like a healthy
+        // assembly: a YAW_ONLY decoration would otherwise resurrect the
+        // source aim pitch (flipping the rotation-state branch and looking
+        // like a different mode), and a PITCH_ONLY one is only accidentally
+        // correct because its frozen yaw equals the identity value.
+        setDecorationRotation(-getInitialYaw(), 0.0f);
+        // The derived position is now exact anchor arithmetic, but the
+        // chunks may not be loaded yet (VMod spawns entities first); snap
+        // when the world IS loaded and the BE there is not a bearing — the
+        // tick re-attach retries the snap otherwise.
         if (!(level().getBlockEntity(controllerPos) instanceof DecorationBearingBlockEntity)) {
             snapControllerPosToBearing();
         }
+        pushControllerAndPivotToSyncedData();
 
         if (controllerDrift) {
             LOGGER.info("[VSAW_DBC] repaired stale schematic NBT (positionMismatch={}, controllerDrift={}): "
@@ -726,12 +803,34 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
                 LOGGER.info("[VSAW_DBC] snapped schematic-drifted controller position {} -> {} (renderOrigin now {})",
                         before, snapped, renderOriginLocal);
                 controllerPos = snapped;
+                pushControllerAndPivotToSyncedData();
                 return true;
             }
         }
         LOGGER.info("[VSAW_DBC] controller snap at {} found no unclaimed decoration bearing within 2 blocks",
                 controllerPos);
         return false;
+    }
+
+    /**
+     * The contraption anchor in shipyard coordinates. This entity keeps its
+     * position pinned to the render origin ({@code setPos(renderOriginLocal)}
+     * every pose tick and before save), and VMod remaps the pasted entity
+     * {@code Pos} as exact fractional doubles while {@code Contraption.Anchor}
+     * gets d2i truncation — so the live position is the authoritative anchor
+     * frame ({@code atBottomCenterOf(anchor) == renderOriginLocal ==
+     * position()}) and {@code BlockPos.containing(position())} recovers the
+     * anchor exactly, including pastes. Legacy entities without a render
+     * origin still use the stored anchor.
+     */
+    private BlockPos currentContraptionAnchor() {
+        if (contraption == null) {
+            return null;
+        }
+        if (renderOriginLocal != Vec3.ZERO) {
+            return BlockPos.containing(position());
+        }
+        return contraption.anchor;
     }
 
     /**
@@ -746,10 +845,10 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
      * be, and matching one of those yields the wrong controller.
      */
     private BlockPos deriveControllerPosFromContraption() {
-        if (contraption == null) {
+        BlockPos anchor = currentContraptionAnchor();
+        if (anchor == null) {
             return controllerPos;
         }
-        BlockPos anchor = contraption.anchor;
         if (contraption instanceof BearingContraption bearing) {
             return anchor.relative(bearing.getFacing().getOpposite());
         }
@@ -765,7 +864,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
     // -----------------------------------------------------------------------
 
     public BlockPos getControllerPos() {
-        return controllerPos;
+        return effectiveControllerPos();
     }
 
     /**
@@ -803,6 +902,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         this.renderOriginLocal = renderOriginAtAssembly;
         this.pivotLocal = cbcEntityPosWorld.subtract(renderOriginAtAssembly);
         this.pivotCaptured = fromLiveCbc;
+        pushControllerAndPivotToSyncedData();
     }
 
 
@@ -815,6 +915,7 @@ public class DecorationBearingContraptionEntity extends OrientedContraptionEntit
         this.renderOriginLocal = renderOriginAtAssembly;
         this.pivotLocal = cbcEntityPosLocal.subtract(renderOriginAtAssembly);
         this.pivotCaptured = false;
+        pushControllerAndPivotToSyncedData();
     }
 
     public Vec3 getPivotLocal() {

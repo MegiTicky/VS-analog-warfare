@@ -13,6 +13,13 @@ import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfile;
 import com.erika.vsanalogwarfare.scope.ballistics.ReticleMark;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
 import com.mojang.blaze3d.systems.RenderSystem;
+import com.mojang.logging.LogUtils;
+import com.erika.vsanalogwarfare.decorationbearing.DecorationBearingContraptionEntity;
+import net.minecraft.world.entity.Entity;
+import org.slf4j.Logger;
+
+import java.util.HashSet;
+import java.util.Set;
 import com.mojang.blaze3d.vertex.BufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
@@ -42,9 +49,20 @@ import org.joml.Matrix4f;
 
 @Mod.EventBusSubscriber(modid = VSAnalogWarfare.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public final class ClientForgeEvents {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final ResourceLocation SCOPE_BASE = new ResourceLocation(VSAnalogWarfare.MOD_ID, "textures/misc/scope_base.png");
     private static int mouseAimPacketCooldown;
     private static boolean vehicleHandleAttackHeld;
+
+    /**
+     * Temporary RAM-leak diagnostic (2026-09-22): Create caches one render
+     * world per client DBC entity id and only prunes dead ones, so entity-id
+     * churn surfaces as climbing memory while decorations are rendered.
+     * climbing distinctIds with a stable live count = the server keeps
+     * discarding/respawning the entities.
+     */
+    private static final Set<Integer> seenDbcEntityIds = new HashSet<>();
+    private static int dbcLeakLogTimer;
 
     private ClientForgeEvents() {
     }
@@ -89,6 +107,21 @@ public final class ClientForgeEvents {
         AnalogScrewdriverOverlay.tick();
         if (mc.level != null) {
             com.erika.vsanalogwarfare.stabilizer.ClientStabilizerState.tick(mc.level.getGameTime());
+            // [VSAW_DBC_LEAK] diagnostic, every 10 s (see field doc)
+            if (++dbcLeakLogTimer >= 200) {
+                dbcLeakLogTimer = 0;
+                int live = 0;
+                for (Entity e : mc.level.entitiesForRendering()) {
+                    if (e instanceof DecorationBearingContraptionEntity dbc) {
+                        live++;
+                        if (seenDbcEntityIds.size() < 4096) {
+                            seenDbcEntityIds.add(dbc.getId());
+                        }
+                    }
+                }
+                LOGGER.info("[VSAW_DBC_LEAK] live DBC entities: {}, distinct ids seen this session: {}",
+                        live, seenDbcEntityIds.size());
+            }
         }
         if (!mc.options.keyAttack.isDown()) {
             vehicleHandleAttackHeld = false;
@@ -143,11 +176,21 @@ public final class ClientForgeEvents {
         while (ClientKeyMappings.SCOPE_VIEW_TOGGLE.consumeClick()) {
             ClientScopeState.toggleViewMode();
         }
+        // Belt-and-braces: the frame path clamps too, but this guarantees the aim
+        // packet direction is inside the tether even if no render frame ran.
+        ClientScopeState.enforceFreeLookTether();
         sendMouseAimTargetIfNeeded();
     }
 
     private static void sendMouseAimTargetIfNeeded() {
         boolean thirdPerson = ClientScopeState.viewMode() == ClientScopeState.ViewMode.THIRD_PERSON;
+        // Hold-to-pause: while the free-look key is held in third person the view
+        // keeps turning with the vanilla mouse, but the aim packets stop, so the
+        // turret holds its last commanded aim instead of following the view.
+        if (thirdPerson && ClientKeyMappings.SCOPE_FREE_LOOK.isDown()) {
+            mouseAimPacketCooldown = 0;
+            return;
+        }
         // Third person aims 1:1 from the player's live look direction; scope view
         // uses the free-look direction with ballistic zero applied.
         if (!thirdPerson && !ClientScopeState.freeLookEnabled()) {
@@ -269,7 +312,8 @@ public final class ClientForgeEvents {
         }
         int cx = screenW / 2;
         int cy = screenH / 2;
-        int color = 0xFFFFFFFF;
+        // Amber while the WT-style tether has the camera pinned to the cone boundary.
+        int color = ClientScopeState.freeLookTethered() ? 0xFFFFB020 : 0xFFFFFFFF;
         graphics.fill(cx - 1, cy - 5, cx + 2, cy - 3, color);
         graphics.fill(cx - 1, cy + 4, cx + 2, cy + 6, color);
         graphics.fill(cx - 5, cy - 1, cx - 3, cy + 2, color);
