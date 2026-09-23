@@ -11,6 +11,7 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.BooleanValue IGNORE_TALLYHO_ENTITY_PLACEMENT;
     public static final ForgeConfigSpec.BooleanValue SCOPE_MOUNTED_ROTATION_COMPENSATION;
     public static final ForgeConfigSpec.DoubleValue SCOPE_THIRD_PERSON_CAMERA_LIFT;
+    public static final ForgeConfigSpec.DoubleValue FREE_LOOK_TETHER_DEGREES;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -39,6 +40,13 @@ public final class ClientConfig {
                 .comment("World-Y lift (blocks) applied to the third-person camera while a scope session is\n"
                         + "toggled to third-person view, so the vehicle hull does not block the view.")
                 .defineInRange("scopeThirdPersonCameraLift", 2.0D, 0.0D, 16.0D);
+        FREE_LOOK_TETHER_DEGREES = builder
+                .comment("War Thunder style mouse-aim tether: how far (degrees) the scope free-look camera may\n"
+                        + "stray from the crosshair before it hits the boundary. Mouse input past the edge is\n"
+                        + "absorbed (the cursor pins and slides along it), and hull rotation that carries the\n"
+                        + "crosshair further away drags the camera along so the turret is never left behind.\n"
+                        + "180 or more disables the tether.")
+                .defineInRange("freeLookTetherDegrees", 15.0D, 5.0D, 180.0D);
         builder.pop();
         builder.push("actionToIgnore");
         IGNORE_TALLYHO_ENTITY_PLACEMENT = builder
@@ -77,5 +85,9 @@ public final class ClientConfig {
 
     public static double scopeThirdPersonCameraLift() {
         return SCOPE_THIRD_PERSON_CAMERA_LIFT.get();
+    }
+
+    public static double freeLookTetherDegrees() {
+        return FREE_LOOK_TETHER_DEGREES.get();
     }
 }

@@ -48,6 +48,9 @@ public final class ClientScopeState {
     private static boolean freeLookEnabled;
     private static float freeLookYaw;
     private static float freeLookPitch;
+    // War Thunder style tether: true while the last check had to pin the free-look
+    // camera onto the cone boundary around the crosshair (HUD tints the aim cross).
+    private static boolean freeLookTethered;
     // Camera type active before the scope's third-person view took over; restored
     // on toggling back or when the session ends.
     @Nullable
@@ -304,6 +307,94 @@ public final class ClientScopeState {
         }
         freeLookYaw = wrapDegrees((float) (freeLookYaw + deltaYaw));
         freeLookPitch = clamp((float) (freeLookPitch + deltaPitch), -89.9f, 89.9f);
+        applyFreeLookTether();
+    }
+
+
+    /** True while the last tether check pinned the free-look camera to the cone boundary. */
+    public static boolean freeLookTethered() {
+        return freeLookTethered;
+    }
+
+
+    /**
+     * War Thunder style mouse-aim tether, tick-rate entry point: clamps the free-look
+     * camera into a cone around the zeroed reticle direction using a freshly resolved
+     * sight pose. Idempotent - safe to call alongside the input and frame paths.
+     */
+    public static void enforceFreeLookTether() {
+        freeLookTethered = false;
+        if (!freeLookEnabled() || viewMode != ViewMode.SCOPE) {
+            return;
+        }
+        double limitDeg = ClientConfig.freeLookTetherDegrees();
+        if (limitDeg >= 180.0D || scopePos == null || mountPos == null) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || !mc.level.isLoaded(scopePos)) {
+            return;
+        }
+        CameraPose sight = sightPose(1.0f);
+        clampFreeLookToTether(zeroedSightDirection(sight), limitDeg);
+    }
+
+
+    /**
+     * Input/frame path tether: same clamp as {@link #enforceFreeLookTether()} but against
+     * the already-cached sight pose, so mouse-event bursts and per-frame calls never
+     * trigger extra rig recomputes. The frame path calls this right after ensureCached
+     * recompute, so hull rotation that carries the crosshair past the limit drags the
+     * camera at frame rate (the clamp is idempotent).
+     */
+    private static void applyFreeLookTether() {
+        freeLookTethered = false;
+        if (!freeLookEnabled() || viewMode != ViewMode.SCOPE) {
+            return;
+        }
+        double limitDeg = ClientConfig.freeLookTetherDegrees();
+        if (limitDeg >= 180.0D || scopePos == null || mountPos == null) {
+            return;
+        }
+        clampFreeLookToTether(zeroedSightDirection(cachedSightPose), limitDeg);
+    }
+
+
+    /** The rendered crosshair direction: sight bore lifted by the zero pitch (same convention as the HUD projection). */
+    private static Vec3 zeroedSightDirection(CameraPose sight) {
+        double zeroPitch = getZeroPitch();
+        if (zeroPitch > 0.0D) {
+            return directionFromYawPitch(sight.yaw(), (float) (sight.pitch() + zeroPitch));
+        }
+        return sight.direction();
+    }
+
+
+    /** Rotates {@code freeLookYaw/freeLookPitch} back onto the cone surface when outside {@code limitDeg} of {@code center}. */
+    private static void clampFreeLookToTether(Vec3 center, double limitDeg) {
+        Vec3 free = directionFromYawPitch(freeLookYaw, freeLookPitch);
+        double dot = Math.max(-1.0D, Math.min(1.0D, center.dot(free)));
+        double angleDeg = Math.toDegrees(Math.acos(dot));
+        if (angleDeg <= limitDeg) {
+            return;
+        }
+        freeLookTethered = true;
+        // Rotating `free` about (free x center) by a positive angle walks it TOWARD `center`;
+        // the opposite order (center x free) kicks the camera further out instead of pinning it.
+        Vec3 axis = free.cross(center);
+        double axisLen = axis.length();
+        if (axisLen < 1.0e-6D) {
+            // Antipodal: no unique shortest arc - rotate about any perpendicular of the center.
+            Vec3 seed = Math.abs(center.y) < 0.9D ? new Vec3(0.0D, 1.0D, 0.0D) : new Vec3(1.0D, 0.0D, 0.0D);
+            axis = center.cross(seed);
+        }
+        axis = axis.normalize();
+        float rotateRad = (float) Math.toRadians(angleDeg - limitDeg);
+        Quaternionf rotation = new Quaternionf().rotationAxis(rotateRad, (float) axis.x, (float) axis.y, (float) axis.z);
+        Vector3f rotated = rotation.transform(new Vector3f((float) free.x, (float) free.y, (float) free.z));
+        Vec3 result = new Vec3(rotated.x(), rotated.y(), rotated.z()).normalize();
+        freeLookYaw = wrapDegrees(yawFromDirection(result));
+        freeLookPitch = clamp(pitchFromDirection(result), -89.9f, 89.9f);
     }
 
 
@@ -415,6 +506,7 @@ public final class ClientScopeState {
 
         if (!active) {
             freeLookEnabled = false;
+            freeLookTethered = false;
             viewMode = ViewMode.SCOPE;
             restoreCameraType();
             renderZeroPitchSmoothed = Double.NaN;
@@ -569,6 +661,9 @@ public final class ClientScopeState {
         } else {
             // FreeLook is ON - hull-up hint: ship roll still carries into the picture, but turret
             // yaw at high elevation cannot spin the horizon (see shipWorldUpHint).
+            // Tether first: the clamp consumes the pose recomputed above for THIS partialTick, so
+            // hull rotation that carries the crosshair past the limit drags the camera in lockstep.
+            applyFreeLookTether();
             applyCachedCameraPose(CameraPose.looking(
                     cachedSightPose.position(),
                     directionFromYawPitch(freeLookYaw, freeLookPitch),
@@ -652,7 +747,7 @@ public final class ClientScopeState {
                         .shipToWorldDirectionForRaycast(mc.level, mountPos, localDirection);
             }
         }
-        
+
         double maxRange = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
 
         double offset = 1.5;
