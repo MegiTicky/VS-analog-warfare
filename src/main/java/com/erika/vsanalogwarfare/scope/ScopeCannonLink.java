@@ -9,6 +9,7 @@ import net.minecraft.world.level.Level;
 
 import javax.annotation.Nullable;
 import java.util.Map;
+import java.util.function.Predicate;
 
 /** A cannon target that survives a VS schematic being moved to another world position. */
 public record ScopeCannonLink(long shipId, @Nullable BlockPos shipOffset, BlockPos fallbackPos) {
@@ -43,6 +44,24 @@ public record ScopeCannonLink(long shipId, @Nullable BlockPos shipOffset, BlockP
     /** Re-points this link at the ship it became after a schematic paste; shipOffset carries over. */
     public ScopeCannonLink rebased(long newShipId, BlockPos newFallbackPos) {
         return new ScopeCannonLink(newShipId, shipOffset, newFallbackPos);
+    }
+
+    /**
+     * Resolves the linked block position, tolerating ship-AABB drift. The
+     * stored offset is relative to the ship's AABB min corner, which VS2
+     * recomputes on every block edit, so a structurally edited ship resolves
+     * the offset to a position next to the real target. When the offset frame
+     * no longer verifies, the fallback position — the shipyard position
+     * captured at link time, invariant for the ship's lifetime — is returned
+     * instead when it verifies, so callers keep working between the edit and
+     * the next periodic frame heal. Null when nothing verifies.
+     */
+    @Nullable
+    public BlockPos resolveVerified(Level level, @Nullable Map<Long, Object> placedShips, Predicate<BlockPos> verifies) {
+        BlockPos resolved = resolve(level, placedShips);
+        if (resolved != null && verifies.test(resolved)) return resolved;
+        if (shipId >= 0L && verifies.test(fallbackPos)) return fallbackPos;
+        return null;
     }
 
     /**

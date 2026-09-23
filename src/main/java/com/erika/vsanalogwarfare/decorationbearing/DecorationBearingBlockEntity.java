@@ -113,8 +113,11 @@ public class DecorationBearingBlockEntity extends GeneratingKineticBlockEntity
     @Nullable
     private BlockPos resolveMount() {
         if (level == null || linkedMount == null) return null;
-        BlockPos resolved = linkedMount.resolve(level, null);
-        return resolved != null && CbcCompat.isCannonMount(level.getBlockEntity(resolved)) ? resolved : null;
+        // resolveVerified falls back to the invariant link-time shipyard
+        // position when the AABB-min offset no longer verifies (VS2 recomputes
+        // the ship AABB on every block edit), so an edited hull no longer
+        // sends the bearing into repair/teardown paths.
+        return linkedMount.resolveVerified(level, null, pos -> CbcCompat.isCannonMount(level.getBlockEntity(pos)));
     }
 
     public boolean link(BlockPos target) {

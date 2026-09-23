@@ -99,19 +99,12 @@ public class StabilizerBlockEntity extends BlockEntity implements VmodPasteRebas
         if (this.level == null || this.mountLink == null) {
             return null;
         }
-        BlockPos resolved = this.mountLink.resolve(this.level, null);
-        if (resolved != null && CbcCompat.isCannonMount(this.level.getBlockEntity(resolved))) {
-            return resolved;
-        }
-        // Ship-relative resolution depends on the ship's world AABB, which is
-        // pose-dependent and can miss entirely during violent motion. The
-        // link-time world position is still valid for ships that never
-        // chunk-teleport.
-        BlockPos fallback = this.mountLink.fallbackPos();
-        if (fallback != null && CbcCompat.isCannonMount(this.level.getBlockEntity(fallback))) {
-            return fallback;
-        }
-        return null;
+        // The stored offset is relative to the ship's AABB min corner, which
+        // VS2 recomputes on every block edit; resolveVerified falls back to the
+        // invariant link-time shipyard position when the offset no longer
+        // verifies, so an edited hull no longer reads as a missing mount.
+        return this.mountLink.resolveVerified(this.level, null,
+                pos -> CbcCompat.isCannonMount(this.level.getBlockEntity(pos)));
     }
 
     @Nullable
@@ -188,8 +181,10 @@ public class StabilizerBlockEntity extends BlockEntity implements VmodPasteRebas
             this.failedValidations = 0;
             return;
         }
-        if (resolveMountPos() != null) {
+        BlockPos resolved = resolveMountPos();
+        if (resolved != null) {
             this.failedValidations = 0;
+            tryRefreshMountLinkFrame(resolved);
             return;
         }
         // The ship-relative resolve is pose-dependent (ship world AABB) and
@@ -199,6 +194,32 @@ public class StabilizerBlockEntity extends BlockEntity implements VmodPasteRebas
         if (this.failedValidations >= MAX_FAILED_VALIDATIONS) {
             unlink();
         }
+    }
+
+    /** Ticks between attempts to re-capture the mount link onto the live AABB frame. */
+    private static final long FRAME_REFRESH_INTERVAL_TICKS = 100L;
+    private long nextFrameRefreshAt;
+
+    /**
+     * When the link resolves through the invariant fallback position because
+     * the stored AABB-min offset no longer matches the live frame (VS2
+     * recomputes the ship AABB on every block edit), re-capture the link at
+     * the verified position so the offset frame converges instead of living
+     * on the fallback forever. Verification-gated: only an already-resolved
+     * mount position is adopted.
+     */
+    private void tryRefreshMountLinkFrame(BlockPos resolved) {
+        if (this.level == null || this.level.isClientSide || this.mountLink == null) return;
+        long now = this.level.getGameTime();
+        if (now < this.nextFrameRefreshAt) return;
+        this.nextFrameRefreshAt = now + FRAME_REFRESH_INTERVAL_TICKS;
+        ScopeCannonLink fresh = ScopeCannonLink.fromTarget(this.level, resolved);
+        if (fresh.equals(this.mountLink)) return;
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Stabilizer at {} refreshed its mount link frame onto ship {} at {}",
+                this.worldPosition, fresh.shipId(), resolved);
+        this.mountLink = fresh;
+        setChanged();
+        sendStatePacket();
     }
 
     /** The anchored target if fresh enough to restore, else NaN (capture anew). */
