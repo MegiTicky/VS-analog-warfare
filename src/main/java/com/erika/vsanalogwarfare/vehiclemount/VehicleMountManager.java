@@ -88,6 +88,9 @@ public final class VehicleMountManager {
             player.displayClientMessage(Component.literal("That vehicle mount handle is unavailable."), true);
             return;
         }
+        // Repair a stale schematic-carried ship id (legacy pasted handles) before
+        // resolving, so mounting and currentWorldPosition() consumers heal on use.
+        handle.healStaleShipIdIfNeeded();
         if (handle.locked()) {
             player.displayClientMessage(Component.literal("This vehicle mount handle is locked."), true);
             return;

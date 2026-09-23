@@ -149,6 +149,91 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
         return placedShips == null ? null : placedShips.get(originalShipId);
     }
 
+    /**
+     * VMod paste: the schematic NBT carries the source-world ship ids, which
+     * never match the freshly allocated ids of the pasted ships. Rewrite the
+     * handle anchor and every seat link onto the pasted ships' runtime ids so
+     * plain ship-id resolution keeps working after the placement and across
+     * server restarts, where the transient placedShips map is gone. Mirrors
+     * ScopeCannonLink.rebasedAfterPaste.
+     */
+    public void rebaseAfterSchematicPlacement(@Nullable Map<Long, Object> ships) {
+        if (ships == null || ships.isEmpty()) return;
+        boolean changed = false;
+        long handleRuntimeId = runtimeIdInShips(ships, shipId);
+        if (handleRuntimeId >= 0L && handleRuntimeId != shipId) {
+            shipId = handleRuntimeId;
+            changed = true;
+        }
+        for (int i = 0; i < seats.size(); i++) {
+            VehicleMountSeatLink link = seats.get(i);
+            Object ship = link.shipId() >= 0L ? ships.get(link.shipId()) : null;
+            long runtimeId = ship == null ? -1L : VehicleSetupReflection.shipId(ship);
+            // The stored seatPos is a shipyard position of the source world; a
+            // paste allocates a fresh claim, so re-derive it from the AABB-min
+            // offset against the pasted ship. Kept verbatim when the pasted
+            // ship's AABB is not ready yet — the resolution ladder heals it on
+            // first use.
+            BlockPos rebasedSeatPos = null;
+            if (ship != null && link.shipOffset() != null) {
+                BlockPos pos = VehicleSetupReflection.positionOnShip(ship, link.shipOffset());
+                if (pos != null) rebasedSeatPos = pos.immutable();
+            }
+            if (runtimeId < 0L && rebasedSeatPos == null) continue;
+            seats.set(i, new VehicleMountSeatLink(link.role(), link.seatUuid(),
+                    rebasedSeatPos != null ? rebasedSeatPos : link.seatPos(),
+                    runtimeId >= 0L ? runtimeId : link.shipId(),
+                    link.shipOffset(), link.handlePos()));
+            changed = true;
+        }
+        if (changed) markChanged();
+    }
+
+    private static long runtimeIdInShips(Map<Long, Object> ships, long schematicShipId) {
+        Object ship = ships.get(schematicShipId);
+        return ship == null ? -1L : VehicleSetupReflection.shipId(ship);
+    }
+
+    /**
+     * Chunk fallback for handles whose persisted ship id matches no loaded ship
+     * (pastes recorded before paste-time rebasing existed): re-capture onto the
+     * ship managing this block position and rewrite the seat links that shared
+     * the stale id. Mirrors the scope link chunk fallback; repairs
+     * {@link #currentWorldPosition()} consumers such as the Steve's Army crew
+     * spawn. No-op while the stored id is healthy or the ship is not loaded.
+     */
+    public void healStaleShipIdIfNeeded() {
+        if (level == null || level.isClientSide || shipId < 0L) return;
+        if (findShipById(shipId) != null) return;
+        Object ship = com.erika.vsanalogwarfare.scope.compat.VsCompat.findShip(level, worldPosition);
+        if (ship == null) return;
+        long runtimeId = VehicleSetupReflection.shipId(ship);
+        if (runtimeId < 0L || runtimeId == shipId) return;
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Mount handle ship id healed: {} -> {} at {}",
+                shipId, runtimeId, worldPosition);
+        long staleId = shipId;
+        shipId = runtimeId;
+        for (int i = 0; i < seats.size(); i++) {
+            VehicleMountSeatLink link = seats.get(i);
+            if (link.shipId() != staleId) continue;
+            seats.set(i, new VehicleMountSeatLink(link.role(), link.seatUuid(), link.seatPos(),
+                    runtimeId, link.shipOffset(), link.handlePos()));
+        }
+        markChanged();
+    }
+
+    @Nullable private Object findShipById(long targetShipId) {
+        Object mapped = placedShips == null ? null : placedShips.get(targetShipId);
+        if (mapped != null) return mapped;
+        if (level == null) return null;
+        for (Object ship : com.erika.vsanalogwarfare.scope.compat.VsCompat.getAllShips(level)) {
+            try {
+                if (((Number) VehicleSetupReflection.invoke(ship, "getId")).longValue() == targetShipId) return ship;
+            } catch (ReflectiveOperationException ignored) { }
+        }
+        return null;
+    }
+
     public void remapPlacedPosition(BlockPos actualPosition) {
         for (int i = 0; i < seats.size(); i++) {
             VehicleMountSeatLink link = seats.get(i);
@@ -160,6 +245,37 @@ public class VehicleMountHandleBlockEntity extends BlockEntity {
     public void addSeat(VehicleMountSeatLink link) {
         seats.removeIf(existing -> existing.shipId() == link.shipId() && existing.shipOffset().equals(link.shipOffset()));
         seats.add(link);
+        markChanged();
+    }
+
+    /**
+     * Persists a seat link whose resolution frame was re-captured by the
+     * resolution ladder; {@code from} must be the currently stored record.
+     */
+    public void refreshSeatLink(VehicleMountSeatLink from, VehicleMountSeatLink to) {
+        int index = seats.indexOf(from);
+        if (index < 0) return;
+        seats.set(index, to);
+        markChanged();
+    }
+
+    /**
+     * Re-captures the handle's own ship anchor even when one is already
+     * stored. The stored offset is relative to the ship's AABB min corner,
+     * which VS2 recomputes on every block edit, so the anchor captured at
+     * placement time goes stale once the hull changes; refreshing converges
+     * the same-ship anchor-delta frames. No-op when no ship manages this
+     * position or nothing moved.
+     */
+    public void recaptureShipPosition() {
+        if (level == null || level.isClientSide) return;
+        VehicleSetupShipPosition position = VehicleSetupShipPosition.at(level, worldPosition);
+        if (position == null) return;
+        if (position.shipId() == shipId && position.offset().equals(shipOffset)) return;
+        VSAnalogWarfare.LOGGER.info("[VSAW setup-debug] Mount handle anchor refreshed at {}: shipId {} -> {}, offset {} -> {}",
+                worldPosition, shipId, position.shipId(), shipOffset, position.offset());
+        shipId = position.shipId();
+        shipOffset = position.offset();
         markChanged();
     }
 

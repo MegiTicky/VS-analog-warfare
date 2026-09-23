@@ -246,6 +246,7 @@ public final class VmodVehicleSetupCompat {
                 if (entity instanceof VehicleMountHandleBlockEntity handle) {
                     handle.setPlacedShips(ships);
                     handle.remapPlacedPosition(pos.immutable());
+                    handle.rebaseAfterSchematicPlacement(ships);
                 }
                 if (entity instanceof ScopeBlockEntity scope) {
                     scope.initializeAfterSchematicPlacement(ships);
