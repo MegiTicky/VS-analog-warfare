@@ -20,6 +20,7 @@ import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -28,11 +29,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class VmodVehicleSetupCompat {
     private static final ConcurrentHashMap<Integer, UUID> PLACERS = new ConcurrentHashMap<>();
+    /** Freshly pasted ships may not have computed their ship AABB yet; retry this many times, 2 ticks apart. */
+    private static final int AABB_READY_MAX_ATTEMPTS = 10;
     private static final ConcurrentHashMap<BlockPos, Map<Long, Object>> PLACED_SHIP_MAPPINGS = new ConcurrentHashMap<>();
     /** Runtime ship id -> mapping, so a pasted setup still resolves after the ship moves away from its paste-time block position. */
     private static final ConcurrentHashMap<Long, Map<Long, Object>> SHIP_KEYED_MAPPINGS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, String> PLACEMENT_IDS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, PendingRun> PENDING_RUNS = new ConcurrentHashMap<>();
+    private static final ArrayList<PendingRegistration> PENDING_REGISTRATIONS = new ArrayList<>();
     private VmodVehicleSetupCompat() { }
 
     public static void rememberPlacement(UUID player, List<?> ships) { PLACERS.put(System.identityHashCode(ships), player); }
@@ -52,6 +56,17 @@ public final class VmodVehicleSetupCompat {
     }
 
     private static void register(ServerLevel level, List<?> pairs) {
+        if (!shipBoundsReady(pairs)) {
+            // VS2 computes a pasted ship's AABB on its worker jobs; scanning before it exists
+            // would bail per ship and silently skip every rebase on that ship. Retry on a real
+            // tick cadence (server.execute would run inline when already on the main thread).
+            PENDING_REGISTRATIONS.add(new PendingRegistration(level, pairs));
+            return;
+        }
+        registerReady(level, pairs);
+    }
+
+    private static void registerReady(ServerLevel level, List<?> pairs) {
         Map<Long, Object> ships = new HashMap<>();
         for (Object pair : pairs) {
             Object ship = pairValue(pair, "getFirst"); Object id = pairValue(pair, "getSecond");
@@ -126,6 +141,24 @@ public final class VmodVehicleSetupCompat {
         @SubscribeEvent
         public static void onServerTick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
+            if (!PENDING_REGISTRATIONS.isEmpty()) {
+                for (PendingRegistration pending : new ArrayList<>(PENDING_REGISTRATIONS)) {
+                    if (--pending.delayTicks > 0) continue;
+                    PENDING_REGISTRATIONS.remove(pending);
+                    if (shipBoundsReady(pending.pairs)) {
+                        registerReady(pending.level, pending.pairs);
+                        continue;
+                    }
+                    if (pending.attemptsLeft-- > 0) {
+                        PENDING_REGISTRATIONS.add(pending);
+                        continue;
+                    }
+                    VSAnalogWarfare.LOGGER.warn("[VSAW] Pasted ship AABB still not ready after {} retries; scanning "
+                            + "anyway. Ships without an AABB get no paste rebase and rely on the use-time link heal.",
+                            AABB_READY_MAX_ATTEMPTS);
+                    registerReady(pending.level, pending.pairs);
+                }
+            }
             for (Map.Entry<BlockPos, PendingRun> entry : PENDING_RUNS.entrySet()) {
                 PendingRun run = entry.getValue();
                 if (run.remainingTicks > 0 && --run.remainingTicks > 0) continue;
@@ -270,9 +303,39 @@ public final class VmodVehicleSetupCompat {
     @Nullable private static Object pairValue(Object pair, String method) {
         try { return VehicleSetupReflection.invoke(pair, method); } catch (ReflectiveOperationException ignored) { return null; }
     }
+
+    private static boolean shipBoundsReady(List<?> pairs) {
+        for (Object pair : pairs) {
+            Object ship = pairValue(pair, "getFirst");
+            if (ship != null && !hasShipAabb(ship)) return false;
+        }
+        return true;
+    }
+
+    private static boolean hasShipAabb(Object ship) {
+        try {
+            return VehicleSetupReflection.invoke(ship, "getShipAABB") != null;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
     private static int coordinate(Object box, String name) throws ReflectiveOperationException {
         Object value = box.getClass().getMethod(name).invoke(box);
         return value instanceof Number number ? number.intValue() : 0;
+    }
+
+    /** A placement whose ships' AABBs VS2 had not computed yet; retried a few ticks apart. */
+    private static final class PendingRegistration {
+        final ServerLevel level;
+        final List<?> pairs;
+        int attemptsLeft = AABB_READY_MAX_ATTEMPTS;
+        int delayTicks = 2;
+
+        PendingRegistration(ServerLevel level, List<?> pairs) {
+            this.level = level;
+            this.pairs = pairs;
+        }
     }
 
     private static final class PendingRun {

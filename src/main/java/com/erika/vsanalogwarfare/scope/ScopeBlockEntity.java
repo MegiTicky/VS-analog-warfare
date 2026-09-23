@@ -1,5 +1,6 @@
 package com.erika.vsanalogwarfare.scope;
 
+import com.erika.vsanalogwarfare.VSAnalogWarfare;
 import com.erika.vsanalogwarfare.registry.ModBlockEntities;
 import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfile;
 import com.erika.vsanalogwarfare.scope.ballistics.BallisticProfileResolver;
@@ -21,6 +22,8 @@ import java.util.Optional;
 
 public class ScopeBlockEntity extends BlockEntity {
     private static final int DEFAULT_SCAN_RADIUS = 8;
+    /** Ladder failures (one per 40-tick heal check) before the primary link may re-discover a mount. */
+    private static final int HEAL_CYCLES_BEFORE_REDISCOVERY = 3;
 
     @Nullable
     private ScopeCannonLink primaryLink;
@@ -29,6 +32,7 @@ public class ScopeBlockEntity extends BlockEntity {
     private ScopeCannonLink wireHubLink;
     private final List<ScopeCannonLink> secondaryLinks = new ArrayList<>();
     private boolean primaryLinkDeleted;
+    private int failedHealCycles;
     private transient Map<Long, Object> placedShips;
     private int revision;
     private long shipId = -1L;
@@ -52,6 +56,7 @@ public class ScopeBlockEntity extends BlockEntity {
         if (level.isClientSide) return;
         if (level.getGameTime() % 40L == 0L) {
             be.captureVsAnchor();
+            be.tryHealLinks();
             be.initializeDefaultPrimaryLink();
             be.refreshBallisticProfile();
         }
@@ -133,6 +138,84 @@ public class ScopeBlockEntity extends BlockEntity {
         if (this.level == null || this.level.isClientSide || this.primaryLink != null || this.primaryLinkDeleted) return;
         BlockPos found = CbcCompat.findNearestMount(this.level, this.worldPosition, DEFAULT_SCAN_RADIUS).orElse(null);
         if (found != null) linkPrimary(found);
+    }
+
+    /**
+     * Re-points links whose stored ship id no longer resolves. A pasted ship allocates a
+     * fresh VS id, and the paste-time rebase can miss (ship AABB not ready when the scan
+     * ran, id absent from the placement map, rotated paste invalidating the stored offset),
+     * after which a dead link would otherwise never recover. Verification-gated, so a
+     * healthy link is never touched; a link that cannot be healed is kept, never unlinked.
+     * Also run at session start via {@link #tryHealLinks()}.
+     */
+    public void tryHealLinks() {
+        if (this.level == null || this.level.isClientSide) return;
+        if (!anyDeadLink()) {
+            this.failedHealCycles = 0;
+            return;
+        }
+        healPrimaryLink();
+        healSecondaryLinks();
+        this.failedHealCycles = anyDeadLink() ? this.failedHealCycles + 1 : 0;
+    }
+
+    private boolean anyDeadLink() {
+        if (this.primaryLink != null && !resolvesToMount(this.primaryLink)) return true;
+        for (ScopeCannonLink link : this.secondaryLinks) {
+            if (!resolvesToMount(link)) return true;
+        }
+        return false;
+    }
+
+    private boolean resolvesToMount(ScopeCannonLink link) {
+        BlockPos resolved = link.resolve(this.level, this.placedShips);
+        return resolved != null && CbcCompat.isCannonMount(this.level.getBlockEntity(resolved));
+    }
+
+    private void healPrimaryLink() {
+        if (this.primaryLink == null || resolvesToMount(this.primaryLink)) return;
+        ScopeCannonLink healed = ShipLinkSupport.healStaleShipId(this.level, this.worldPosition, this.primaryLink,
+                pos -> CbcCompat.isCannonMount(this.level.getBlockEntity(pos)));
+        if (healed != null) {
+            VSAnalogWarfare.LOGGER.info(
+                    "[VSAW] Scope at {} healed its primary link onto ship {} (stale ship id {})",
+                    this.worldPosition, healed.shipId(), this.primaryLink.shipId());
+            adoptPrimaryLink(healed);
+            return;
+        }
+        // The stored offset frame itself can be broken (rotated paste), leaving the ladder
+        // no verifiable candidate. After a few failed cycles re-run the placement-time
+        // nearest-mount auto-link; a manual unlink (primaryLinkDeleted) never reaches here
+        // because it clears the link object first.
+        if (this.failedHealCycles + 1 < HEAL_CYCLES_BEFORE_REDISCOVERY) return;
+        BlockPos found = CbcCompat.findNearestMount(this.level, this.worldPosition, DEFAULT_SCAN_RADIUS).orElse(null);
+        if (found == null) return;
+        VSAnalogWarfare.LOGGER.info(
+                "[VSAW] Scope at {} re-discovered its primary cannon at {} after the pasted link went stale",
+                this.worldPosition, found);
+        linkPrimary(found);
+    }
+
+    private void adoptPrimaryLink(ScopeCannonLink healed) {
+        this.primaryLink = healed;
+        this.failedHealCycles = 0;
+        markLinkChanged();
+        refreshBallisticProfile();
+    }
+
+    private void healSecondaryLinks() {
+        for (int i = 0; i < this.secondaryLinks.size(); i++) {
+            ScopeCannonLink link = this.secondaryLinks.get(i);
+            if (resolvesToMount(link)) continue;
+            ScopeCannonLink healed = ShipLinkSupport.healStaleShipId(this.level, this.worldPosition, link,
+                    pos -> CbcCompat.isCannonMount(this.level.getBlockEntity(pos)));
+            if (healed == null) continue;
+            VSAnalogWarfare.LOGGER.info(
+                    "[VSAW] Scope at {} healed a secondary link onto ship {} (stale ship id {})",
+                    this.worldPosition, healed.shipId(), link.shipId());
+            this.secondaryLinks.set(i, healed);
+            markLinkChanged();
+        }
     }
 
     @Nullable
@@ -239,16 +322,25 @@ public class ScopeBlockEntity extends BlockEntity {
         if (this.primaryLink != null) {
             ScopeCannonLink rebased = rebaseLink(this.primaryLink, placedShips);
             if (rebased != null) { this.primaryLink = rebased; changed = true; }
+            else logRebaseMiss("primary", this.primaryLink);
         }
         if (this.wireHubLink != null) {
             ScopeCannonLink rebased = rebaseLink(this.wireHubLink, placedShips);
             if (rebased != null) { this.wireHubLink = rebased; changed = true; }
+            else logRebaseMiss("wire hub", this.wireHubLink);
         }
         for (int i = 0; i < this.secondaryLinks.size(); i++) {
             ScopeCannonLink rebased = rebaseLink(this.secondaryLinks.get(i), placedShips);
             if (rebased != null) { this.secondaryLinks.set(i, rebased); changed = true; }
+            else logRebaseMiss("secondary", this.secondaryLinks.get(i));
         }
         if (changed) markLinkChanged();
+    }
+
+    private void logRebaseMiss(String kind, ScopeCannonLink link) {
+        if (link.shipId() < 0L || link.shipOffset() == null) return; // ground links have no ship id to rebase
+        VSAnalogWarfare.LOGGER.info("[VSAW] Scope at {} {} link ship id {} was not in the paste map; "
+                + "the tick/use-time heal will re-point it", this.worldPosition, kind, link.shipId());
     }
 
     @Nullable

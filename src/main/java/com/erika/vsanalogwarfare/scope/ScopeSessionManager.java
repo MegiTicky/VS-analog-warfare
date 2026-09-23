@@ -28,6 +28,9 @@ public final class ScopeSessionManager {
     public static boolean start(ServerPlayer player, ScopeBlockEntity scope) {
         stop(player);
         scope.captureVsAnchor();
+        // A just-pasted ship's links can be stale until the first heal tick; re-point them now
+        // so an immediate right-click works instead of reporting no linked primary cannon.
+        scope.tryHealLinks();
         var mountPos = scope.resolveMountPos();
         if (!com.erika.vsanalogwarfare.scope.compat.CbcCompat.isCannonMount(player.level().getBlockEntity(mountPos))) {
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("This scope has no linked primary cannon."), true);
