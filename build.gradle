@@ -105,6 +105,9 @@ dependencies {
     compileOnly fg.deobf('vs23.local:create-1.20.1:0.5.1.j')
     compileOnly fg.deobf('vs23.local:createbigcannons:5.8.2tt3-dev+mc.1.20.1-forge')
     compileOnly fg.deobf('vs23.local:cbcmoreshells:0.2.2')
+    // Compile-only classpath for the scope ping compat mixins (never packaged).
+    compileOnly fg.deobf('vs23.local:pingwheel:1.12.0')
+    compileOnly fg.deobf('vs23.local:steves_army:0.4.0')
     // Compile-only for the ship-aware schematic mixins; excluded from the jar below.
     // Ship/api classes live in the vs-core api jar bundled (jarjar) inside the VS mod jar.
     compileOnly fg.deobf('vs23.local:valkyrienskies-120-2.3.0-beta.5tt16+f75b0eafe1:2')

@@ -22,7 +22,9 @@ public class VsawMixinConfigPlugin implements IMixinConfigPlugin {
             "valkyrien_mod", "0.1.3",
             "drivebywire", "0.0.6b",
             "trackwork", "1.0.2c",
-            "createendertransmission", "2.0.7-1.20.1"
+            "createendertransmission", "2.0.7-1.20.1",
+            "pingwheel", "1.12.0",
+            "steves_army", "0.4.0"
     );
     private static final Set<String> WARNED = ConcurrentHashMap.newKeySet();
 
@@ -98,6 +100,8 @@ public class VsawMixinConfigPlugin implements IMixinConfigPlugin {
         if (mixinClassName.contains(".mixin.compat.Vmod")) return "valkyrien_mod";
         if (mixinClassName.contains(".mixin.compat.Dbw")) return "drivebywire";
         if (mixinClassName.contains(".mixin.compat.Trackwork")) return "trackwork";
+        if (mixinClassName.contains(".mixin.compat.PingWheel")) return "pingwheel";
+        if (mixinClassName.contains(".mixin.compat.StevesArmy")) return "steves_army";
         if (mixinClassName.contains("EnderTransmission") || mixinClassName.contains("EnderTransmitter")) {
             return "createendertransmission";
         }

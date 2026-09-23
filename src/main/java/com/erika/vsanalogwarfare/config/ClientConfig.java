@@ -12,6 +12,7 @@ public final class ClientConfig {
     public static final ForgeConfigSpec.BooleanValue SCOPE_MOUNTED_ROTATION_COMPENSATION;
     public static final ForgeConfigSpec.DoubleValue SCOPE_THIRD_PERSON_CAMERA_LIFT;
     public static final ForgeConfigSpec.DoubleValue FREE_LOOK_TETHER_DEGREES;
+    public static final ForgeConfigSpec.BooleanValue VIRTUALIZE_PLAYER_LOOK_WHILE_SCOPED;
 
     static {
         ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
@@ -47,6 +48,12 @@ public final class ClientConfig {
                         + "crosshair further away drags the camera along so the turret is never left behind.\n"
                         + "180 or more disables the tether.")
                 .defineInRange("freeLookTetherDegrees", 15.0D, 5.0D, 180.0D);
+        VIRTUALIZE_PLAYER_LOOK_WHILE_SCOPED = builder
+                .comment("While a scope session is active, the local player's eye position and look vector report the\n"
+                        + "scope view's world-frame ray. Mods that aim from the player entity (Ping Wheel, Steve's Army\n"
+                        + "pings, crosshair targeting) then aim at what the reticle points at instead of the frozen\n"
+                        + "first-person head. Disable if another mod misbehaves under the virtual look.")
+                .define("virtualizePlayerLookWhileScoped", true);
         builder.pop();
         builder.push("actionToIgnore");
         IGNORE_TALLYHO_ENTITY_PLACEMENT = builder
@@ -89,5 +96,9 @@ public final class ClientConfig {
 
     public static double freeLookTetherDegrees() {
         return FREE_LOOK_TETHER_DEGREES.get();
+    }
+
+    public static boolean virtualizePlayerLookWhileScoped() {
+        return VIRTUALIZE_PLAYER_LOOK_WHILE_SCOPED.get();
     }
 }

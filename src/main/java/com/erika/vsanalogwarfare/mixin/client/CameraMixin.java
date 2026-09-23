@@ -179,7 +179,11 @@ public abstract class CameraMixin {
         if (mc.level == null || entity == null) {
             return;
         }
-        Vec3 pivot = entity.getEyePosition(partialTick)
+        // Raw interpolated eye: EntityViewCompatMixin virtualizes getEyePosition
+        // while scoped, and the orbit pivot must stay anchored to the player's
+        // real eye or it would chase the camera it is orbiting.
+        Vec3 pivot = entity.getPosition(partialTick)
+                .add(0.0, entity.getEyeHeight(), 0.0)
                 .add(0.0, ClientConfig.scopeThirdPersonCameraLift(), 0.0);
         Vec3 dir = new Vec3(this.f_90554_.x(), this.f_90554_.y(), this.f_90554_.z());
 

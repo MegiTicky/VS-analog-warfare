@@ -8,6 +8,7 @@ import com.erika.vsanalogwarfare.scope.ballistics.BallisticSolver;
 import com.erika.vsanalogwarfare.scope.ballistics.ReticleMark;
 import com.erika.vsanalogwarfare.scope.rig.CameraPose;
 import com.erika.vsanalogwarfare.scope.rig.FixedCoaxScopeRig;
+import net.minecraft.client.Camera;
 import net.minecraft.client.CameraType;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -715,15 +716,41 @@ public final class ClientScopeState {
         cachedRenderRoll = rollOf(rotation, cachedRenderYaw, cachedRenderPitch);
     }
 
-    public static void triggerRangefinder() {
-        if (!active) return;
+    /** World-space aim ray of the scope view: the origin and direction the reticle points along. */
+    public record ScopeRay(Vec3 origin, Vec3 direction) {
+    }
 
+
+    /**
+     * World-space ray along the scope view: what the reticle points at. Scope
+     * view uses the sight ray (free-look direction when engaged), exactly like
+     * the rangefinder always has; third-person view uses the rendered orbit-
+     * camera ray so the ray matches the crosshair despite the orbit back-off
+     * and lift (a ray from the player's real eye would parallax by up to the
+     * full camera distance). Shared source for the rangefinder and the ping-mod
+     * compat layer ({@link ScopeLookCompat}). Null while no scope session is
+     * active. In third-person the camera pose is at most one render frame old
+     * when queried outside the render pass (tick-driven ping actions).
+     */
+    @Nullable
+    public static ScopeRay scopeAimRay(float partialTick) {
+        if (!active) {
+            return null;
+        }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || mc.player == null) return;
-
-        CameraPose pose = cameraPose(1.0f);
-        Vec3 cameraPos = pose.position();
-        
+        if (mc.level == null) {
+            return null;
+        }
+        if (viewMode == ViewMode.THIRD_PERSON) {
+            // The orbit camera IS the view: ray straight from the rendered
+            // camera pose (CameraMixin virtualizes it in every mount state).
+            Camera camera = mc.gameRenderer.getMainCamera();
+            Vector3f forward = camera.rotation().transform(new Vector3f(0.0f, 0.0f, 1.0f));
+            return new ScopeRay(camera.getPosition(),
+                    new Vec3(forward.x(), forward.y(), forward.z()).normalize());
+        }
+        ensureCached(partialTick);
+        Vec3 origin = cachedCameraPose.position();
         Vec3 direction;
         if (freeLookEnabled()) {
             // Free look angles are world-frame (see toggleFreeLook), mounted or not.
@@ -747,6 +774,20 @@ public final class ClientScopeState {
                         .shipToWorldDirectionForRaycast(mc.level, mountPos, localDirection);
             }
         }
+        return new ScopeRay(origin, direction);
+    }
+
+
+    public static void triggerRangefinder() {
+        if (!active) return;
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null) return;
+
+        ScopeRay ray = scopeAimRay(1.0f);
+        if (ray == null) return;
+        Vec3 cameraPos = ray.origin();
+        Vec3 direction = ray.direction();
 
         double maxRange = com.erika.vsanalogwarfare.config.CommonConfig.maxRangefinderDistance();
 

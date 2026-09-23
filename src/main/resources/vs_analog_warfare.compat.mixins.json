@@ -10,6 +10,9 @@
     "compat.DbwTweakedControllerHubMixin",
     "compat.TrackworkTrackToolkitMixin",
     "compat.EnderTransmitterPacketMixin",
+    "compat.PingWheelPingControllerMixin",
+    "compat.PingWheelRaycastMixin",
+    "compat.StevesArmyPingWheelMixin",
     "compat.VmodSchematicActionsQueueMixin",
     "compat.VmodSchemPlacementItemMixin"
   ],

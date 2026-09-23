@@ -12,6 +12,7 @@
   ],
   "client": [
     "client.CameraMixin",
+    "client.EntityViewCompatMixin",
     "client.GameRendererMixin",
     "client.MouseHandlerMixin",
     "client.PoseStackMixin",
