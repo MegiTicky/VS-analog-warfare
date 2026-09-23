@@ -17,9 +17,10 @@ public final class ScopeWireRelease {
     public static void releaseChannels(ServerPlayer player, ScopeSession session) {
         if (player == null || session == null) return;
         if (!(player.level().getBlockEntity(session.scopePos()) instanceof ScopeBlockEntity scope)) return;
-        ScopeCannonLink link = scope.getWireHubLink();
-        if (link == null) return;
-        BlockPos hubPos = link.resolve(player.level(), null);
+        // Same verified resolution as equip (no player messaging here - the session
+        // is ending, and the player may be mid-disconnect); a stale link is healed
+        // as a side effect so the next session starts clean.
+        BlockPos hubPos = WireHubResolver.resolveVerified(player.level(), scope, null);
         if (hubPos == null) return;
         if (!DbwWireCompat.isTweakedHub(player.level().getBlockState(hubPos).getBlock())) return;
         DbwWireCompat.receiveButton(player.level(), hubPos, (short) 0);

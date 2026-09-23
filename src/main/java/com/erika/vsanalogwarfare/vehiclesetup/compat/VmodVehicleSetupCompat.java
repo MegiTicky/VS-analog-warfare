@@ -34,10 +34,22 @@ public final class VmodVehicleSetupCompat {
     private static final ConcurrentHashMap<BlockPos, Map<Long, Object>> PLACED_SHIP_MAPPINGS = new ConcurrentHashMap<>();
     /** Runtime ship id -> mapping, so a pasted setup still resolves after the ship moves away from its paste-time block position. */
     private static final ConcurrentHashMap<Long, Map<Long, Object>> SHIP_KEYED_MAPPINGS = new ConcurrentHashMap<>();
+    /**
+     * Every pasted ship seen this session, keyed by schematic id AND runtime id.
+     * Lets a pasted scope rebase links onto ships pasted in OTHER placements (a
+     * controller hub on a dock control ship, multi-ship builds). In-memory only;
+     * cleared on restart, after which the plain link resolution applies again.
+     */
+    private static final ConcurrentHashMap<Long, Object> GLOBAL_PASTED_SHIPS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, String> PLACEMENT_IDS = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<BlockPos, PendingRun> PENDING_RUNS = new ConcurrentHashMap<>();
     private static final ArrayList<PendingRegistration> PENDING_REGISTRATIONS = new ArrayList<>();
     private VmodVehicleSetupCompat() { }
+
+    /** Session-wide schematic-id/runtime-id map of every pasted ship (see {@link #GLOBAL_PASTED_SHIPS}). */
+    public static Map<Long, Object> globalPastedShips() {
+        return GLOBAL_PASTED_SHIPS;
+    }
 
     public static void rememberPlacement(UUID player, List<?> ships) { PLACERS.put(System.identityHashCode(ships), player); }
     public static void placementComplete(Object item) {
@@ -77,6 +89,9 @@ public final class VmodVehicleSetupCompat {
                 // stores it instead of the original one.
                 long runtimeShipId = VehicleSetupReflection.shipId(ship);
                 if (runtimeShipId >= 0L) ships.put(runtimeShipId, ship);
+                if (GLOBAL_PASTED_SHIPS.size() > 1024) GLOBAL_PASTED_SHIPS.clear();
+                GLOBAL_PASTED_SHIPS.put(number.longValue(), ship);
+                if (runtimeShipId >= 0L) GLOBAL_PASTED_SHIPS.put(runtimeShipId, ship);
                 logShip("Mapped pasted ship", number.longValue(), ship);
             }
         }

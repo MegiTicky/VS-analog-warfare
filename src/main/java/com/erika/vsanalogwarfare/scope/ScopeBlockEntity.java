@@ -168,8 +168,8 @@ public class ScopeBlockEntity extends BlockEntity {
     }
 
     private boolean resolvesToMount(ScopeCannonLink link) {
-        BlockPos resolved = link.resolve(this.level, this.placedShips);
-        return resolved != null && CbcCompat.isCannonMount(this.level.getBlockEntity(resolved));
+        return link.resolveVerified(this.level, this.placedShips,
+                pos -> CbcCompat.isCannonMount(this.level.getBlockEntity(pos))) != null;
     }
 
     private void healPrimaryLink() {
@@ -345,7 +345,15 @@ public class ScopeBlockEntity extends BlockEntity {
 
     @Nullable
     private static ScopeCannonLink rebaseLink(ScopeCannonLink link, Map<Long, Object> placedShips) {
-        return ScopeCannonLink.rebasedAfterPaste(link, placedShips);
+        ScopeCannonLink rebased = ScopeCannonLink.rebasedAfterPaste(link, placedShips);
+        if (rebased == null) {
+            // The hub may live on a ship pasted in a different placement (dock
+            // control station, multi-ship build); the session-wide registry
+            // covers those ship ids. Falls back to plain resolution when absent.
+            rebased = ScopeCannonLink.rebasedAfterPaste(link,
+                    com.erika.vsanalogwarfare.vehiclesetup.compat.VmodVehicleSetupCompat.globalPastedShips());
+        }
+        return rebased;
     }
 
     private void synchronizeSecondaryCannons() {

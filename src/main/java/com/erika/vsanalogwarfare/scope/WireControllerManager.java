@@ -35,14 +35,17 @@ public final class WireControllerManager {
     /**
      * Puts a hub-linked controller into the player's main hand for this session,
      * stashing the displaced stack. No-op (without stashing) when there is no
-     * link, drivebywire is absent, the hub cannot be resolved, or the player
-     * already holds a tweaked controller (their own item is then used as-is).
+     * link, drivebywire is absent, the hub cannot be resolved to a live hub
+     * block, or the player already holds a tweaked controller (their own item is
+     * then used as-is). A stale link - the usual aftermath of pasting a schematic
+     * whose hub lives outside the pasted ship - is healed by
+     * {@link WireHubResolver#resolveVerified} before the controller is created.
      */
     public static void equip(ServerPlayer player, ScopeSession session, ScopeBlockEntity scope) {
         if (session.wireControllerOriginal() != null) return;
         if (!DbwWireCompat.isAvailable()) return;
         if (scope.getWireHubLink() == null) return;
-        BlockPos hubPos = scope.getWireHubLink().resolve(player.level(), null);
+        BlockPos hubPos = WireHubResolver.resolveVerified(player.level(), scope, player);
         if (hubPos == null) return;
         ItemStack current = player.getMainHandItem();
         if (isController(current)) return; // player already holds their own controller
