@@ -7,7 +7,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.phys.Vec3;
 import com.simibubi.create.content.contraptions.actors.seat.SeatBlock;
 import com.simibubi.create.content.contraptions.actors.seat.SeatEntity;
 
@@ -43,7 +42,7 @@ public record VehicleMountSeatLink(String role, UUID seatUuid, BlockPos seatPos,
     public Entity resolve(Level level, VehicleMountHandleBlockEntity handle) {
         BlockPos target = shipyardPosition(level, handle);
         if (target == null) return null;
-        return findSeatEntityNear(level, target);
+        return findSeatEntityAt(level, target, seatUuid);
     }
 
     public Entity createSeat(Level level, VehicleMountHandleBlockEntity handle) {
@@ -121,21 +120,24 @@ public record VehicleMountSeatLink(String role, UUID seatUuid, BlockPos seatPos,
     private static BlockPos verifiedSeatPosition(Level level, @Nullable BlockPos candidate) {
         if (candidate == null) return null;
         if (level.getBlockState(candidate).getBlock() instanceof SeatBlock) return candidate;
-        return findSeatEntityNear(level, candidate, null) != null ? candidate : null;
+        return findSeatEntityAt(level, candidate, null) != null ? candidate : null;
     }
 
+    /**
+     * The SeatEntity living in the target block's exact cube, mirroring how
+     * Create's {@code SeatBlock.use} and {@code SeatBlock.isSeatOccupied} look
+     * seats up: the seat entity is spawned dead-center in the block (0.25 wide)
+     * and VS2 keeps every ship's seat entities at that ship's shipyard
+     * coordinates, so an exact-block scan can never match a seat of a nearby
+     * ship. No radius, no distance tolerance. A stored UUID is only a
+     * preference for role bookkeeping; the block position is the identity.
+     */
     @Nullable
-    private Entity findSeatEntityNear(Level level, BlockPos target) {
-        return findSeatEntityNear(level, target, seatUuid);
-    }
-
-    @Nullable
-    private static Entity findSeatEntityNear(Level level, BlockPos target, @Nullable UUID seatUuid) {
-        for (Entity candidate : level.getEntitiesOfClass(Entity.class,
-                new net.minecraft.world.phys.AABB(target).inflate(2.0),
-                candidate -> candidate instanceof SeatEntity
-                        && (candidate.getUUID().equals(seatUuid)
-                        || candidate.distanceToSqr(Vec3.atCenterOf(target)) <= 1.5))) return candidate;
+    private static Entity findSeatEntityAt(Level level, BlockPos target, @Nullable UUID seatUuid) {
+        for (Entity candidate : level.getEntitiesOfClass(SeatEntity.class, new net.minecraft.world.phys.AABB(target)))
+            if (seatUuid == null || candidate.getUUID().equals(seatUuid)) return candidate;
+        for (Entity candidate : level.getEntitiesOfClass(SeatEntity.class, new net.minecraft.world.phys.AABB(target)))
+            return candidate;
         return null;
     }
 
