@@ -31,6 +31,45 @@ def vs23ReferenceMods = files({
             ? vs23ReferenceModsDir.listFiles({ File f -> f.name.endsWith('.jar') } as FileFilter)?.sort { it.name }
             : []
 })
+// VMod lives in a subdirectory of the reference dir; flatDir needs the exact
+// directory added so 'vs23.local:VMod-Forge-1.20.1:0.1.3' resolves.
+def vs23VmodDir = new File(vs23ReferenceModsDir, 'Vmod_0.1.3')
+// VMod's mandatory KotlinForForge dep is not in the reference dir; alias it in
+// from the JPCreate2.5 instance (same hardlink/copy pattern as the VS jar).
+def vs23KffSourceJar = new File('C:/Users/lauya/curseforge/minecraft/Instances/JPCreate2.5/mods/kotlinforforge-4.11.0-all.jar')
+def vs23KffAliasJar = new File(vs23ReferenceAliasDir, 'kotlinforforge-4.11.0-all.jar')
+if (vs23KffSourceJar.exists() && !vs23KffAliasJar.exists()) {
+    vs23ReferenceAliasDir.mkdirs()
+    try {
+        java.nio.file.Files.createLink(vs23KffAliasJar.toPath(), vs23KffSourceJar.toPath())
+    } catch (Throwable ignored) {
+        java.nio.file.Files.copy(vs23KffSourceJar.toPath(), vs23KffAliasJar.toPath())
+    }
+}
+// CBC's jarjar'd Ritchie's Projectile Library stays SRG-named inside the
+// reference jar (fg.deobf does not descend into nested jars) and crashes in
+// the MCP-named dev runtime; alias the standalone instance jar instead.
+def vs23RplSourceJar = new File('C:/Users/lauya/curseforge/minecraft/Instances/JPCreate2.5/mods/ritchiesprojectilelib-2.1.0+mc.1.20.1-forge.jar')
+def vs23RplAliasJar = new File(vs23ReferenceAliasDir, 'ritchiesprojectilelib-2.1.0+mc.1.20.1-forge.jar')
+if (vs23RplSourceJar.exists() && !vs23RplAliasJar.exists()) {
+    vs23ReferenceAliasDir.mkdirs()
+    try {
+        java.nio.file.Files.createLink(vs23RplAliasJar.toPath(), vs23RplSourceJar.toPath())
+    } catch (Throwable ignored) {
+        java.nio.file.Files.copy(vs23RplSourceJar.toPath(), vs23RplAliasJar.toPath())
+    }
+}
+// VMod's mandatory Architectury dep, aliased from the JPCreate2.5 instance too.
+def vs23ArchSourceJar = new File('C:/Users/lauya/curseforge/minecraft/Instances/JPCreate2.5/mods/architectury-9.2.14-forge.jar')
+def vs23ArchAliasJar = new File(vs23ReferenceAliasDir, 'architectury-9.2.14-forge.jar')
+if (vs23ArchSourceJar.exists() && !vs23ArchAliasJar.exists()) {
+    vs23ReferenceAliasDir.mkdirs()
+    try {
+        java.nio.file.Files.createLink(vs23ArchAliasJar.toPath(), vs23ArchSourceJar.toPath())
+    } catch (Throwable ignored) {
+        java.nio.file.Files.copy(vs23ArchSourceJar.toPath(), vs23ArchAliasJar.toPath())
+    }
+}
 def vs23RuntimeModCoordinates = [
         'vs23.local:cbcmodernwarfare:0.0.6c+mc.1.20.1-forge',
         'vs23.local:cbcmoreshells:0.2.2',
@@ -42,7 +81,19 @@ def vs23RuntimeModCoordinates = [
         'vs23.local:s_a_b:1.4.3',
         // The uploaded VS jar has a " 2" suffix in its file name. Split that
         // suffix into the flatDir version so ForgeGradle can deobfuscate it.
-        'vs23.local:valkyrienskies-120-2.3.0-beta.5tt16+f75b0eafe1:2'
+        'vs23.local:valkyrienskies-120-2.3.0-beta.5tt16+f75b0eafe1:2',
+        // Sim-harness runtime set: VMod (paste path) + its mandatory deps.
+        // VMod runtime: OFF for now. VMod 0.1.3 reads its Forge config during
+        // SchemNetworking's class-init at mod construct, which Forge forbids in
+        // the dev environment ("Cannot get config value before config is
+        // loaded" — dev-only strictness that production tolerates). Re-enable
+        // when VMod ships a dev-safe build; VSAW's paste-compat mixins degrade
+        // gracefully without it.
+        // 'vs23.local:VMod-Forge-1.20.1:0.1.3',
+        'vs23.local:kotlinforforge:4.11.0-all',
+        'vs23.local:architectury:9.2.14-forge',
+        // deobf'd standalone RPL so CBC's SRG nested copy never loads in dev
+        'vs23.local:ritchiesprojectilelib:2.1.0+mc.1.20.1-forge'
 ]
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -66,7 +117,14 @@ minecraft {
             }
         }
         client {}
-        server { args '--nogui' }
+        server {
+            args '--nogui'
+            // -Pvsaw.sim.autorun=true runs the sim-harness scenario registry
+            // headless at server start, writes reports to run/sim_reports/,
+            // then halts. -Pvsaw.sim.scenario=<name>[,<name>...] narrows it.
+            property 'vsaw.sim.autorun', (project.findProperty('vsaw.sim.autorun') ?: 'false').toString()
+            property 'vsaw.sim.scenario', (project.findProperty('vsaw.sim.scenario') ?: '').toString()
+        }
         data {
             workingDirectory project.file('run-data')
             args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
@@ -75,11 +133,26 @@ minecraft {
 }
 
 sourceSets.main.resources { srcDir 'src/generated/resources' }
-sourceSets.main.java { srcDir 'src/stub/java' }
+// Compile-only stubs live in their OWN source set: main compiles against the
+// stub output, but stub classes are not part of main's runtime output, so dev
+// runs and release jars never contain them. (With VS2/VMod on the dev runtime
+// a stub in main's classes dir splits a package the real mod exports and the
+// module layer refuses to boot.)
+sourceSets {
+    stub {
+        java.srcDir 'src/stub/java'
+    }
+    main
+}
+// Stubs compile against the same external classpath as main (minecraft, CBC,
+// kotlin, ...) but do not see main's own classes; main sees stub output for
+// compilation only.
+sourceSets.stub.compileClasspath = sourceSets.main.compileClasspath - sourceSets.stub.output
+sourceSets.main.compileClasspath += sourceSets.stub.output
 
 repositories {
     flatDir {
-        dirs vs23ReferenceModsDir, vs23ReferenceAliasDir
+        dirs vs23ReferenceModsDir, vs23ReferenceAliasDir, vs23VmodDir
     }
     maven { url = "https://maven.tterrag.com/" }
 
@@ -124,12 +197,10 @@ dependencies {
     runtimeOnly("io.github.llamalad7:mixinextras-forge:0.4.1")
 
     vs23RuntimeModCoordinates.each { runtimeOnly fg.deobf(it) }
-    minecraftLibrary('org.jetbrains.kotlin:kotlin-stdlib:1.8.22') {
-        exclude group: 'org.jetbrains', module: 'annotations'
-    }
-    minecraftLibrary('org.jetbrains.kotlin:kotlin-reflect:1.8.22') {
-        exclude group: 'org.jetbrains', module: 'annotations'
-    }
+    // Kotlin stdlib: compile-only. At runtime KFF (above) bundles and exports
+    // its own — a second kotlin-stdlib on the module path crashes boot with a
+    // split-package ResolutionException.
+    compileOnly 'org.jetbrains.kotlin:kotlin-stdlib:1.8.22'
 }
 
 tasks.register('printVs23ReferenceMods') {
@@ -164,6 +235,8 @@ tasks.named('jar', Jar).configure {
     exclude 'org/valkyrienskies/**'
     exclude 'net/spaceeye/valkyrien_ship_schematics/**'
     exclude 'rbasamoyai/**'
+    // headless sim harness: dev-only, sources stay untracked, never ships
+    exclude 'com/erika/vsanalogwarfare/simharness/**'
 
     manifest {
         attributes([

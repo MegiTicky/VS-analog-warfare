@@ -10,7 +10,10 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AbstractContraptionEntity.class)
 public abstract class AbstractContraptionEntityMixin {
-    @Inject(method = "m_7337_", at = @At("HEAD"), cancellable = true, remap = false)
+    // Vanilla method: SRG name for the production runtime, Mojang name for the
+    // dev runtime. remap=false keeps the reobf step from rewriting either
+    // string; require=1 so matching exactly one in either environment is valid.
+    @Inject(method = {"canCollideWith", "m_7337_"}, at = @At("HEAD"), require = 1, cancellable = true, remap = false)
     private void vsaw$disableEntityCollision(Entity entity, CallbackInfoReturnable<Boolean> cir) {
         if (CommonConfig.disableContraptionEntityCollision()) {
             cir.setReturnValue(false);
