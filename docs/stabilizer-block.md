@@ -1,6 +1,6 @@
 # Gyro Stabilizer Block (vs2.3)
 
-Added in `0.4.4-vs2.3`: a vertical stabilizer that holds a CBC cannon's
+A vertical stabilizer that holds a CBC cannon's
 **world-space elevation** steady on a Valkyrien Skies ship while the player
 still fully controls the gun.
 
@@ -11,7 +11,12 @@ still fully controls the gun.
 2. Right-click the stabilizer with the **Analog Screwdriver**, then right-click
    the **cannon mount**. The stabilizer stores a ship-relative link (survives
    schematic export like scope links). Sneak-right-click the stabilizer to
-   unlink.
+   unlink. When the vehicle is saved and re-pasted with a VMod schematic, the
+   link is rebased onto the freshly placed ships during the paste scan (VMod
+   allocates fresh ship ids, so without the rebase the link would die ~3 s
+   after every paste); link resolution also tolerates the ship-AABB drift VS2
+   applies on hull edits, re-capturing onto the live frame instead of
+   unlinking.
 3. Rotate the gun as usual (pitch shaft/crank, mouse aim, scroll adjust). While
    any input is active the held elevation continuously re-captures to the
    gun's current elevation, so the stabilizer never fights you.
@@ -20,6 +25,24 @@ still fully controls the gun.
 5. The stabilizer works through the scope: the reticle holds steady while the
    hull rocks, including during manual slews (the shaft input commands world
    elevation rate).
+
+## Working with mouse aim
+
+With a linked, enabled stabilizer, the Mouse Aim Controller upgrades itself
+(see `mouse-aim-turret-mode.md`):
+
+- While a mouse-aim target is fresh, the mount **pitch is hard-set** to the aim
+  direction each tick instead of chased — absolute elevation with no chase lag.
+  The gyro servo stays suppressed (`notifyExternalInput`) so nothing else
+  writes the axis.
+- Each tick's aim correction is split into a **frame-rotation share** (hull
+  motion re-mapped through the frame) and a **mouse share**. With a stabilizer
+  linked the frame share applies at full speed; the mouse share keeps the
+  input-scaled slew limit. On a mount without a stabilizer neither applies —
+  the plain chase rides the hull, which is the intended cost of skipping the
+  gyro block.
+- On release, the hold re-engages on the gun's current elevation exactly as
+  with any other input.
 
 ## How it works (why it is stable at 60 TPS)
 

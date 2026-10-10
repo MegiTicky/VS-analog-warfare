@@ -1,10 +1,9 @@
 # Decoration Bearing Rotation Mode Switch
 
-Planned for `0.4.4-vs2.3+`: a wrench value-settings UI on the decoration
-bearing that lets the player switch between three rotation modes — **Yaw
-Only**, **Pitch Only**, and **Yaw + Pitch**. The implementation registers
-Create's `ScrollOptionBehaviour` on the block entity, mirroring the
-Mechanical Bearing's movement-mode UI.
+A wrench value-settings UI on the decoration bearing lets the player switch
+between three rotation modes — **Yaw Only**, **Pitch Only**, and **Yaw +
+Pitch**. The implementation registers Create's `ScrollOptionBehaviour` on the
+block entity, mirroring the Mechanical Bearing's movement-mode UI.
 
 > Revision note: an earlier draft of this document assumed (a) a plain enum
 > works as the `ScrollOptionBehaviour` type parameter, (b) free mouse-wheel
@@ -37,6 +36,38 @@ Mechanical Bearing's movement-mode UI.
 7. Wrench right-clicks that miss the value box do nothing (no accidental
    assemble/disassemble). Without a wrench, right-click still
    assembles/disassembles normally.
+
+## Schematic paste (VMod)
+
+A saved schematic re-creates the decoration's ring contraption entity on
+paste, but VMod never re-attaches it (that handshake only exists for Create's
+own contraption entities). The bearing therefore detects the paste
+deterministically and repairs itself:
+
+- **Detection:** VMod rewrites the contraption's anchor but never the stored
+  controller position, and at save time the two are equal by construction —
+  so a divergence between them *is* a paste (the old position-epsilon
+  heuristic could miss).
+- **Repair:** the render origin is rebuilt from the entity's exact remapped
+  position (VMod truncates only the anchor, which used to land the ring 1–2
+  blocks off at fractional paste offsets); a controller position that drifted
+  onto a neighbor is snapped back to the real bearing (a 2-block search —
+  bearings owned by another alive decoration are never stolen); the pose is
+  reset to neutral (the saved yaw/pitch belonged to the source world and could
+  resurrect a flipped rotation mode) and copied motion is zeroed; the repaired
+  controller position and pivot sync to clients, so the pasted ring renders
+  and rotates around the true bearing again.
+- **Stale links:** the stored ship id never resolves after a paste (VMod
+  copies source-world ids verbatim) or a disassembly/reassembly (VS2 retires
+  ids). The bearing runs a verify-gated heal ladder — own-ship rebase,
+  fallback-ship rebase, verified static recapture — at assemble and use time
+  before declaring the link dead.
+- **Visible failures:** an assembly attempt that fails now reports the reason
+  to the clicking player instead of failing silently ("Nothing to assemble"
+  covers the case with no exception).
+
+One-shot paste/assembly logs are promoted to INFO, so `latest.log` shows where
+the flow stopped on a mis-pasted cluster.
 
 ## Architecture
 

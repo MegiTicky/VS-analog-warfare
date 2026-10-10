@@ -26,6 +26,12 @@ player are saved relative to the setup block. A placement followed by a break
 is therefore replayed in that same order. Stop recording before removing a
 temporary activation shaft when that removal must not be saved.
 
+A placement also captures the placed block's block entity data one tick after
+the placement event, and the replay re-applies it — so pick-block'd chests,
+signs, and other configured blocks keep their contents and configuration
+(e.g. an energy transmitter can be placed with its channel password already
+set). Older saved setups still load unchanged.
+
 When a recorded block lies on a loaded ship, its placement/removal is saved
 per-ship (ship ID + ship-relative offset) exactly like DBW and controller
 links, so it replays correctly even when a multi-ship schematic is placed by
@@ -54,11 +60,16 @@ the typed action summary before saving the schematic.
 
 While recording, configure each vehicle-mounted Create Ender Transmission energy
 transmitter through its normal GUI. Closing the GUI records that transmitter as
-part of the vehicle setup. When VMod pastes the schematic, VSAW assigns recorded
-transmitters a per-placement suffix while preserving the first 16 characters of
-the configured password. Transmitters with the same original channel and password
+part of the vehicle setup. Pasting the schematic does not rename anything —
+the per-placement isolation rename is applied when the setup is run (empty-hand
+right-click on the setup block): VSAW assigns recorded transmitters a
+per-placement suffix while preserving the first 16 characters of the
+configured password. Transmitters with the same original channel and password
 remain connected inside one pasted vehicle; copied vehicles receive different
-network identities.
+network identities. The placement id persists on the setup block, so isolation
+still applies after a world restart, and schematics saved from
+already-renamed ships re-isolate on the click instead of silently sharing the
+old copy's frequency.
 
 Unrecorded transmitters are unchanged, so intentional shared/base networks remain
 possible. To connect an external engine to a pasted vehicle, sneak-right-click the
